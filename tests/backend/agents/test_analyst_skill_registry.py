@@ -37,6 +37,7 @@ def test_builtin_meta_bundle_has_concrete_hidden_owners() -> None:
         "create_data",
         "update_data",
         "probe_data",
+        "refresh_catalog",
     }
     assert {
         spec["function"]["name"] for spec in registry.action_tools_for(["meta"])

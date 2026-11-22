@@ -58,6 +58,18 @@ def test_a_share_opens_on_a_phone_with_its_image_caption_and_link_preview(client
     assert image.status_code == 200 and image.data == PNG and image.mimetype == "image/png"
 
 
+def test_a_share_page_ignores_a_forged_host_and_never_reads_outside_the_shares_folder(client) -> None:
+    created = client.post("/api/shares", json={"image": PNG_URL, "title": "Map"}).get_json()["data"]
+    page = client.get(created["path"], headers={"X-Forwarded-Proto": "javascript",
+                                                "X-Forwarded-Host": 'evil.example"><script>alert(1)</script>'})
+    text = page.get_data(as_text=True)
+    assert page.status_code == 200 and "evil.example" not in text and "javascript:" not in text
+    assert f'content="https://localhost/s/{created["id"]}.png"' in text
+    assert client.get("/s/..........-..png").status_code == 404
+    with pytest.raises(ValueError):
+        shares._paths("../../outside-the-folder")
+
+
 def test_sharing_is_off_on_a_persons_own_computer(client, monkeypatch) -> None:
     monkeypatch.setenv("DF_SHARE_LINKS", "off")
     assert client.post("/api/shares", json={"image": PNG_URL}).get_json()["status"] == "error"

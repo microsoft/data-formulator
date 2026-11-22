@@ -256,95 +256,75 @@ export const FileTypeIcon: React.FC<{
     </SvgIcon>;
 };
 
-// ── Data-loader / connector category icons ──────────────────────────────
-// Generic icons representing data source *categories*, not brand logos.
-// Used in the data source card grid and Add Connection sidebar.
+// ── Data-loader / connector icons ───────────────────────────────────────
+// One family: named products show their own logo (Simple Icons, single colour); everything else shows an
+// outline glyph drawn to one rule: 24px grid, 1.5 stroke, round caps and joins, no fills. Solid logos are
+// drawn a little smaller so they weigh the same as the outlines. Logos are used as they are, never redrawn.
 
-/** Relational Database — classic cylinder icon (MySQL, PostgreSQL, MSSQL) */
-const RelationalDBIcon: React.FC<SvgIconProps> = (props) => (
-    <SvgIcon {...props} viewBox="0 0 24 24">
-        <ellipse cx="12" cy="5.5" rx="8" ry="3" fill="none" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M4 5.5v13c0 1.66 3.58 3 8 3s8-1.34 8-3v-13" fill="none" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M4 11.5c0 1.66 3.58 3 8 3s8-1.34 8-3" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.4"/>
-    </SvgIcon>
-);
+/** An outline glyph's shapes, from path data. */
+const glyph = (...paths: string[]) => paths.map((d, index) => <path key={index} d={d} fill="none" stroke="currentColor"
+    strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />);
 
-/** Document Store — stacked documents icon (MongoDB, CosmosDB) */
-const DocumentStoreIcon: React.FC<SvgIconProps> = (props) => (
-    <SvgIcon {...props} viewBox="0 0 24 24">
-        <path d="M6 2h9l5 5v13a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-        <path d="M15 2v5h5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-        <line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" strokeWidth="1.2" opacity="0.4"/>
-        <line x1="8" y1="15.5" x2="14" y2="15.5" stroke="currentColor" strokeWidth="1.2" opacity="0.4"/>
-    </SvgIcon>
-);
+const GLYPHS = {
+    folder: glyph('M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2h7.4a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z'),
+    cloud: glyph('M7 18.5h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.1 11.6 3.5 3.5 0 0 0 7 18.5z', 'M12 15.5v-4M10 13l2-2 2 2'),
+    cylinder: glyph('M5 6c0-1.45 3.13-2.6 7-2.6s7 1.15 7 2.6-3.13 2.6-7 2.6S5 7.45 5 6z',
+        'M5 6v12c0 1.45 3.13 2.6 7 2.6s7-1.15 7-2.6V6', 'M5 12c0 1.45 3.13 2.6 7 2.6s7-1.15 7-2.6'),
+    table: glyph('M5.5 5h13A1.5 1.5 0 0 1 20 6.5v11a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5v-11A1.5 1.5 0 0 1 5.5 5z',
+        'M4 10h16M4 14.5h16M10 10v9'),
+    document: glyph('M7 3.5h7l4.5 4.5v11a1.5 1.5 0 0 1-1.5 1.5H7a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 7 3.5z',
+        'M14 3.5V8h4.5M8.5 12.5h7M8.5 16h5'),
+    query: glyph('M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z', 'M15.5 15.5 20 20M8 12.5v-2M10.5 12.5V8M13 12.5v-3'),
+    model: glyph('M12 3.5 19.5 7.75v8.5L12 20.5l-7.5-4.25v-8.5z', 'M4.5 7.75 12 12l7.5-4.25M12 12v8.5'),
+    report: glyph('M6 11h3v8.5H6zM10.5 7h3v12.5h-3zM15 4.5h3v15h-3z'),
+} as const;
 
-/** Cloud Storage — cloud with arrow icon (S3, Azure Blob) */
-const CloudStorageIcon: React.FC<SvgIconProps> = (props) => (
-    <SvgIcon {...props} viewBox="0 0 24 24">
-        <path d="M6.5 18.5h11a4.5 4.5 0 00.5-8.97A7 7 0 004.05 12 3.5 3.5 0 006.5 18.5z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-        <path d="M12 13v5M9.5 15.5L12 13l2.5 2.5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" opacity="0.5"/>
-    </SvgIcon>
-);
-
-/** Query Engine — magnifying glass with data (BigQuery, Kusto, Athena) */
-const QueryEngineIcon: React.FC<SvgIconProps> = (props) => (
-    <SvgIcon {...props} viewBox="0 0 24 24">
-        <circle cx="10.5" cy="10.5" r="7" fill="none" stroke="currentColor" strokeWidth="1.5"/>
-        <line x1="15.5" y1="15.5" x2="21" y2="21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-        <line x1="7.5" y1="9" x2="7.5" y2="14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" opacity="0.5"/>
-        <line x1="10.5" y1="7" x2="10.5" y2="14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" opacity="0.5"/>
-        <line x1="13.5" y1="10" x2="13.5" y2="14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" opacity="0.5"/>
-    </SvgIcon>
-);
-
-/** Dashboard / BI — grid with mini chart (Superset) */
-const DashboardIcon: React.FC<SvgIconProps> = (props) => (
-    <SvgIcon {...props} viewBox="0 0 24 24">
-        <rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5"/>
-        <line x1="3" y1="9" x2="21" y2="9" stroke="currentColor" strokeWidth="1.2" opacity="0.4"/>
-        <line x1="9" y1="9" x2="9" y2="21" stroke="currentColor" strokeWidth="1.2" opacity="0.4"/>
-        <polyline points="12,17 14.5,13 17,15.5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" opacity="0.6"/>
-    </SvgIcon>
-);
-
-/** Generic fallback — simple database cylinder */
-const GenericDBIcon: React.FC<SvgIconProps> = (props) => (
-    <SvgIcon {...props} viewBox="0 0 24 24">
-        <ellipse cx="12" cy="6" rx="8" ry="3" fill="none" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M4 6v12c0 1.66 3.58 3 8 3s8-1.34 8-3V6" fill="none" stroke="currentColor" strokeWidth="1.5"/>
-    </SvgIcon>
-);
-
-import FolderOpenIconMui from '@mui/icons-material/FolderOpen';
-
-/** A brand logo from Simple Icons, drawn in the surrounding colour like the category icons. */
-const brandIcon = ({ title, path }: BrandIcon): React.FC<SvgIconProps> => {
-    const Icon: React.FC<SvgIconProps> = props => <SvgIcon {...props} viewBox="0 0 24 24"><title>{title}</title><path d={path} /></SvgIcon>;
-    Icon.displayName = `${title.replace(/\W/g, '')}Icon`;
+/** A connector icon: a logo or a glyph, scaled so both kinds share one optical size. */
+const connectorIcon = (title: string, content: React.ReactNode, logo = false): React.FC<SvgIconProps> => {
+    const scale = logo ? 0.8 : 1;
+    const offset = 12 * (1 - scale);
+    const Icon: React.FC<SvgIconProps> = props => <SvgIcon {...props} viewBox="0 0 24 24">
+        <title>{title}</title>
+        <g transform={`translate(${offset} ${offset}) scale(${scale})`}>{content}</g>
+    </SvgIcon>;
+    Icon.displayName = `${title.replace(/\W/g, '')}ConnectorIcon`;
     return Icon;
 };
 
-/** Map source_type string to its brand logo where Simple Icons has one, otherwise to a category icon. */
+const glyphIcon = (title: string, name: keyof typeof GLYPHS) => connectorIcon(title, GLYPHS[name]);
+const logoIcon = ({ title, path }: BrandIcon) => connectorIcon(title, <path d={path} fill="currentColor" />, true);
+
+/** A plain outline glyph without a title, for places that are not a list of connectors (e.g. the rail). */
+const plainGlyph = (name: keyof typeof GLYPHS): React.FC<SvgIconProps> => props =>
+    <SvgIcon {...props} viewBox="0 0 24 24">{GLYPHS[name]}</SvgIcon>;
+
+/** Relational database, plain (the rail's Data connectors button). */
+const RelationalDBIcon = plainGlyph('cylinder');
+/** Generic database, plain. */
+const GenericDBIcon = plainGlyph('cylinder');
+
+const FallbackConnectorIcon = glyphIcon('Data source', 'cylinder');
+
+/** Map source_type string to its icon: its own logo where Simple Icons has a legible one, otherwise a glyph. */
 export const CONNECTOR_ICON_MAP: Record<string, React.FC<SvgIconProps>> = {
-    // Relational databases
-    mssql: RelationalDBIcon,
-    dataverse: RelationalDBIcon,
-    // Document stores
-    cosmosdb: DocumentStoreIcon,
-    // Cloud storage
-    s3: CloudStorageIcon,
-    azure_blob: CloudStorageIcon,
-    // Query engines
-    kusto: QueryEngineIcon,
-    athena: QueryEngineIcon,
-    // BI / dashboards / semantic layers
-    cube: DashboardIcon,
-    powerbi: DashboardIcon,
+    // Brands: clickhouse, sqlite, mongodb, databricks, bigquery, search_console, snowflake, superset
+    ...Object.fromEntries(Object.entries(CONNECTOR_BRANDS).map(([type, brand]) => [type, logoIcon(brand)])),
+    // Their logos are unreadable at icon size (a wordmark, a detailed elephant).
+    mysql: glyphIcon('MySQL', 'cylinder'),
+    postgresql: glyphIcon('PostgreSQL', 'cylinder'),
+    // No logo available (Microsoft and AWS brands are not in Simple Icons).
+    mssql: glyphIcon('SQL Server', 'cylinder'),
+    dataverse: glyphIcon('Dataverse', 'table'),
+    cosmosdb: glyphIcon('Cosmos DB', 'document'),
+    s3: glyphIcon('Amazon S3', 'cloud'),
+    azure_blob: glyphIcon('Azure Blob', 'cloud'),
+    kusto: glyphIcon('Kusto', 'query'),
+    athena: glyphIcon('Athena', 'query'),
+    // BI and semantic models
+    cube: glyphIcon('Cube', 'model'),
+    powerbi: glyphIcon('Power BI', 'report'),
     // Local
-    local_folder: FolderOpenIconMui,
-    // Brands: mysql, postgresql, mongodb, clickhouse, sqlite, databricks, bigquery, search_console, snowflake, superset
-    ...Object.fromEntries(Object.entries(CONNECTOR_BRANDS).map(([type, brand]) => [type, brandIcon(brand)])),
+    local_folder: glyphIcon('Local folder', 'folder'),
 };
 
 /** Category sort order for data source sidebar. Lower = higher in the list.
@@ -406,7 +386,7 @@ export const connectorCategory = (type: string): string =>
  * Falls back to a generic database icon for unknown types.
  */
 export const getConnectorIcon = (sourceType: string, props?: SvgIconProps): React.ReactElement => {
-    const Icon = CONNECTOR_ICON_MAP[sourceType] || GenericDBIcon;
+    const Icon = CONNECTOR_ICON_MAP[sourceType] || FallbackConnectorIcon;
     return <Icon {...(props || {})} />;
 };
 

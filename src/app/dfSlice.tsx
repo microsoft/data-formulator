@@ -1712,6 +1712,15 @@ export const dataFormulatorSlice = createSlice({
                 replaceStoredTable(state, { ...t, rows: newRows, metadata: newMetadata, source: updatedSource, contentHash: newContentHash, virtual: updatedVirtual });
             }
         },
+        setTableSourceMissing: (state, action: PayloadAction<{tableId: string, missing: {checkedAt: number, message: string} | null}>) => {
+            // Mark (or clear) a loaded table whose source table no longer exists; its rows are kept.
+            const { tableId, missing } = action.payload;
+            for (const t of collectAllTables(state)) {
+                if (t.id !== tableId || !t.source || (!missing && !t.source.missing)) continue;
+                const { missing: _previous, ...rest } = t.source;
+                replaceStoredTable(state, { ...t, source: missing ? { ...rest, missing } : rest });
+            }
+        },
         updateTableSource: (state, action: PayloadAction<{tableId: string, source: DataSourceConfig}>) => {
             // Update the source configuration of a table
             let tableId = action.payload.tableId;

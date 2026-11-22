@@ -83,7 +83,7 @@ class DataDiscoveryService:
 
     def resolve_load_table(self, source_id: str, table_key: str) -> dict[str, Any] | None:
         """Resolve model-facing catalog identity into loader and display fields."""
-        from data_formulator.datalake.catalog_cache import load_catalog
+        from data_formulator.datalake.catalog_cache import catalog_table_identifiers, load_catalog
 
         user_home = getattr(self.workspace, "user_home", None)
         if not user_home or not source_id or not table_key:
@@ -95,14 +95,7 @@ class DataDiscoveryService:
             return None
         for table in catalog:
             metadata = table.get("metadata") or {}
-            identifiers = {
-                str(table.get("table_key") or ""),
-                str(metadata.get("uuid") or ""),
-                str(metadata.get("dataset_id") or ""),
-                str(metadata.get("_source_name") or ""),
-                str(table.get("name") or ""),
-            }
-            if table_key not in identifiers:
+            if table_key not in catalog_table_identifiers(table):
                 continue
             display_name = str(table.get("name") or table_key)
             source_table = metadata.get("dataset_id")
@@ -164,7 +157,16 @@ class DataDiscoveryService:
                 result = execute_source_query(loader, "probe", path, query)
         except Exception as exc:
             logger.debug("probe_data failed", exc_info=True)
-            return {"error": f"probe failed: {exc}"}
+            from data_formulator.data_loader.connector_errors import classify_connector_error
+            from data_formulator.datalake.catalog_cache import note_table_outcome
+            info = classify_connector_error(exc, operation="preview")
+            message = info.reason if info.reason and not info.table_state else info.message
+            user_home = getattr(self.workspace, "user_home", None)
+            if info.table_state and user_home and note_table_outcome(
+                    Path(user_home), source_id, table_key, table_state=info.table_state, reason=info.reason) \
+                    and info.table_state == "missing":
+                message += " It was removed from the catalog."
+            return {"error": f"probe failed: {message}"}
 
         if isinstance(result, dict) and "error" not in result:
             result.setdefault(

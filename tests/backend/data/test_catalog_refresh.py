@@ -173,3 +173,39 @@ def test_recent_failure_suppresses_retry_and_preserves_tables(tmp_path: Path) ->
     assert snapshot.last_refresh_error == "timeout"
     assert load_catalog(tmp_path, "src") == [{"name": "stale"}]
     submit.assert_not_called()
+
+def _dataset(dataset_id: int, name: str, folder: str = "All Datasets") -> dict:
+    return {"name": f"{dataset_id}:{name}", "table_key": f"{dataset_id}:{name}", "path": [folder, name],
+            "metadata": {"dataset_id": dataset_id}}
+
+
+def test_table_outcomes_drop_missing_flag_unreadable_and_clear_on_success(tmp_path: Path) -> None:
+    from data_formulator.datalake.catalog_cache import note_table_outcome
+
+    save_catalog(tmp_path, "superset", [_dataset(2, "products"), _dataset(4, "returns"),
+                                        _dataset(4, "returns", "Sales dashboard")])
+
+    assert note_table_outcome(tmp_path, "superset", "4", table_state="missing") == 2
+    assert note_table_outcome(tmp_path, "superset", "2:products", table_state="unreadable", reason="no such table") == 1
+    [products] = load_catalog(tmp_path, "superset")
+    assert products["metadata"]["read_error"]["message"] == "no such table"
+
+    assert note_table_outcome(tmp_path, "superset", "2") == 1
+    assert note_table_outcome(tmp_path, "superset", "2") == 0
+    assert "read_error" not in load_catalog(tmp_path, "superset")[0]["metadata"]
+
+
+def test_resync_reports_changes_and_does_not_repeat_within_a_minute(tmp_path: Path) -> None:
+    from data_formulator.datalake.catalog_refresh import resync_catalog
+
+    save_catalog(tmp_path, "superset", [_dataset(2, "products"), _dataset(4, "returns")], refresh_kind="listing")
+    loader = MagicMock()
+    loader.sync_catalog_metadata.return_value = [_dataset(2, "products"), _dataset(5, "refunds")]
+
+    result = resync_catalog(tmp_path, "superset", loader)
+
+    assert result["refreshed"] and result["tables"] == 2
+    assert result["added"] == ["All Datasets/refunds"] and result["removed"] == ["All Datasets/returns"]
+    assert [table["table_key"] for table in load_catalog(tmp_path, "superset")] == ["2:products", "5:refunds"]
+    assert resync_catalog(tmp_path, "superset", loader)["refreshed"] is False
+    loader.sync_catalog_metadata.assert_called_once()

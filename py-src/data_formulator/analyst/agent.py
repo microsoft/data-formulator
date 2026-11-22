@@ -295,6 +295,7 @@ def _unavailable_skill_note(name: str, content: str) -> str:
 
 _TOOL_PROGRESS_ARG_KEYS: dict[str, tuple[str, ...]] = {
     "probe_data": ("source_id", "table_key", "query"),
+    "refresh_catalog": ("source_id",),
     "list_connectors": ("source_type",),
     "list_sessions": ("query",),
     "past_sessions": ("query", "session", "item", "copy"),

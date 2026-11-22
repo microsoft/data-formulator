@@ -13,6 +13,7 @@ tools:
   - search
   - move_file
   - probe_data
+  - refresh_catalog
 actions: [propose_data_operation, view]
 ---
 

@@ -452,6 +452,26 @@
   {
     "type": "function",
     "function": {
+      "name": "refresh_catalog",
+      "description": "Re-read one connected source's catalog and update sources://<source_id>/; reports tables added or removed. Call it without asking the user when a requested table or field is missing from the cached catalog or a listed table fails to load as missing or unreadable, then check again. Slow on large sources: at most once per source per turn.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "description": "The source id, as in sources://<source_id>/."
+          }
+        },
+        "required": [
+          "source_id"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
       "name": "propose_data_operation",
       "description": "Add connected data to the workspace, following the connected_data skill (load it first). For analysis, submit the needed query directly: the application also registers a virtual source reference only if that source/table is not already in the workspace. No separate preparation call is needed. Query results are materialized and never silently become virtual references. Omit query for an add-source request using automatic small/local or large/virtual loading, matching manual imports. Ground source IDs, table keys, and query fields in discovery or reference context. One option with user_review_needed=false executes automatically; review-required proposals pause for user selection. Multiple options always require review. Inspect load_outcomes: virtual means compute_ready=false with no local path; materialized means compute_ready=true with input paths and scope. When both are returned, compute from the materialized result without loading again. Source registration does not imply query success.",
       "parameters": {

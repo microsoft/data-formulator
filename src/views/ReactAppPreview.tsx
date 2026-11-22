@@ -104,13 +104,15 @@ export const ReactAppPreview: FC<{
     const buildDocument = useMemo(() => {
         if (!compiled.ok || !optional || !('sources' in optional)) return null;
         return (channel: string) => buildAppDocument(APP_DOCUMENT, {
-            runtimeScripts: [vegaSource, vegaLiteSource, bridgeSource, reactRuntimeSource, ...optional.sources, mountScript(compiled.code)],
+            // A capture's library is part of the document: the frame never runs code sent to it in a message.
+            runtimeScripts: [vegaSource, vegaLiteSource, ...(capture ? [capture.script] : []), bridgeSource, reactRuntimeSource,
+                ...optional.sources, mountScript(compiled.code)],
             theme,
             kitStylesheet: hostVariablesStylesheet(),
             config: { channel, hostOrigin: window.location.origin, manifest, theme, paletteKey, look, semantics, charts, themes, density },
         });
     // `chartsKey` stands for `charts`: the app reloads only when a chart it can draw really changes.
-    }, [compiled, optional, manifest, theme, paletteKey, look, semantics, chartsKey, themes, density]);
+    }, [compiled, optional, manifest, theme, paletteKey, look, semantics, chartsKey, themes, density, capture?.script]);
     return <AppSandbox title={title} manifest={manifest} buildDocument={buildDocument} initialErrors={initialErrors}
         reloadKey={reloadKey} reserveTopRight={reserveTopRight} onAskFix={onAskFix} autoFix={autoFix} onHealthy={onHealthy} fixPending={fixPending}
         resolveSource={resolveSource} workspaceId={workspaceId} capture={capture} linkSource={source} />;

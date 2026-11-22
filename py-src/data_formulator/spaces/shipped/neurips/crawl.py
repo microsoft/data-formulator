@@ -56,10 +56,12 @@ def now() -> str:
     return dt.datetime.now().strftime("%H:%M:%S")
 
 
-def get(s: requests.Session, url: str, *, tries: int | None = 5) -> requests.Response:
+def get(s: requests.Session, url: str, *, tries: int | None = 5,
+        secret_params: dict[str, str] | None = None) -> requests.Response:
     """GET with backoff (capped at 5 minutes) on rate limits, server errors and network failures.
 
     ``tries=None`` waits out any outage (e.g. the laptop going offline) instead of failing.
+    ``secret_params`` (API keys) are sent with the request but kept out of ``url``, which is printed.
     """
     attempt = 0
     while True:
@@ -67,7 +69,7 @@ def get(s: requests.Session, url: str, *, tries: int | None = 5) -> requests.Res
         last = tries is not None and attempt >= tries
         wait = min(300.0, 10 * 2 ** min(attempt - 1, 5))
         try:
-            r = s.get(url, timeout=60)
+            r = s.get(url, params=secret_params, timeout=60)
         except requests.RequestException as e:
             if last:
                 raise
@@ -331,9 +333,9 @@ def cmd_openalex(root: Path, years: list[int]) -> None:
         while cursor:
             n += 1
             # Plain paging (cursor paging needs an API key); a year has well under its 10,000-result cap.
-            key = f"&api_key={os.environ['OPENALEX_API_KEY']}" if os.environ.get("OPENALEX_API_KEY") else ""
+            key = {"api_key": os.environ["OPENALEX_API_KEY"]} if os.environ.get("OPENALEX_API_KEY") else None
             r = get(s, f"{OPENALEX}/works?filter=locations.source.id:{OPENALEX_NEURIPS},publication_year:{year}"
-                       f"&per-page=200&page={n}&select={OPENALEX_FIELDS}{key}")
+                       f"&per-page=200&page={n}&select={OPENALEX_FIELDS}", secret_params=key)
             r.raise_for_status()
             data = r.json()
             (folder / f"page-{n:03d}.json").write_text(json.dumps(data, ensure_ascii=False))

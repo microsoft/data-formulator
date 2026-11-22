@@ -424,4 +424,11 @@ describe('DF app runtime', () => {
         deliver({ dfApp: 'chan', type: 'result', id: request.id, error: 'boom' });
         await expect(pending).rejects.toThrow('boom');
     });
+
+    it('never runs code sent in a capture request; the capture library comes with the document', () => {
+        const { posted, deliver } = load();
+        deliver({ dfApp: 'chan', type: 'capture', id: 'shot', script: 'window.__ranFromMessage = true' });
+        expect((window as any).__ranFromMessage).toBeUndefined();
+        expect(posted).toContainEqual(expect.objectContaining({ type: 'captured', id: 'shot', error: 'The capture library did not load.' }));
+    });
 });

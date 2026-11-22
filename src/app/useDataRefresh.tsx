@@ -8,7 +8,7 @@ import { AppDispatch } from './store';
 import { DictTable } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
 import { fetchWithIdentity, getUrls, CONNECTOR_ACTION_URLS, computeContentHash } from './utils';
-import { apiRequest } from './apiClient';
+import { apiRequest, ApiRequestError } from './apiClient';
 import { derivedRefreshWaves } from './derivedRefresh';
 
 /** Gzip-compress a string into a Blob using the browser's CompressionStream API. */
@@ -132,6 +132,7 @@ export function useDataRefresh() {
             });
             
             console.log(`[DataRefresh] Backend refreshed "${tableName}" (${refreshData.row_count} rows, data_changed=${refreshData.data_changed})`);
+            dispatch(dfActions.setTableSourceMissing({ tableId: table.id, missing: null }));
 
             // If data hasn't changed, skip resampling - no need to update frontend
             if (!refreshData.data_changed) {
@@ -161,6 +162,11 @@ export function useDataRefresh() {
                 contentHash: refreshData.content_hash
             };
         } catch (error) {
+            if (error instanceof ApiRequestError && error.apiError.code === 'TABLE_NOT_FOUND') {
+                dispatch(dfActions.setTableSourceMissing({
+                    tableId: table.id, missing: { checkedAt: Date.now(), message: error.message },
+                }));
+            }
             return {
                 tableId: table.id,
                 success: false,
@@ -286,7 +292,7 @@ export function useDataRefresh() {
         }
 
         const source = table.source;
-        if (!source?.autoRefresh || !source.refreshIntervalSeconds || source.refreshIntervalSeconds <= 0) {
+        if (!source?.autoRefresh || !source.refreshIntervalSeconds || source.refreshIntervalSeconds <= 0 || source.missing) {
             isActiveRef.current.set(tableId, false);
             return;
         }

@@ -124,6 +124,14 @@ class CatalogCachePolicy:
             raise ValueError(f"Unsupported automatic catalog refresh kind: {self.automatic_refresh_kind}")
 
 
+class SourceTableMissing(LookupError):
+    """The source confirmed the table no longer exists, so catalog entries naming it are stale.
+
+    Raise it only on positive evidence (e.g. the source answers "not found" for this table
+    while the connection works); the message is shown to users and agents.
+    """
+
+
 class ConnectorParamError(ValueError):
     """Raised when required connector parameters are missing or empty."""
 

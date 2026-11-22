@@ -257,3 +257,58 @@ def ensure_catalog_freshness(
         policy,
     )
     return snapshot
+
+_RESYNC_MIN_SECONDS = 60
+_RESYNC_LIST_LIMIT = 20
+
+
+def resync_catalog(workspace_root: Path | str, source_id: str, loader: Any) -> dict[str, Any]:
+    """Re-read a source's full catalog now, whatever its automatic refresh policy, and report what changed.
+
+    Explicit refreshes (the agent's ``refresh_catalog``) use this. A catalog fully refreshed in the
+    last minute is reported as current rather than fetched again.
+    """
+    from data_formulator.datalake.catalog_cache import _load_catalog_raw
+
+    root = Path(workspace_root)
+    previous = _load_catalog_raw(root, source_id) or {}
+    refreshed_at = previous.get("metadata_refreshed_at") if previous.get("refresh_kind") == "full" else None
+    try:
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(str(refreshed_at))).total_seconds()
+    except (TypeError, ValueError):
+        age = None
+    if age is not None and 0 <= age < _RESYNC_MIN_SECONDS and previous.get("refresh_status") != "failed":
+        return {"source_id": source_id, "tables": len(previous.get("tables") or []), "refreshed": False,
+                "note": f"The catalog was refreshed {int(age)} seconds ago and is current."}
+
+    key = (str(root.resolve()), source_id)
+    with _REFRESH_LOCK:
+        if key in _REFRESHING:
+            return {"source_id": source_id, "refreshed": False,
+                    "note": "A refresh of this catalog is already running; read it again shortly."}
+        _REFRESHING.add(key)
+    try:
+        try:
+            tables = loader.sync_catalog_metadata()
+            loader.ensure_table_keys(tables)
+        except Exception as exc:
+            record_catalog_refresh_failure(root, source_id, str(exc))
+            raise
+        save_catalog(root, source_id, tables)
+    finally:
+        with _REFRESH_LOCK:
+            _REFRESHING.discard(key)
+
+    def names(items: list[dict[str, Any]]) -> dict[str, str]:
+        return {str(item.get("table_key") or item.get("name")): "/".join(map(str, item.get("path") or []))
+                or str(item.get("name")) for item in items}
+
+    before, after = names(previous.get("tables") or []), names(tables)
+    added = [after[key] for key in after if key not in before]
+    removed = [before[key] for key in before if key not in after]
+    result: dict[str, Any] = {"source_id": source_id, "tables": len(tables), "refreshed": True}
+    for label, items in (("added", added), ("removed", removed)):
+        result[label] = items[:_RESYNC_LIST_LIMIT]
+        if len(items) > _RESYNC_LIST_LIMIT:
+            result[f"{label}_more"] = len(items) - _RESYNC_LIST_LIMIT
+    return result

@@ -88,6 +88,15 @@ def test_index_lists_each_item_once_with_focus_and_flags(tmp_path) -> None:
     assert "- `files/dash.app.jsx` — app #" in index and "- `files/notes/` (1 file) #" in index
 
 
+def test_index_says_when_a_loaded_tables_source_is_gone() -> None:
+    from data_formulator.analyst.session_layer import SessionLayer, normalize_state
+    state = _layer_state()
+    state["inputTables"][0]["sourceConfig"] = {"type": "database", "connectorId": "superset",
+                                               "missing": {"checkedAt": 1, "message": "Dataset 4 no longer exists."}}
+    index = SessionLayer(normalize_state(state)).index()
+    assert ('`session://tables/sales` "Sales" — loaded · its source table no longer exists; '
+            'this is the copy loaded before · 120 rows') in index
+
 def test_resumed_runs_hear_what_changed_since_their_last_look() -> None:
     from data_formulator.analyst.session_layer import SessionLayer
     from data_formulator.analyst.session_layer.layer import seen_versions

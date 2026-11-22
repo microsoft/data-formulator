@@ -132,7 +132,8 @@ export interface AppSandboxProps {
     /** The session the app's queries read (by default the open one), e.g. a sample shown outside its session. */
     workspaceId?: string;
     /** Draw the app as a picture once it has loaded its data and gone quiet (for the agent's view requests):
-     *  `script` is the capture library's source, which the app frame cannot load itself. */
+     *  `script` is the capture library's source, which the app frame cannot load itself; the preview builds it into
+     *  the app document, so no code is ever sent to the frame in a message. */
     capture?: AppCapture;
     /** The app's code: web addresses written in it, like those in table data it reads, open without asking. */
     linkSource?: string;
@@ -232,7 +233,7 @@ export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument
                 finishCapture({ error: 'The app did not finish loading.' });
             } else if (!active && !queue.length && now - lastActivity >= CAPTURE_QUIET_MS && now - startedAt >= CAPTURE_QUIET_MS) {
                 lastActivity = Infinity;
-                post({ type: 'capture', id: captureId, script: request.script, scale: request.scale });
+                post({ type: 'capture', id: captureId, scale: request.scale });
             }
         }, 250);
 

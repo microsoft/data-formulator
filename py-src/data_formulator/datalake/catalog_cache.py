@@ -247,6 +247,63 @@ def update_table_metadata(
         logger.debug("Failed to update table metadata for %s", source_id, exc_info=True)
 
 
+def catalog_table_identifiers(table: dict[str, Any]) -> set[str]:
+    """Every name a caller may use for a cached table (key, display name, loader ids)."""
+    metadata = table.get("metadata") or {}
+    values = (table.get("table_key"), table.get("name"), metadata.get("uuid"),
+              metadata.get("dataset_id"), metadata.get("_source_name"))
+    return {str(value) for value in values if value not in (None, "")}
+
+
+def note_table_outcome(
+    workspace_root: Path | str,
+    source_id: str,
+    identifier: str,
+    *,
+    table_state: str = "",
+    reason: str = "",
+) -> int:
+    """Keep the cached catalog honest after reading one table.
+
+    ``table_state="missing"`` drops every entry naming the table (the source
+    confirmed it is gone); ``"unreadable"`` flags them with ``read_error`` (the
+    source lists the table but cannot read it); ``""`` clears that flag after a
+    successful read. Returns how many entries changed. Best-effort.
+    """
+    if not identifier:
+        return 0
+    try:
+        with _TABLE_UPDATE_LOCK:
+            payload = _load_catalog_raw(workspace_root, source_id)
+            if not payload:
+                return 0
+            changed = 0
+            tables = []
+            for table in payload.get("tables") or []:
+                if identifier not in catalog_table_identifiers(table):
+                    tables.append(table)
+                    continue
+                metadata = dict(table.get("metadata") or {})
+                if table_state == "missing":
+                    changed += 1
+                    continue
+                if table_state == "unreadable":
+                    metadata["read_error"] = {"message": reason[:300], "at": _utc_now().isoformat()}
+                elif "read_error" in metadata:
+                    del metadata["read_error"]
+                else:
+                    tables.append(table)
+                    continue
+                changed += 1
+                tables.append({**table, "metadata": metadata})
+            if changed:
+                _atomic_write_payload(workspace_root, source_id, {**payload, "tables": tables})
+            return changed
+    except Exception:
+        logger.debug("Failed to record a table outcome for %s", source_id, exc_info=True)
+        return 0
+
+
 def record_catalog_refresh_failure(
     workspace_root: Path | str,
     source_id: str,

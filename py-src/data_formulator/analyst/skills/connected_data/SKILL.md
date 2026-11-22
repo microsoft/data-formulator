@@ -225,12 +225,16 @@ Connected catalogs are read-only files: `sources://<source_id>/<catalog path>/<t
 | Browse a hierarchy | `list_files` of a folder, one level at a time; a glob (`sources://<source_id>/*sales*`) for any depth |
 | Verify matching columns, types, coverage, or filter values | `read_file` of the table: `source_id`, `table_key`, columns one per line |
 | Metadata cannot resolve a loading choice | `probe_data` with a bounded structured query |
+| A requested table or field is missing from the catalog, or a listed table fails to load as missing | `refresh_catalog` for that source, then check again |
 
 Do not ask which source to inspect for a broad availability question: list
 connected sources first. Respect omitted counts and pagination; an empty or
 truncated search is not proof that data does not exist. Report access failures
 as failures, not as absent data. Prefer cached discovery before live probes.
 Use structured queries, not generated source-specific SQL.
+
+Catalogs are cached and can be stale: refresh before telling the user something is
+missing. When a load fails, relay the source's quoted reason rather than guessing a cause.
 
 Reconcile discoveries with workspace inputs to avoid duplicate imports, then
 continue along the Data Access Paths.

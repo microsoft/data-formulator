@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import html
 import json
+import re
 import secrets
 from urllib.parse import quote
 
@@ -62,10 +63,22 @@ def create_share():
     return json_ok({"id": record["id"], "path": f"/s/{record['id']}", "expires": record["expires"]})
 
 
+# A host as a URL may carry it: a name or IPv4 address, or a bracketed IPv6 one, and an optional port.
+_HOST = re.compile(r"(?:[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?|\[[0-9A-Fa-f:.]{2,45}\])(?::[0-9]{1,5})?")
+
+
 def _origin() -> str:
-    """This server as the visitor reached it (behind a proxy, as the proxy says)."""
-    proto = request.headers.get("X-Forwarded-Proto", request.scheme).split(",")[0].strip() or "https"
+    """This server as the visitor reached it (behind a proxy, as the proxy says).
+
+    The headers are the client's to set, and the page repeats the origin in its links and preview tags, so only
+    an ``http``/``https`` scheme and a well-formed host are used; anything else falls back to the request's own.
+    """
+    proto = request.headers.get("X-Forwarded-Proto", request.scheme).split(",")[0].strip().lower()
+    if proto not in ("http", "https"):
+        proto = "https"
     host = request.headers.get("X-Forwarded-Host", request.host).split(",")[0].strip()
+    if not _HOST.fullmatch(host):
+        host = request.host if _HOST.fullmatch(request.host) else "localhost"
     return f"{proto}://{host}"
 
 

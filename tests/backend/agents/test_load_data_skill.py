@@ -90,7 +90,7 @@ def test_workspace_owns_discovery_and_loading_without_an_extra_skill_gate() -> N
     assert set(meta.tool_names) == {
         "create_file", "edit_file", "delete_items", "list_files", "read_file", "search", "move_file",
         "create_data", "update_data",
-        "probe_data",
+        "probe_data", "refresh_catalog",
     }
     assert registry.tools_for(["meta"]) == registry.tools_for(["meta", "workspace"])
     assert {

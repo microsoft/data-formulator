@@ -637,6 +637,9 @@ export interface DataSourceConfig {
     // Whether this table can be refreshed (backend has connection info)
     canRefresh?: boolean;
 
+    // Set when a refresh found the source table gone; the rows are the copy loaded before
+    missing?: { checkedAt: number; message: string };
+
     // Connector ID (for tables loaded via a DataConnector)
     connectorId?: string;
 

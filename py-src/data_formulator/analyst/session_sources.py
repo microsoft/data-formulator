@@ -258,6 +258,8 @@ class Sources:
                 pass
         if metadata.get("query_model") == "semantic":
             parts.append("semantic model")
+        if metadata.get("read_error"):
+            parts.append("last read failed")
         item: dict[str, Any] = {"path": table.path, "kind": "source table"}
         if table.name != table.segments[-1]:
             item["name"] = table.name
@@ -305,6 +307,10 @@ class Sources:
                 lines.append(f"{field}: {metadata[field]}")
         for line in self._in_session(table):
             lines.append(line)
+        read_error = metadata.get("read_error") or {}
+        if read_error:
+            lines.append(f"Last read failed ({read_error.get('at', 'unknown time')}): "
+                         f"{read_error.get('message') or 'unknown reason'}")
         description = metadata.get("description") or metadata.get("source_description") or ""
         if description:
             lines += ["", "Description: " + " ".join(str(description).split())]

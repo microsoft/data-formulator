@@ -55,13 +55,13 @@
         return String(error);
     }
 
-    // The app as a picture, for the agent to look at (the host's view request): the host sends the capture
-    // library's source, since the app frame loads nothing itself. It draws the page through an SVG image of
-    // itself, in place: a sandboxed frame cannot read a copy of itself in another frame.
+    // The app as a picture, for the agent to look at (the host's view request): the host builds the capture
+    // library into the document, since the app frame loads nothing itself and never runs code sent in a message.
+    // It draws the page through an SVG image of itself, in place: a sandboxed frame cannot read a copy of itself
+    // in another frame.
     function capture(request) {
         function reply(payload) { send('captured', Object.assign({ id: request.id }, payload)); }
         try {
-            if (!window.htmlToImage && typeof request.script === 'string') (0, eval)(request.script);
             if (!window.htmlToImage || typeof window.htmlToImage.toPng !== 'function') throw new Error('The capture library did not load.');
             var root = document.documentElement;
             var body = document.body || root;

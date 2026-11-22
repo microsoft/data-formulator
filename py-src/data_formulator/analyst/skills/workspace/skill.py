@@ -54,7 +54,7 @@ class WorkspaceSkill:
         args: dict[str, Any],
         ctx: SkillContext,
     ) -> ToolResult:
-        if name == "probe_data":
+        if name in ("probe_data", "refresh_catalog"):
             return self._data_loading.handle_tool(name, args, ctx)
         if name == "list_files":
             return ToolResult(text=json.dumps(SessionFiles(ctx).list(args.get("path") or ""), ensure_ascii=False))

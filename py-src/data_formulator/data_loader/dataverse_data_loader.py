@@ -104,8 +104,10 @@ _discovery_lock = threading.Lock()
 def discover_environment_auth(origin: str) -> EnvironmentAuth:
     """Read the environment's tenant and token audience from its ``WWW-Authenticate`` challenge.
 
-    The tenant matters for guest accounts: a token from the user's home tenant is rejected.
+    The tenant matters for guest accounts: a token from the user's home tenant is rejected. The request goes
+    only to a Dataverse host (``normalize_environment_url``), whatever the caller passed.
     """
+    origin = normalize_environment_url(origin)
     with _discovery_lock:
         if origin in _discovery_cache:
             return _discovery_cache[origin]

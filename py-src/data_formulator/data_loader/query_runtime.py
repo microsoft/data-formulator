@@ -2,16 +2,21 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from contextvars import ContextVar
+import importlib
+import importlib.util
 import logging
 from multiprocessing import get_context
 import os
 from pathlib import Path
+import sys
 from tempfile import TemporaryDirectory
 from threading import BoundedSemaphore, Event, RLock
 from time import monotonic
 from typing import Any
 
 import pyarrow as pa
+
+from data_formulator.data_loader.external_data_loader import SourceTableMissing
 
 
 logger = logging.getLogger(__name__)
@@ -33,9 +38,41 @@ def check_cancelled() -> None:
         raise QueryCancelled()
 
 
-def _execute_worker_query(loader_class, params, method, args, kwargs, output_path):
+def _loader_class_ref(loader_class: type) -> tuple[str, str, str | None]:
+    module = sys.modules.get(loader_class.__module__)
+    return loader_class.__module__, loader_class.__qualname__, getattr(module, "__file__", None)
+
+
+def _resolve_loader_class(module_name: str, qualname: str, module_file: str | None) -> type:
+    # Plugin loaders are imported from a file under a synthetic module name
+    # (df_plugin_<key>) that only exists in the server process; load the same
+    # file here so the spawned worker can run them.
+    module = sys.modules.get(module_name)
+    if module is None:
+        try:
+            module = importlib.import_module(module_name)
+        except ModuleNotFoundError as exc:
+            if exc.name != module_name or not module_file:
+                raise
+            spec = importlib.util.spec_from_file_location(module_name, module_file)
+            if spec is None or spec.loader is None:
+                raise
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            try:
+                spec.loader.exec_module(module)
+            except BaseException:
+                sys.modules.pop(module_name, None)
+                raise
+    resolved: Any = module
+    for part in qualname.split("."):
+        resolved = getattr(resolved, part)
+    return resolved
+
+
+def _execute_worker_query(loader_class_ref, params, method, args, kwargs, output_path):
     try:
-        loader = loader_class(params)
+        loader = _resolve_loader_class(*loader_class_ref)(params)
         result = getattr(loader, method)(*args, **kwargs)
         if isinstance(result, pa.Table):
             with pa.OSFile(output_path, "wb") as sink:
@@ -44,6 +81,8 @@ def _execute_worker_query(loader_class, params, method, args, kwargs, output_pat
             return "arrow", None
         else:
             return "result", result
+    except SourceTableMissing as exc:
+        return "missing", str(exc)
     except Exception as exc:
         return "error", str(exc)
 
@@ -51,7 +90,13 @@ def _execute_worker_query(loader_class, params, method, args, kwargs, output_pat
 def _query_worker(channel):
     try:
         while True:
-            request = channel.recv()
+            try:
+                request = channel.recv()
+            except (EOFError, BrokenPipeError):
+                raise
+            except Exception as exc:
+                channel.send(("error", f"Source query request could not be read: {exc}"))
+                continue
             response = _execute_worker_query(*request)
             del request
             channel.send(response)
@@ -104,7 +149,7 @@ class QueryWorker:
             try:
                 self._start()
                 deadline = monotonic() + _query_timeout
-                self._channel.send((type(loader), loader.params, method, args, kwargs, output_path))
+                self._channel.send((_loader_class_ref(type(loader)), loader.params, method, args, kwargs, output_path))
                 while not self._channel.poll(0.1):
                     check_cancelled()
                     if monotonic() >= deadline:
@@ -121,6 +166,8 @@ class QueryWorker:
                 raise
             if kind == "error":
                 raise RuntimeError(payload)
+            if kind == "missing":
+                raise SourceTableMissing(payload)
             if kind == "arrow":
                 with pa.OSFile(output_path, "rb") as source:
                     result = pa.ipc.open_file(source).read_all()

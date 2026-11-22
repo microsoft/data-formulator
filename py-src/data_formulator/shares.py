@@ -82,8 +82,13 @@ def _clip(value: Any, limit: int) -> str:
 
 
 def _paths(share_id: str) -> tuple[Path, Path]:
-    folder = shares_dir()
-    return folder / f"{share_id}.png", folder / f"{share_id}.json"
+    """A share's image and record, confined to the shares folder (an ID is never a path)."""
+    from data_formulator.security.path_safety import ConfinedDir
+
+    if not SHARE_ID.fullmatch(share_id):
+        raise ValueError("Not a share ID.")
+    folder = ConfinedDir(shares_dir(), mkdir=False)
+    return folder.resolve(f"{share_id}.png"), folder.resolve(f"{share_id}.json")
 
 
 def png_size(image: bytes) -> tuple[int, int]:

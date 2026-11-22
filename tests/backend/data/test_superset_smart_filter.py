@@ -343,6 +343,24 @@ class TestFetchDataAsArrow:
         with pytest.raises(ValueError, match="numeric dataset ID"):
             loader.fetch_data_as_arrow("not-a-number")
 
+    @pytest.mark.parametrize("detail_status,missing", [(404, True), (None, False)])
+    def test_not_found_is_missing_only_when_the_dataset_is_gone(self, loader, detail_status, missing):
+        import requests
+        from data_formulator.data_loader.external_data_loader import SourceTableMissing
+
+        def http_error(status):
+            response = requests.Response()
+            response.status_code = status
+            return requests.HTTPError(f"Superset returned {status}: Not found", response=response)
+
+        loader._client.post_chart_data.side_effect = http_error(404)
+        if detail_status:
+            loader._client.get_dataset_detail.side_effect = http_error(detail_status)
+        else:
+            loader._client.get_dataset_detail.return_value = {"id": 42}
+        with pytest.raises(SourceTableMissing if missing else requests.HTTPError):
+            loader.fetch_data_as_arrow("42")
+
 
 # ==================================================================
 # SupersetLoader __init__ — URL resolution & param validation

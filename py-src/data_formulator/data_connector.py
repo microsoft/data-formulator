@@ -106,6 +106,49 @@ def classify_and_raise_connector_error(error: Exception, *, operation: str = "")
     raise_connector_error(error, operation=operation)
 
 
+def _record_table_read(
+    source: "DataConnector",
+    identifier: str,
+    error: Exception | None = None,
+    *,
+    operation: str = "",
+    kept_copy: str = "",
+) -> None:
+    """Keep the catalog cache in step with a table read; on failure raise the classified error.
+
+    A table the source confirms is gone leaves the catalog; one it lists but cannot read is
+    flagged; a successful read clears that flag. ``kept_copy`` describes a loaded copy that the
+    failure leaves in place (refreshes).
+    """
+    from data_formulator.data_loader.connector_errors import classify_connector_error
+    from data_formulator.datalake.catalog_cache import note_table_outcome
+
+    info = classify_connector_error(error, operation=operation) if error is not None else None
+    changed = 0
+    if identifier and (info is None or info.table_state):
+        try:
+            from data_formulator.datalake.workspace import get_user_home
+            changed = note_table_outcome(
+                get_user_home(source._get_identity()), source._source_id, identifier,
+                table_state=info.table_state if info else "", reason=info.reason if info else "",
+            )
+        except Exception:
+            logger.debug("Could not record the read of %s in %s", identifier, source._source_id, exc_info=True)
+    if info is None:
+        return
+    logger.error("DataConnector error operation=%s", operation or "unknown", exc_info=error)
+    notes = []
+    if changed and info.table_state == "missing":
+        notes.append("It was removed from the catalog.")
+    if kept_copy and info.table_state == "missing":
+        notes.append(kept_copy)
+    if not notes:
+        raise info.to_app_error() from error
+    reason = " ".join([info.reason or info.message, *notes])
+    message = reason if info.message == info.reason else f"{info.message}: {reason}"
+    raise AppError(info.code, message, detail=info.detail or None, retry=info.retry, reason=reason) from error
+
+
 def _sanitize_error(error: Exception) -> tuple[str, int]:
     """Legacy wrapper — prefer ``classify_and_raise_connector_error``."""
     from data_formulator.errors import AppError
@@ -2443,6 +2486,7 @@ def connector_import_file():
 def connector_import_data():
     data = request.get_json() or {}
     source = _resolve_connector(data)
+    source_id = ""
 
     try:
         loader = source._require_loader()
@@ -2491,6 +2535,7 @@ def connector_import_data():
             import_options=import_options or None,
             source_metadata=_cached_source_metadata(source, source_id),
         )
+        _record_table_read(source, source_id)
         return json_ok({
             "table_name": meta.name,
             "row_count": meta.row_count,
@@ -2499,13 +2544,14 @@ def connector_import_data():
     except AppError:
         raise
     except Exception as e:
-        classify_and_raise_connector_error(e, operation="import")
+        _record_table_read(source, source_id, e, operation="import")
 
 
 @connectors_bp.route("/api/connectors/refresh-data", methods=["POST"])
 def connector_refresh_data():
     data = request.get_json() or {}
     source = _resolve_connector(data)
+    meta = None
 
     try:
         loader = source._require_loader()
@@ -2544,6 +2590,7 @@ def connector_refresh_data():
                 workspace.add_table_metadata(new_meta)
         except Exception:
             pass  # keep existing descriptions if refresh fails
+        _record_table_read(source, meta.source_table)
 
         return json_ok({
             "table_name": table_name,
@@ -2553,7 +2600,11 @@ def connector_refresh_data():
     except AppError:
         raise
     except Exception as e:
-        classify_and_raise_connector_error(e, operation="refresh")
+        synced = getattr(meta, "last_synced", None)
+        _record_table_read(
+            source, getattr(meta, "source_table", "") or "", e, operation="refresh",
+            kept_copy="The loaded copy is kept" + (f" as of {synced:%Y-%m-%d %H:%M} UTC." if synced else "."),
+        )
 
 
 @connectors_bp.route("/api/connectors/preview-data", methods=["POST"])
@@ -2561,6 +2612,7 @@ def connector_preview_data():
     request_id = getattr(g, "request_id", None) or str(uuid4())
     started_at = time.monotonic()
     logger.info("[ConnectorPreview] start request_id=%s", request_id)
+    source = None
     try:
         data = request.get_json() or {}
         source = _resolve_connector(data)
@@ -2629,7 +2681,10 @@ def connector_preview_data():
             "[ConnectorPreview] failure request_id=%s duration_s=%.3f error_type=%s",
             request_id, time.monotonic() - started_at, type(e).__name__,
         )
-        classify_and_raise_connector_error(e, operation="preview")
+        raw_source = (request.get_json(silent=True) or {}).get("source_table")
+        if source is None:
+            classify_and_raise_connector_error(e, operation="preview")
+        _record_table_read(source, _parse_source_table(raw_source)[0] if raw_source else "", e, operation="preview")
 
 
 @connectors_bp.route("/api/connectors/column-values", methods=["POST"])

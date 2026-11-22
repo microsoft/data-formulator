@@ -22,7 +22,6 @@ import {
     alpha,
 } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
@@ -886,34 +885,15 @@ export const DataLoaderForm: React.FC<{
     const askAgentButton = onAskAgent ? (
         <Button
             size="small"
-            variant="text"
+            variant="outlined"
             startIcon={<AgentToyIcon sx={{ fontSize: `${iconVar.md} !important` }} />}
-            endIcon={<ArrowForwardIcon sx={{ fontSize: `${iconVar.sm} !important` }} />}
             onClick={() => {
                 onAskAgent(t('db.askAgentPrompt', {
                     connector: loaderTypeKey,
                     defaultValue: 'I need help setting up a {{connector}} connection. Walk me through the available options, explain what each parameter expects, and help me troubleshoot if it fails.',
                 }));
             }}
-            sx={{
-                flexShrink: 0,
-                textTransform: 'none',
-                fontSize: bodyFontSize,
-                lineHeight: 1.5,
-                minWidth: 0,
-                minHeight: 0,
-                py: 0.375,
-                px: 1.25,
-                borderRadius: 999,
-                whiteSpace: 'nowrap',
-                fontWeight: weight(500),
-                color: 'primary.main',
-                bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
-                '&:hover': { bgcolor: (theme) => alpha(theme.palette.primary.main, 0.14) },
-                // MUI's default icon margins are sized for a 14px label.
-                '& .MuiButton-startIcon': { ml: 0, mr: 0.5 },
-                '& .MuiButton-endIcon': { ml: 0.5, mr: 0 },
-            }}
+            sx={{ ...actionButtonSx, flexShrink: 0, whiteSpace: 'nowrap' }}
         >
             {t('db.askAgent', { defaultValue: 'Ask agent to set this up' })}
         </Button>

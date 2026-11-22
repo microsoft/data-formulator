@@ -19,11 +19,12 @@ export const HtmlAppPreview: FC<{
     const theme = useAppTheme();
     const resolveSource = useAppSourceResolver();
     const buildDocument = useCallback((channel: string) => buildAppDocument(html, {
-        runtimeScripts: [vegaSource, vegaLiteSource, runtimeSource],
+        // A capture's library is part of the document: the frame never runs code sent to it in a message.
+        runtimeScripts: [vegaSource, vegaLiteSource, ...(capture ? [capture.script] : []), runtimeSource],
         theme,
         kitStylesheet,
         config: { channel, hostOrigin: window.location.origin, manifest, theme },
-    }), [html, manifest, theme]);
+    }), [html, manifest, theme, capture?.script]);
     return <AppSandbox title={title} manifest={manifest} buildDocument={buildDocument} reloadKey={reloadKey}
         reserveTopRight={reserveTopRight} onAskFix={onAskFix} autoFix={autoFix} onHealthy={onHealthy} fixPending={fixPending} resolveSource={resolveSource} capture={capture} linkSource={html} />;
 };

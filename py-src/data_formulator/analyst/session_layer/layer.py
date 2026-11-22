@@ -921,6 +921,8 @@ class SessionLayer:
                 flags.append("derived" + (f" from {', '.join(sources)}" if sources else ""))
             else:
                 flags.append("loaded")
+                if (table.get("sourceConfig") or {}).get("missing"):
+                    flags.append("its source table no longer exists; this is the copy loaded before")
             count = self.row_count(table)
             columns = [column["name"] for column in self.table_columns(table)]
             shown = ", ".join(columns[:12]) + (f", +{len(columns) - 12} more" if len(columns) > 12 else "")

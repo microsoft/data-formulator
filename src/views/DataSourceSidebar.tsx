@@ -70,7 +70,7 @@ import { WorkflowPanel } from './WorkflowPanel';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef, translateBackend, fetchConnectorCatalog } from '../app/utils';
-import { apiRequest } from '../app/apiClient';
+import { apiRequest, ApiRequestError } from '../app/apiClient';
 import { LoadableState, errorLoadable, loadingLoadable, successLoadable } from '../app/loadableState';
 import { getConnectorIcon, connectorSortOrder, RelationalDBIcon, WormholeReceiveIcon, WormholeSendIcon } from '../icons';
 import { loadTable } from '../app/tableThunks';
@@ -1113,6 +1113,7 @@ const DataSourceSidebarPanel: React.FC<{
         let ok = 0;
         let truncated = 0;
         const failed: string[] = [];
+        let anyMissing = false;
         try {
             for (const [index, node] of tables.entries()) {
                 dispatch(dfActions.startTableLoad({ id: loadId, names: [],
@@ -1121,13 +1122,16 @@ const DataSourceSidebarPanel: React.FC<{
                     const result = await loadTableNode(connectorId, node);
                     ok++;
                     if (result?.truncated) truncated++;
-                } catch {
-                    failed.push(node.name);
+                } catch (e: any) {
+                    anyMissing ||= e?.code === 'TABLE_NOT_FOUND';
+                    failed.push(e?.message ? `${node.name} (${e.message})` : node.name);
                 }
             }
         } finally {
             dispatch(dfActions.finishTableLoad(loadId));
         }
+        // The backend dropped tables the source reports as gone; show the catalog without them.
+        if (anyMissing) fetchCatalogTree(connectorId);
 
         if (ok > 0) {
             dispatch(dfActions.addMessages({
@@ -1148,12 +1152,12 @@ const DataSourceSidebarPanel: React.FC<{
                 component: 'data source sidebar',
                 value: t('sidebar.failedLoadTablesBatch', {
                     count: failed.length,
-                    names: failed.slice(0, 5).join(', '),
-                    defaultValue: `Failed to load ${failed.length} table(s): ${failed.slice(0, 5).join(', ')}`,
+                    names: failed.slice(0, 5).join('; '),
+                    defaultValue: `Failed to load ${failed.length} table(s): ${failed.slice(0, 5).join('; ')}`,
                 }),
             }));
         }
-    }, [activeWorkspace, createNewSession, loadTableNode, dispatch, clearSelection, importing, isPinned, t]);
+    }, [activeWorkspace, createNewSession, loadTableNode, dispatch, clearSelection, importing, isPinned, t, fetchCatalogTree]);
 
     // ── Refresh table data ───────────────────────────────────────────────────
 
@@ -1181,6 +1185,7 @@ const DataSourceSidebarPanel: React.FC<{
             }),
         })
             .then(() => {
+                dispatch(dfActions.setTableSourceMissing({ tableId: loaded.id, missing: null }));
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(),
                     type: 'success',
@@ -1188,13 +1193,18 @@ const DataSourceSidebarPanel: React.FC<{
                     value: t('sidebar.refreshedTable', { name: ref.name }),
                 }));
             })
-            .catch(() => {
+            .catch((error: unknown) => {
+                const message = error instanceof Error && error.message ? error.message : 'Failed to refresh table data';
+                if (error instanceof ApiRequestError && error.apiError.code === 'TABLE_NOT_FOUND') {
+                    dispatch(dfActions.setTableSourceMissing({ tableId: loaded.id, missing: { checkedAt: Date.now(), message } }));
+                    fetchCatalogTree(connectorId);
+                }
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(), type: 'error',
-                    component: 'data source sidebar', value: 'Failed to refresh table data',
+                    component: 'data source sidebar', value: message,
                 }));
             });
-    }, [tableIdentities, dispatch, buildSourceTableRef]);
+    }, [tableIdentities, dispatch, buildSourceTableRef, fetchCatalogTree, t]);
 
     const clearConnectorUiState = useCallback((connectorId: string) => {
         setCatalogByConnector(prev => { const next = { ...prev }; delete next[connectorId]; return next; });

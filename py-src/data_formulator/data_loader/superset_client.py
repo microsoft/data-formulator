@@ -174,7 +174,7 @@ class SupersetClient:
             except Exception:
                 detail = resp.text
             raise requests.HTTPError(
-                f"{resp.status_code} Server Error for url: {resp.url} detail={detail}",
+                f"Superset returned {resp.status_code}: {detail}",
                 response=resp,
             )
         return resp.json()

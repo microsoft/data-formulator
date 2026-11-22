@@ -108,6 +108,10 @@ class AppError(Exception):
     retry:
         Hint for the frontend: ``True`` means the operation may succeed
         if retried (e.g. rate-limit, transient timeout).
+    reason:
+        Optional explanation in the external system's own words (already
+        sanitized), e.g. why a data source rejected a query.  Always sent so
+        the frontend can append it to a translated *message*.
     """
 
     def __init__(
@@ -118,6 +122,7 @@ class AppError(Exception):
         status_code: int = 200,
         detail: str | None = None,
         retry: bool = False,
+        reason: str | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -125,6 +130,7 @@ class AppError(Exception):
         self.status_code = status_code
         self.detail = detail
         self.retry = retry
+        self.reason = reason
 
     def get_http_status(self) -> int:
         """Return the HTTP status code for this error.
@@ -143,6 +149,8 @@ class AppError(Exception):
             "message": self.message,
             "retry": self.retry,
         }
+        if self.reason:
+            d["reason"] = self.reason
         if include_detail and self.detail is not None:
             d["detail"] = self.detail
         return d
