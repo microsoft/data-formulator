@@ -91,3 +91,24 @@ it('drops a completed plan from the thread but keeps one with steps left open', 
     expect(screen.getByRole('button', { name: /Plan 1\/2: Hourly temperature/ })).toBeInTheDocument();
     view.unmount();
 });
+
+it('shows a repair the app asked for on its own as one quiet row, not as messages', () => {
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'ask', displayId: 'ask', textKind: 'explain', content: '',
+        prompt: 'Make an app of the projects', createdAt: 1 } as TextTurn));
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'made', displayId: 'made', textKind: 'explain', content: 'Made the app',
+        parentNodeId: 'ask', createdAt: 2 } as TextTurn));
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'repair', displayId: 'repair', textKind: 'explain', content: '',
+        prompt: 'TypeError: sortBy is not a function', auto: 'app-repair', parentNodeId: 'made', createdAt: 3 } as TextTurn));
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'fixed', displayId: 'fixed', textKind: 'explain',
+        content: 'Fixed in place: the sort columns now use descending order.', parentNodeId: 'repair', createdAt: 4 } as TextTurn));
+    const { unmount } = renderThread();
+    expect(screen.getByText('Made the app')).toBeInTheDocument();
+    const row = screen.getByRole('button', { name: 'Fixed an error in the app' });
+    // The error and the agent's note are in the row, not messages of their own.
+    expect(screen.queryByText(/Fixed in place/)).toBeNull();
+    expect(screen.queryByText(/sortBy is not a function/)).toBeNull();
+    fireEvent.click(row);
+    expect(screen.getByText('TypeError: sortBy is not a function')).toBeInTheDocument();
+    expect(screen.getByText(/Fixed in place/)).toBeInTheDocument();
+    unmount();
+});

@@ -5,6 +5,7 @@ import hashlib
 import threading
 from contextvars import copy_context
 from pathlib import Path
+from urllib.parse import urlsplit
 from queue import Empty, Full, Queue
 from uuid import UUID, uuid4
 
@@ -17,7 +18,7 @@ from data_formulator.datalake.workspace import get_user_home
 from data_formulator.error_handler import json_ok, stream_error_event, classify_and_wrap_llm_error
 from data_formulator.errors import AppError, ErrorCode
 from data_formulator.workspace_factory import get_workspace, get_active_workspace_id
-from data_formulator.workflows.instances import WorkflowStore, parse_definition
+from data_formulator.workflows.instances import WorkflowStore, parse_definition, set_schedule
 from data_formulator.workflows.agent import WorkflowAgent, new_run, public_run
 
 workflow_bp = Blueprint("workflows", __name__, url_prefix="/api/workflows")
@@ -125,7 +126,7 @@ def steer_run():
 
 @workflow_bp.route("/list", methods=["POST"])
 def list_instances():
-    _, store, workspace = context(False)
+    identity, store, workspace = context(False)
     runs = []
     try:
         directory = workspace.confined_internal.resolve("workflow_runs") if workspace else None
@@ -143,7 +144,27 @@ def list_instances():
             except (ValueError, KeyError):
                 continue
     items = store.list_all(str((request.get_json(silent=True) or {}).get("language") or "en"))
-    return json_ok({"items": items, "runs": runs})
+    return json_ok({"items": items, "runs": runs, **workflow_schedules(identity, items)})
+
+
+def workflow_schedules(identity: str, items: list[dict]) -> dict:
+    """Each workflow's schedule state, after syncing the scheduler's index with the files (they may have been edited
+    outside the app): ``{"scheduling": bool, "schedules": {path: {id, scheduled, enabled, next_at, history}}}``."""
+    from data_formulator.spaces import current_space
+    from data_formulator.workflows import scheduler
+
+    if not scheduler.scheduling_available():
+        return {"scheduling": False, "schedules": {}}
+    store = scheduler.schedule_store()
+    store.rebuild(identity, current_space(), {item["path"]: item.get("schedule") for item in items
+                                              if item.get("origin") == "user" and "error" not in item})
+    rows = [{**row, "history": store.history(row["id"])} for row in store.list(identity, current_space())]
+    scheduler.reconcile_runs(store, rows)
+    return {"scheduling": True, "schedules": {row["workflow"]: {
+        "id": row["id"], "scheduled": row["scheduled"], "enabled": row["enabled"],
+        "next_at": row["next_at"] if row["enabled"] else None,
+        "history": [run for run in row["history"] if run["status"] != "skipped"],
+    } for row in rows}}
 
 
 def read_definition(store, path):
@@ -161,36 +182,81 @@ def read_instance():
         raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
 
 
+def _schedule_in(content: str | None) -> dict | None:
+    from data_formulator.workflows.instances import load_workflow_yaml
+    try:
+        definition = load_workflow_yaml(content) if content is not None else None
+    except ValueError:
+        return None
+    return definition.get("schedule") if isinstance(definition, dict) else None
+
+
+def check_schedule_write(schedule: dict):
+    """Adding or changing a schedule sets up unattended runs (``auto_approve`` approves terminal commands), so it is
+    accepted only from the application itself, for a model this server has."""
+    from data_formulator.model_registry import model_registry
+
+    origin = request.headers.get("Origin")
+    if request.headers.get("Sec-Fetch-Site") == "cross-site" or (
+        origin and urlsplit(origin).hostname not in {"localhost", "127.0.0.1", "::1"}
+    ):
+        raise AppError(ErrorCode.ACCESS_DENIED, "Schedules must be managed from the application.")
+    if schedule.get("enabled", True) and model_registry.get_config(schedule["model_id"]) is None:
+        raise ValueError("Choose a server-configured model connection for the schedule.")
+
+
 @workflow_bp.route("/save", methods=["POST"])
 def save_instance():
-    _, store, workspace = context(False)
+    """Save a workflow file. ``schedule`` (a block, or null), when given, replaces the file's ``schedule:`` block."""
+    from data_formulator.spaces import current_space
+    from data_formulator.workflows import scheduler
+
+    identity, store, workspace = context(False)
     body = request.get_json() or {}
     content_hash = None
     try:
         if not isinstance(body.get("content"), str):
             raise ValueError("Workflow content must be YAML text.")
-        parse_definition(body["content"])
+        content = body["content"]
+        if "schedule" in body:
+            if body["schedule"] is not None and not isinstance(body["schedule"], dict):
+                raise ValueError("Schedule must be an object or null.")
+            content = set_schedule(content, body["schedule"])
+        schedule = parse_definition(content).get("schedule")
         path = body.get("path")
         store.validate_name(path)
         with FileLock(str(store.files.resolve(".library.lock"))):
-            existing_hash = hashlib.sha256(store.read(path).encode("utf-8")).hexdigest() if store.files.exists(path) else None
+            existing = store.read(path) if store.files.exists(path) else None
+            existing_hash = hashlib.sha256(existing.encode("utf-8")).hexdigest() if existing is not None else None
             if existing_hash != body.get("content_hash"):
                 raise ValueError("Workflow changed or already exists; read it again before saving.")
-            store.save(path, body["content"])
-        content_hash = hashlib.sha256(body["content"].encode("utf-8")).hexdigest()
+            scheduling = scheduler.scheduling_available()
+            if scheduling and schedule is not None and schedule != _schedule_in(existing):
+                check_schedule_write(schedule)
+            store.save(path, content)
+            if scheduling:
+                scheduler.schedule_store().sync(identity, current_space(), path, schedule)
+        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
     except ValueError as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
-    return json_ok({"path": body["path"], "content_hash": content_hash})
+    return json_ok({"path": body["path"], "content_hash": content_hash, "content": content})
 
 
 @workflow_bp.route("/delete", methods=["POST"])
 def delete_instance():
-    _, store, _ = context(False)
-    path = (request.get_json() or {}).get("path")
+    """Delete a workflow file and its schedule. Its scheduled runs' sessions are kept, and the session lists show them."""
+    from data_formulator.spaces import current_space
+    from data_formulator.workflows import scheduler
+
+    identity, store, _ = context(False)
+    body = request.get_json() or {}
+    path = body.get("path")
     try:
         store.delete(path)
     except (ValueError, OSError) as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
+    if scheduler.scheduling_available():
+        scheduler.schedule_store().remove(identity, current_space(), path)
     return json_ok({"path": path})
 
 

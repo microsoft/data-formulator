@@ -60,7 +60,6 @@ import {
 
 import MuiAppBar from '@mui/material/AppBar';
 import { styled, ThemeProvider, useTheme } from '@mui/material/styles';
-import LogoutIcon from '@mui/icons-material/Logout';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ClearIcon from '@mui/icons-material/Clear';
 
@@ -101,16 +100,14 @@ import { AnvilLoader } from '../components/AnvilLoader';
 import { ModelSelectionButton } from '../views/ModelSelectionDialog';
 import { LogViewerDialog } from '../views/LogViewerDialog';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import { WormholeIcon, WormholeReceiveIcon, WormholeSendIcon } from '../icons';
-import { requestWormholeDialog } from './wormholeService';
-import { AllSessions } from '../views/AllSessions';
+import { SessionMenu, SessionShareButton, useSessionShareItems } from '../views/SessionMenu';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
 import SaveIcon from '@mui/icons-material/Save';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import { getUrls } from './utils';
 import { APP_PATH, SPACE_ID, spacePath } from './space';
-import { AppSwitcher, destinationItems, useAppDestinations, type AppDestination } from './AppSwitcher';
+import { AppSwitcher, PathSlash, destinationItems, useAppDestinations, type AppDestination } from './AppSwitcher';
 import { apiRequest } from './apiClient';
 import { leaveSession } from './sessionThunks';
 import store, { persistor } from './store';
@@ -290,34 +287,37 @@ const useIsNarrow = (ref: React.RefObject<HTMLElement | null>, threshold: number
 };
 
 /**
- * Whether the session name fits centred in the toolbar: clear of the brand and page links on its left
- * and the actions on its right (a long app name, as a space's, can reach the middle). Uses the name's
- * content width, so laying it out between them instead does not change the answer.
+ * Whether the header's path fits with "Data Formulator" spelled out (in a space). It adds back what the path leaves
+ * out or cuts short (the words while they are hidden, and each name's hidden ellipsis up to its maximum width), so
+ * hiding the words to make room does not bring them straight back.
  */
-const useCentreFits = (toolbar: React.RefObject<HTMLElement | null>, left: React.RefObject<HTMLElement | null>,
-    centre: React.RefObject<HTMLElement | null>, right: React.RefObject<HTMLElement | null>, active: boolean) => {
-    const [fits, setFits] = useState(true);
+const usePathSpelledOut = (toolbar: React.RefObject<HTMLElement | null>, path: React.RefObject<HTMLElement | null>,
+    actions: React.RefObject<HTMLElement | null>, active: boolean) => {
+    const [spellOut, setSpellOut] = useState(true);
+    const productWidth = useRef(0);
     useEffect(() => {
-        if (!active || typeof ResizeObserver === 'undefined') return;
+        if (!active || typeof ResizeObserver === 'undefined') { setSpellOut(true); return; }
         const GAP = 16;
         const update = () => {
             const bar = toolbar.current?.getBoundingClientRect();
-            const name = centre.current;
-            if (!bar || !name) return;
-            const half = name.scrollWidth / 2;
-            const middle = bar.left + bar.width / 2;
-            const leftEdge = left.current?.getBoundingClientRect().right ?? bar.left;
-            const rightEdge = right.current?.getBoundingClientRect().left ?? bar.right;
-            setFits(leftEdge + GAP <= middle - half && middle + half + GAP <= rightEdge);
+            const element = path.current;
+            if (!bar || !element) return;
+            const product = element.querySelector<HTMLElement>('[data-path-product]');
+            if (product) productWidth.current = product.offsetWidth;
+            const cut = [...element.querySelectorAll<HTMLElement>('h1, p')].reduce((sum, text) => {
+                const max = parseFloat(getComputedStyle(text).maxWidth);
+                return sum + Math.max(0, Math.min(text.scrollWidth, Number.isFinite(max) ? max : text.scrollWidth) - text.clientWidth);
+            }, 0);
+            const needed = element.getBoundingClientRect().width + cut + (product ? 0 : productWidth.current);
+            const right = actions.current?.getBoundingClientRect().left ?? bar.right;
+            setSpellOut(element.getBoundingClientRect().left + needed + GAP <= right);
         };
         update();
-        const ro = new ResizeObserver(update);
-        for (const element of [toolbar.current, left.current, centre.current, right.current]) {
-            if (element) ro.observe(element);
-        }
-        return () => ro.disconnect();
-    }, [toolbar, left, centre, right, active]);
-    return fits;
+        const observer = new ResizeObserver(update);
+        for (const element of [toolbar.current, path.current, actions.current]) if (element) observer.observe(element);
+        return () => observer.disconnect();
+    }, [toolbar, path, actions, active]);
+    return spellOut;
 };
 
 const menuItemSx = { fontSize: textVar.md, minHeight: 34, py: 0.5 };
@@ -513,101 +513,6 @@ const TableMenu: React.FC = () => {
 };
 
 
-// The wormhole button: quiet until hovered, when its icon takes Portal's two colours (see WormholeIcon).
-const wormholeButtonSx = {
-    flexShrink: 0,
-    color: 'text.disabled',
-    '&:hover': { color: 'text.secondary' },
-} as const;
-
-/** Wormhole: one button next to the session's name, with a menu to share the open session or receive one. */
-const WormholeMenuButton: React.FC = () => {
-    const available = useSelector((state: DataFormulatorState) => state.serverConfig?.SESSION_WORMHOLE_AVAILABLE);
-    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
-    const { t } = useTranslation();
-    const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-    if (!available) return null;
-    const canSend = !!activeWorkspace && !activeWorkspace.readOnly && !activeWorkspace.provisional;
-    const label = t('wormhole.menuTooltip');
-    const choose = (run: () => void) => () => { setAnchor(null); run(); };
-    return <>
-        <Tooltip title={label} placement="bottom">
-            <IconButton size="small" aria-label={label} aria-haspopup="menu" aria-expanded={!!anchor} sx={wormholeButtonSx}
-                onClick={event => setAnchor(event.currentTarget)}>
-                <WormholeIcon sx={{ fontSize: iconVar.lg }} />
-            </IconButton>
-        </Tooltip>
-        <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}
-            anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }} transformOrigin={{ vertical: 'top', horizontal: 'center' }}
-            slotProps={{ paper: { sx: { minWidth: 200 } } }}>
-            {canSend && <MenuItem sx={menuItemSx} onClick={choose(() => requestWormholeDialog({ kind: 'send',
-                workspaceId: activeWorkspace.id, displayName: activeWorkspace.displayName || activeWorkspace.id }))}>
-                <ListItemIcon><WormholeSendIcon fontSize="small" /></ListItemIcon>
-                <ListItemText primaryTypographyProps={{ fontSize: textVar.md }}>{t('wormhole.sendSession')}</ListItemText>
-            </MenuItem>}
-            <MenuItem sx={menuItemSx} onClick={choose(() => requestWormholeDialog({ kind: 'receive' }))}>
-                <ListItemIcon><WormholeReceiveIcon fontSize="small" /></ListItemIcon>
-                <ListItemText primaryTypographyProps={{ fontSize: textVar.md }}>{t('wormhole.receiveTooltip')}</ListItemText>
-            </MenuItem>
-        </Menu>
-    </>;
-};
-
-const WorkspaceMenu: React.FC = () => {
-    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
-    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
-    const { t } = useTranslation();
-    const diskPersistenceDisabled = false; // all backends support workspace switching
-
-    console.log('Rendering WorkspaceMenu, activeWorkspace:', activeWorkspace, 'serverConfig:', serverConfig); // Debug log for rendering and state
-    console.log(serverConfig); // Debug log for serverConfig
-    console.log(activeWorkspace); // Debug log for activeWorkspace
-
-    if (!activeWorkspace) return null;
-
-    return (
-        <>
-            <AllSessions trigger={openSessions => <Tooltip title={t('workspace.sessionTooltip', { name: activeWorkspace?.id || '' })} placement="bottom">
-                <ButtonBase
-                    disableRipple
-                    onClick={() => !diskPersistenceDisabled && openSessions()}
-                    sx={{ 
-                        display: 'flex', alignItems: 'center', gap: 0.5, textAlign: 'left',
-                        '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' },
-                        // Shrinks with a narrow toolbar so long session names truncate instead of overlapping.
-                        minWidth: 0, maxWidth: '100%',
-                        cursor: 'pointer',
-                        px: 1,
-                        py: 0.25,
-                        borderRadius: 1,
-                        '&:hover': { backgroundColor: ink(0.04) },
-                        '&:hover .ws-chevron': { opacity: 1 },
-                    }}
-                >
-                    <Typography noWrap sx={{ 
-                        fontSize: textVar.lg, 
-                        fontWeight: weight(500), 
-                        color: 'text.primary',
-                        minWidth: 0,
-                        maxWidth: 280,
-                        letterSpacing: '0.01em',
-                    }}>
-                        {activeWorkspace?.displayName || activeWorkspace?.id}
-                    </Typography>
-                    <KeyboardArrowDownIcon className="ws-chevron" sx={{ fontSize: iconVar.md, color: 'text.secondary', opacity: 0.4, transition: 'opacity 0.15s' }} />
-                </ButtonBase>
-            </Tooltip>} />
-            <WormholeMenuButton />
-        </>
-    );
-};
-
-// Exit the current session and return to the front-page (no workspace).
-const useExitSession = () => {
-    const dispatch = useDispatch<AppDispatch>();
-    return useCallback(() => dispatch(leaveSession()), [dispatch]);
-};
-
 /** `/`: the standard app, or the server's default space (`DF_SPACE`), which loads as its own page. */
 const HomePage: React.FC = () => {
     const defaultSpace = useSelector((state: DataFormulatorState) => state.serverConfig.DEFAULT_SPACE);
@@ -634,34 +539,6 @@ const useGoHome = (onAppPage: boolean) => {
     }, [dispatch, navigate, onAppPage]);
 };
 
-const ExitSessionButton: React.FC = () => {
-    const { t } = useTranslation();
-    const handleExit = useExitSession();
-
-    return (
-        <Tooltip title={t('workspace.exitSessionTooltip', { defaultValue: 'Exit session and return to the workspace picker' })} placement="bottom">
-            <Button
-                size="small"
-                variant="text"
-                onClick={handleExit}
-                startIcon={<LogoutIcon sx={{ fontSize: iconVar.md }} />}
-                sx={{
-                    textTransform: 'none',
-                    fontSize: textVar.md,
-                    fontWeight: weight(400),
-                    px: 1.5,
-                    py: 0.5,
-                    minWidth: 'auto',
-                    lineHeight: 1.5,
-                    color: 'text.secondary',
-                    '&:hover': { color: 'text.primary', backgroundColor: ink(0.04) },
-                }}
-            >
-                {t('workspace.exit', { defaultValue: 'Exit' })}
-            </Button>
-        </Tooltip>
-    );
-};
 
 /**
  * Settings dialog. Renders its own icon-button trigger by default; the
@@ -1148,16 +1025,15 @@ const AppShell: FC = () => {
     // nav buttons, session name and trailing actions overlap.
     const toolbarRef = useRef<HTMLDivElement | null>(null);
     const isCompactToolbar = useIsNarrow(toolbarRef, COMPACT_TOOLBAR_WIDTH);
-    const brandRef = useRef<HTMLDivElement | null>(null);
-    const sessionNameRef = useRef<HTMLDivElement | null>(null);
-    const actionsRef = useRef<HTMLDivElement | null>(null);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [logsOpen, setLogsOpen] = useState(false);
-    const exitSession = useExitSession();
     const goHome = useGoHome(isAppPage);
     const destinations = useAppDestinations();
+    const shareItems = useSessionShareItems();
+    const pathRef = useRef<HTMLDivElement | null>(null);
+    const actionsRef = useRef<HTMLDivElement | null>(null);
+    const spellOut = usePathSpelledOut(toolbarRef, pathRef, actionsRef, !!SPACE_ID && !isCompactToolbar);
     const inSession = isAppPage && inWorkspaceSession;
-    const sessionNameCentred = useCentreFits(toolbarRef, brandRef, sessionNameRef, actionsRef, inSession && !isCompactToolbar);
     const shellScrollRef = useRef<HTMLDivElement | null>(null);
     const { moreAbove, moreBelow, moreLeft, moreRight, update: updateShellFade } = useScrollFade(shellScrollRef, location.pathname);
     const shellFade = { top: moreAbove, bottom: moreBelow, left: moreLeft, right: moreRight };
@@ -1198,12 +1074,12 @@ const AppShell: FC = () => {
                         // A click that moves a pixel would otherwise drag the link or logo, or select the name, and not click.
                         userSelect: 'none',
                     }} onDragStart={(event) => event.preventDefault()}>
+                        {/* The path's first part. In a space it is Data Formulator, the standard app (its own page); in the
+                            standard app, its front page. */}
                         <Box
-                            component={RouterLink}
-                            to={APP_PATH}
-                            onClick={goHome}
-                            aria-label={t('appBar.home', { defaultValue: 'Home' })}
-                            title={t('appBar.home', { defaultValue: 'Home' })}
+                            {...(SPACE_ID ? { component: 'a', href: '/app' } : { component: RouterLink, to: APP_PATH, onClick: goHome })}
+                            aria-label={SPACE_ID ? 'Data Formulator' : t('appBar.home', { defaultValue: 'Home' })}
+                            title={SPACE_ID ? 'Data Formulator' : t('appBar.home', { defaultValue: 'Home' })}
                             sx={{ width: 40, minWidth: 40, height: 36, display: 'flex', justifyContent: 'center', alignItems: 'center' }}
                         >
                             <Box component="img" sx={{ height: 20, display: 'block', transform: 'translateY(-2px)' }} alt="" src={dfLogo} />
@@ -1213,7 +1089,7 @@ const AppShell: FC = () => {
                                 <PageNavMenu isAdministrationPage={isAdministrationPage} appName={appName}
                                     destinations={destinations} onGoHome={goHome} />
                             ) : destinations.length > 0 ? (
-                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} compact />
+                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} compact last={!inSession} logo={serverConfig.SPACE?.logo} />
                             ) : (
                                 <Button component={RouterLink} to={APP_PATH} onClick={goHome} color="inherit"
                                     sx={{ textTransform: 'none', minWidth: 0, px: 0.75, '&:hover': { backgroundColor: ink(0.04) } }}>
@@ -1225,10 +1101,10 @@ const AppShell: FC = () => {
                             )
                         ) : (
                         // Brand and page links share a text baseline, whatever the font's metrics.
-                        <Box ref={brandRef} sx={{ display: 'flex', alignItems: 'baseline', minWidth: 0 }}>
+                        <Box ref={pathRef} sx={{ display: 'flex', alignItems: 'baseline', minWidth: 0 }}>
                         {destinations.length > 0 ? (
                             <Box sx={{ display: { xs: 'none', sm: 'block' }, minWidth: 0 }}>
-                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} />
+                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} last={!inSession} logo={serverConfig.SPACE?.logo} spellOut={spellOut} />
                             </Box>
                         ) : (
                         <Button component={RouterLink} to={APP_PATH} onClick={goHome} sx={{
@@ -1249,6 +1125,12 @@ const AppShell: FC = () => {
                             </Box>
                         </Button>
                         )}
+                        {/* The open session ends the path: "Data Formulator / <space> / <session>"; its ⌄ switches
+                            sessions (the only ⌄ in the path is its last part's). */}
+                        {inSession && <Box sx={{ display: 'flex', alignItems: 'center', alignSelf: 'center', minWidth: 0 }}>
+                            <PathSlash />
+                            <SessionMenu />
+                        </Box>}
                         {canAdminister && (
                             <Box
                                 sx={{
@@ -1264,19 +1146,12 @@ const AppShell: FC = () => {
                         )}
                         </Box>
                         )}
-                        {/* Workspace name — session indicator/switcher. Centered
-                            absolutely when there is room, otherwise it flows
-                            between the nav menu and the trailing actions. */}
-                        {inSession && (
-                            isCompactToolbar || !sessionNameCentred ? (
-                                <Box sx={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', mx: 1 }}>
-                                    <Box ref={sessionNameRef} sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}><WorkspaceMenu /></Box>
-                                </Box>
-                            ) : (
-                                <Box ref={sessionNameRef} sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center' }}>
-                                    <WorkspaceMenu />
-                                </Box>
-                            )
+                        {/* A narrow toolbar keeps only the current level's name before it; the session follows. */}
+                        {inSession && isCompactToolbar && (
+                            <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center' }}>
+                                <PathSlash compact />
+                                <SessionMenu />
+                            </Box>
                         )}
                         {isAppPage && isCompactToolbar && (
                             <Box sx={{ display: 'flex', ml: 'auto', alignItems: 'center', gap: 0.5 }}>
@@ -1305,12 +1180,7 @@ const AppShell: FC = () => {
                                             icon: <GitHubIcon fontSize="small" />,
                                             href: EXTERNAL_LINKS.github,
                                         },
-                                        ...(inSession ? [{
-                                            key: 'exit',
-                                            label: t('workspace.exit', { defaultValue: 'Exit' }),
-                                            icon: <LogoutIcon fontSize="small" />,
-                                            onClick: () => { exitSession(); },
-                                        }] : []),
+                                        ...(inSession ? shareItems : []),
                                     ]}
                                 />
                             </Box>
@@ -1340,13 +1210,8 @@ const AppShell: FC = () => {
                                             <GitHubIcon fontSize="small" />
                                         </IconButton>
                                     </Tooltip>
+                                    {inSession && <SessionShareButton />}
                                 </Box>
-                                {inSession && (
-                                    <>
-                                        <Divider orientation="vertical" variant="middle" flexItem sx={{ my: 1 }} />
-                                        <ExitSessionButton />
-                                    </>
-                                )}
                             </Box>
                         )}
                         <AuthButton />

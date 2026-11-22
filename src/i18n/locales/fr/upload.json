@@ -1,5 +1,35 @@
 {
   "upload": {
+    "livePick": {
+      "umbrella": "Ai-je besoin d’un parapluie cette semaine ?",
+      "umbrellaBusy": "Je scrute le ciel…",
+      "umbrellaHint": "Les prévisions de la semaine pour les villes proches, chargées en direct et sur une carte",
+      "warmer": "Fait-il plus chaud que d’habitude cette semaine ?",
+      "warmerBusy": "Je fouille la météo d’antan…",
+      "warmerHint": "Les prévisions de la semaine à côté de la même semaine des dix dernières années, pour les villes proches",
+      "daylightShorter": "À quelle vitesse les jours raccourcissent-ils ?",
+      "daylightLonger": "À quelle vitesse les jours rallongent-ils ?",
+      "daylightBusy": "J’observe le soleil…",
+      "daylightHint": "Les heures de jour des quatre prochains mois, du nord au sud",
+      "wiki": "Que lit le monde aujourd’hui ?",
+      "wikiBusy": "Je lis par-dessus l’épaule du monde…",
+      "wikiHint": "Les articles Wikipédia les plus lus hier et leur évolution cette semaine",
+      "countries": "Que lit chaque pays aujourd’hui ?",
+      "countriesBusy": "Je jette un œil aux lectures du monde…",
+      "countriesHint": "Les articles Wikipédia les plus lus hier à travers le monde, sur une carte",
+      "failed": "Ça n’a pas abouti. Réessaie dans un instant.",
+      "failedDetail": "Impossible de charger les données en direct pour « {{question}} » : {{reason}}",
+      "moon": "Quand est la prochaine pleine lune ?",
+      "moonBusy": "Je regarde la lune…",
+      "moonHint": "Les phases de la lune sur les deux prochains mois"
+    },
+    "sessionStart": {
+      "list": "Montre-moi ce que contiennent mes sources connectées",
+      "scheduledWorkflow": "Je veux créer un workflow récurrent qui produit des rapports",
+      "workflow": "Je veux créer un workflow réutilisable qui produit des rapports",
+      "connect": "Guide-moi pour connecter une nouvelle source de données",
+      "discover": "Aide-moi à configurer des outils pour découvrir des données en ligne"
+    },
     "title": "Charger des données",
     "sampleDatasets": "Jeux de données d'exemple",
     "sampleDatasetsDesc": "Jeux de données d'exemple sélectionnés",

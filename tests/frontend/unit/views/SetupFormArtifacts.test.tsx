@@ -98,72 +98,17 @@ it('does not apply a restored session panel without the live request', async () 
     expect(openSession).not.toHaveBeenCalled();
 });
 
-const mockScheduleApi = (saved = { id: 'sched-1', next_at: '2026-10-01T16:00:00+00:00' }) => {
-    vi.mocked(apiRequest).mockImplementation(async (url: string, options?: RequestInit) => {
-        if (url === '/api/workflows/list') return { data: { items: [{ path: 'demo/gas.yaml', name: 'Fuel Price Trends', origin: 'demo', parameters: [] }], runs: [] } } as any;
-        if (url === '/api/schedules' && options?.method === 'POST') return { data: { schedule: { ...saved, config: JSON.parse(String(options.body)).config } } } as any;
-        if (url === '/api/schedules') return { data: { available: true, schedules: [] } } as any;
-        throw new Error(`Unexpected request ${url}`);
-    });
-};
-
-it('auto-saves a complete directly applied schedule with the user defaults', async () => {
-    mockScheduleApi();
-    const store = makeStore({ kind: 'schedule', title: 'Schedule Fuel Price Trends', schedule: {
-        status: 'pending', issues: [], config: { name: 'Fuel Price Trends', workflow: 'demo/gas.yaml', time: '08:30', weekdays: [0, 1, 2, 3, 4] },
-    } });
-    requestAutoSubmit('turn-1');
-    render(<Provider store={store}><Harness /></Provider>);
-
-    await waitFor(() => expect(store.getState().textTurns[0].form).toMatchObject({ schedule: { status: 'saved', savedId: 'sched-1' } }));
-    const post = vi.mocked(apiRequest).mock.calls.find(([url, options]) => url === '/api/schedules' && options?.method === 'POST');
-    const body = JSON.parse(String(post![1]!.body));
-    expect(body).not.toHaveProperty('id');
-    expect(body.config).toMatchObject({ workflow: 'demo/gas.yaml', time: '08:30', weekdays: [0, 1, 2, 3, 4],
-        model_id: 'server-model', auto_approve: false, enabled: true });
-    expect(body.config.timezone).toBeTruthy();
-    expect(await screen.findByLabelText('Next run')).toBeTruthy();
-});
-
-it('keeps a schedule with unresolved issues open for review instead of auto-saving', async () => {
-    mockScheduleApi();
-    const store = makeStore({ kind: 'schedule', title: 'Schedule Fuel Price Trends', schedule: {
-        status: 'pending', issues: ['Unknown timezone \'Mars/Base\'; choose an IANA timezone.'], config: { name: 'Fuel', workflow: 'demo/gas.yaml', weekdays: [0] },
-    } });
-    requestAutoSubmit('turn-1');
-    render(<Provider store={store}><Harness /></Provider>);
-
-    expect(await screen.findByText(/Unknown timezone/)).toBeTruthy();
-    await waitFor(() => expect(vi.mocked(apiRequest).mock.calls.some(([url]) => url === '/api/workflows/list')).toBe(true));
-    expect(vi.mocked(apiRequest).mock.calls.some(([url, options]) => url === '/api/schedules' && options?.method === 'POST')).toBe(false);
-    expect(screen.getByRole('button', { name: 'Save schedule' })).toBeTruthy();
-});
-
-it('never auto-saves a schedule that auto-approves commands', async () => {
-    mockScheduleApi();
+it('shows a schedule form from before schedules were part of workflows, read-only', async () => {
     const store = makeStore({ kind: 'schedule', title: 'Schedule Fuel', schedule: {
-        status: 'pending', issues: [], config: { name: 'Fuel', workflow: 'demo/gas.yaml', time: '08:30', weekdays: [0], auto_approve: true },
-    } });
+        status: 'saved', config: { name: 'Fuel daily', time: '08:30', weekdays: [0, 1, 2, 3, 4], timezone: 'UTC' } } });
     requestAutoSubmit('turn-1');
     render(<Provider store={store}><Harness /></Provider>);
 
-    expect(await screen.findByRole('button', { name: 'Save schedule' })).toBeTruthy();
-    expect(vi.mocked(apiRequest).mock.calls.some(([url, options]) => url === '/api/schedules' && options?.method === 'POST')).toBe(false);
-});
-
-it.each([['update', 'Update schedule', 'sched-1'], ['new', 'Save schedule', undefined]] as const)(
-    'saves a revised schedule as %s when chosen', async (mode, button, id) => {
-    mockScheduleApi({ id: id ?? 'sched-2', next_at: '2026-10-01T16:00:00+00:00' });
-    const store = makeStore({ kind: 'schedule', title: 'Update Fuel', schedule: { target: { id: 'sched-1', name: 'Fuel' },
-        status: 'pending', issues: [], config: { name: 'Fuel', workflow: 'demo/gas.yaml', time: '08:30', weekdays: [0] } } });
-    render(<Provider store={store}><Harness /></Provider>);
-
-    expect(await screen.findByRole('radio', { name: 'Update Fuel' })).toBeChecked();
-    if (mode === 'new') fireEvent.click(screen.getByRole('radio', { name: 'Save as new schedule' }));
-    fireEvent.click(await screen.findByRole('button', { name: button }));
-    await waitFor(() => expect(store.getState().textTurns[0].form).toMatchObject({ schedule: { status: 'saved' } }));
-    const post = vi.mocked(apiRequest).mock.calls.find(([url, options]) => url === '/api/schedules' && options?.method === 'POST');
-    expect(JSON.parse(String(post![1]!.body)).id).toBe(id);
+    expect(screen.getByText('Fuel daily')).toBeTruthy();
+    expect(screen.getByText(/Schedules are part of workflows now/)).toBeTruthy();
+    expect(screen.getByText(/Weekdays at 8:30 AM · UTC/)).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(apiRequest).not.toHaveBeenCalled();
 });
 
 it('records every direct rename in the stored panel', async () => {

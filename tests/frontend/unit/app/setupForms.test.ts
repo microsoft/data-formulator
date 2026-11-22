@@ -12,17 +12,6 @@ describe('setup form artifacts', () => {
             draft: { revision: 0, fields: [], changedByAgent: [], conflict: false },
             connector: { sourceType: 'postgresql', prefilled: { host: 'db' }, status: 'pending' },
         });
-        expect(formArtifactFromEvent({
-            kind: 'schedule', title: 'Schedule Fuel', schedule: {
-                target: { id: 'abc', name: 'Fuel' }, config: { workflow: 'demo/gas.yaml', time: '09:00', weekdays: [0] },
-                workflow_name: 'Fuel', issues: ['Choose a server-configured model connection.'],
-            },
-        })).toEqual({
-            kind: 'schedule', title: 'Schedule Fuel', schedule: {
-                target: { id: 'abc', name: 'Fuel' }, config: { workflow: 'demo/gas.yaml', time: '09:00', weekdays: [0] }, workflowName: 'Fuel',
-                issues: ['Choose a server-configured model connection.'], status: 'pending',
-            },
-        });
         const definition = { name: 'Fuel', overview: 'Review', deliverables: ['Report'] };
         expect(formArtifactFromEvent({
             kind: 'workflow', title: 'Fuel', workflow: { content: 'name: Fuel', definition, target: { id: 'fuel.workflow.yaml', name: 'Fuel' } },
@@ -30,6 +19,14 @@ describe('setup form artifacts', () => {
             kind: 'workflow', title: 'Fuel',
             workflow: { content: 'name: Fuel', definition, target: { id: 'fuel.workflow.yaml', name: 'Fuel' } },
         });
+        // A workflow's schedule is part of its definition; a revision carries the schedule it replaces.
+        const schedule = { time: '09:00', weekdays: [0], timezone: 'UTC', model_id: 'server-model' };
+        expect(formArtifactFromEvent({
+            kind: 'workflow', title: 'Fuel', workflow: { content: 'name: Fuel', definition: { ...definition, schedule },
+                target: { id: 'fuel.workflow.yaml', name: 'Fuel', schedule }, schedule_issues: ['Choose a server-configured model connection.'] },
+        }).workflow).toEqual({ content: 'name: Fuel', definition: { ...definition, schedule },
+            target: { id: 'fuel.workflow.yaml', name: 'Fuel', schedule }, scheduleIssues: ['Choose a server-configured model connection.'] });
+        expect(() => formArtifactFromEvent({ kind: 'schedule', schedule: {} })).toThrow('Unsupported form artifact kind');
         expect(formArtifactFromEvent({
             kind: 'sessions', title: 'Empty sessions', auto_submit: true, sessions: {
                 items: [{ session_id: 's1', current_name: 'Untitled', suggested_name: 'Gas prices', current: false, reason: 'Empty', table_count: 0 }],
@@ -47,12 +44,9 @@ describe('setup form artifacts', () => {
     it('summarizes pending and completed forms for the thread', () => {
         expect(formArtifactStatus({ kind: 'connector', title: 'Connect', connector: { sourceType: 'mysql', status: 'connected', connectionName: 'Sales' } }))
             .toBe('Connected to Sales');
-        expect(formArtifactStatus({ kind: 'schedule', title: 'Schedule Fuel', schedule: { config: {}, status: 'pending' } }))
-            .toBe('Schedule Fuel');
+        // Schedule forms from before schedules were part of workflows still summarize.
         expect(formArtifactStatus({ kind: 'schedule', title: 'Schedule Fuel', schedule: { config: { name: 'Fuel daily' }, status: 'saved' } }))
             .toBe('Saved schedule: Fuel daily');
-        expect(formArtifactStatus({ kind: 'schedule', title: 'Update Fuel', schedule: { target: { id: 'abc', name: 'Fuel' },
-            config: { name: 'Fuel daily' }, status: 'saved', savedId: 'abc' } })).toBe('Updated schedule: Fuel daily');
         expect(formArtifactStatus({ kind: 'sessions', title: 'Empty sessions', sessions: { items: [] } }))
             .toBe('Empty sessions');
         expect(formArtifactStatus({ kind: 'sessions', title: 'Empty sessions', sessions: { items: [
@@ -64,6 +58,8 @@ describe('setup form artifacts', () => {
             .toBe('Updated workflow: Fuel');
         expect(formArtifactStatus({ kind: 'workflow', title: 'Fuel', workflow: { ...workflow, saved: { path: 'fuel-2.yaml', content_hash: 'h' } } }))
             .toBe('Saved workflow: Fuel');
+        expect(formArtifactStatus({ kind: 'workflow', title: 'Fuel', workflow: { ...workflow, saved: { path: 'fuel.yaml', content_hash: 'h', scheduled: true } } }))
+            .toBe('Updated and scheduled workflow: Fuel');
     });
 
     it('honors a live direct-apply request exactly once and never from persisted state', () => {

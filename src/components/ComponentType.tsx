@@ -319,6 +319,8 @@ export interface CodeExecution {
 
 export interface WorkflowDefinition {
     name: string; overview: string; prompt?: string; source?: unknown; deliverables: string[];
+    /** When it runs unattended; a proposal may leave out the machine's values (timezone, model). */
+    schedule?: Partial<ScheduleConfig> & Pick<ScheduleConfig, 'time' | 'weekdays'>;
     parameters?: { name: string; label: string; type?: 'text' | 'number' | 'boolean' | 'select'; description?: string;
         required?: boolean; default?: string | number | boolean; options?: string[]; allow_custom?: boolean }[];
     steps?: { id: string; instructions: string; description?: string; next?: string;
@@ -505,27 +507,19 @@ export interface ConnectorFormArtifact extends SetupFormBase {
     };
 }
 
+/** A workflow's `schedule:` block (design-docs/78): when and how the local scheduler runs it unattended. */
 export interface ScheduleConfig {
-    name: string; workflow: string; model_id: string; time: string; timezone: string; weekdays: number[];
-    enabled: boolean; auto_approve: boolean; max_retries: number; catch_up: boolean;
+    model_id: string; time: string; timezone: string; weekdays: number[];
+    enabled?: boolean; auto_approve?: boolean; max_retries?: number; catch_up?: boolean;
     /** Language for the run's reports and messages; unattended runs cannot read the app language. */
     language?: string;
     setup?: { parameters: Record<string, string | number | boolean>; instructions: string };
 }
 
+/** A schedule form from before schedules were part of workflows; old threads still show it. */
 export interface ScheduleFormArtifact extends SetupFormBase {
     kind: 'schedule';
-    schedule: {
-        /** Existing schedule being edited; absent when creating one. */
-        target?: SetupFormTarget;
-        config: Partial<ScheduleConfig>;
-        workflowName?: string;
-        /** Values the agent could not verify; the user resolves them before saving. */
-        issues?: string[];
-        status?: 'pending' | 'saved';
-        savedId?: string;
-        nextAt?: string;
-    };
+    schedule: { config: Partial<ScheduleConfig> & { name?: string }; status?: 'pending' | 'saved' };
 }
 
 export interface SessionsFormArtifact extends SetupFormBase {
@@ -545,17 +539,12 @@ export interface WorkflowFormArtifact extends SetupFormBase {
     workflow: {
         content: string;
         definition: WorkflowDefinition;
-        /** Saved user workflow (by path) this proposal revises. */
-        target?: SetupFormTarget;
-        saved?: { path: string; content_hash: string };
-        /** A schedule proposed with the workflow; saving the workflow also saves it. */
-        schedule?: {
-            config: Partial<ScheduleConfig>;
-            /** Values the agent could not verify; the user resolves them before saving. */
-            issues?: string[];
-            savedId?: string;
-            nextAt?: string;
-        };
+        /** Saved user workflow (by path) this proposal revises, with its current schedule. */
+        target?: SetupFormTarget & { schedule?: ScheduleConfig };
+        /** `scheduled`: the saved file has a schedule. */
+        saved?: { path: string; content_hash: string; scheduled?: boolean };
+        /** Problems in the definition's schedule the agent could not settle; the user resolves them before saving. */
+        scheduleIssues?: string[];
     };
 }
 

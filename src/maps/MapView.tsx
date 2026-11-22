@@ -168,6 +168,25 @@ const isTimeLike = (control: Control, domain: unknown[]) =>
 /** A world map can be viewed flat or as a globe; the toggle changes the view, not the saved map. */
 interface ProjectionToggle { globe: boolean; toggle: () => void }
 
+/** What a colour legend draws, to fold layers' identical legends into one; none for sizes, or categories without a domain. */
+const legendSignature = (model: LayerModel, legend: LegendModel): string | undefined => {
+    switch (legend.kind) {
+        case 'categories': {
+            const domain = model.color.categoryDomain;
+            return domain ? JSON.stringify([legend.kind, model.layer.data, model.colorField, legend,
+                domain.map(value => [value, model.color.color(value)])]) : undefined;
+        }
+        case 'gradient':
+            return JSON.stringify([legend.kind, legend.title, legend.stops, legend.domain, legend.midpoint ?? null,
+                legend.domain.map(legend.format)]);
+        // Sizes stay per layer: layers sized by one field are told apart by name instead.
+        case 'sizes':
+            return undefined;
+        default:
+            return JSON.stringify(legend);
+    }
+};
+
 export const MapView: FC<MapViewProps> = (rawProps) => {
     const outer = useTheme();
     const saved = rawProps.spec.view;
@@ -402,7 +421,7 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
     const [obstacles, setObstacles] = useState<[number, number, number, number][]>([]);
     const legendCount = models.filter(model => model.layer.visible !== false && (model.color.legend || model.size.legend
         || model.layer.type === 'hexbin' || model.layer.type === 'heatmap')).length;
-    const sharedCategories = new Map<string, { model: LayerModel; legend: LegendModel; key: string; layerIds: string[] }>();
+    const sharedLegends = new Map<string, { model: LayerModel; legend: LegendModel; key: string; layerIds: string[] }>();
     const legends = models.filter(model => model.layer.visible !== false).flatMap(model => {
         const items: { model: LayerModel; legend: LegendModel; key: string }[] = [];
         const dynamic = dynamicLegends[model.layer.id];
@@ -414,15 +433,14 @@ const MapViewBody: FC<MapViewProps & { projectionToggle?: ProjectionToggle }> = 
         if (model.size.legend && !sameAsColor) items.push({ model, legend: model.size.legend, key: `${model.layer.id}-size` });
         return items;
     }).flatMap(item => {
+        // Layers whose legends would draw the same (one field split across layers, say by a filter) share one,
+        // which stands for all of them; categories also match on their data, as they hide and highlight marks.
         const entry = { ...item, layerIds: [item.model.layer.id] };
-        if (item.legend.kind !== 'categories' || !item.model.color.categoryDomain) return [entry];
-        const { model, legend } = item;
-        const domain = item.model.color.categoryDomain;
-        const signature = JSON.stringify([model.layer.data, model.colorField, legend,
-            domain.map(value => [value, model.color.color(value)])]);
-        const shared = sharedCategories.get(signature);
-        if (shared) { shared.layerIds.push(model.layer.id); return []; }
-        sharedCategories.set(signature, entry);
+        const signature = legendSignature(item.model, item.legend);
+        if (!signature) return [entry];
+        const shared = sharedLegends.get(signature);
+        if (shared) { shared.layerIds.push(item.model.layer.id); return []; }
+        sharedLegends.set(signature, entry);
         return [entry];
     }).map((item, _, all) => {
         // Layers encoding the same field get legends titled alike: name each by its layer (the name alone when it says the field).

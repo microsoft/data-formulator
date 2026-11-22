@@ -356,7 +356,7 @@ def test_workflows_are_read_only_files_listed_and_searched_only_when_named(works
     assert listed["workflows://fuel.workflow.yaml"]["name"].startswith("My")
     assert listed["workflows://fuel.workflow.yaml"]["detail"].startswith("saved by the user")
     assert listed["workflows://demo/gas-price-review.yaml"]["detail"].startswith("built-in example")
-    assert listed["workflows://schedules.json"]["detail"].startswith("scheduling unavailable")
+    assert "workflows://schedules.json" not in listed
 
     read = files.read_item({"path": "workflows://demo/gas-price-review.yaml", "limit": 3})
     assert read["content"].startswith("version: 1") and "not replaced" in read["note"] and "editable" not in read

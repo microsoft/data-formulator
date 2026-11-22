@@ -44,9 +44,9 @@ import { codeCallsOf, isCodeCall } from '../app/toolCalls';
 import { toAnalystTableRef } from '../app/tableResolution';
 
 import { alpha } from '@mui/material/styles';
-import { inputFocusShadow, lineColor } from '../app/look';
+import { frameColor, inputFocusShadow, lineColor } from '../app/look';
 
-import { WorkflowGears, WritingPencil } from '../components/FunComponents';
+import { WorkflowIcon, WritingPencil } from '../components/FunComponents';
 import { FileTypeIcon } from '../icons';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
@@ -62,7 +62,7 @@ import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
 
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
-import { borderColor, transition, conversationWidth, ambientShadow, cardRadius, ink, weight } from '../app/tokens';
+import { borderColor, transition, conversationWidth, ambientShadow, cardRadius, hoverLift, ink, weight } from '../app/tokens';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 import { applySessionDeletion, type DeletionPlan } from '../app/sessionDeletion';
@@ -3394,7 +3394,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                 setQuickActionAnchor(null);
                                 exploreFromChat(WORKFLOW_AUTHORING_PROMPT, { authorWorkflow: true });
                             }}>
-                                <Box component="span" sx={menuIconSlotSx}><WorkflowGears running={false} size="1.2em" showTooltip={false} /></Box>{t('chartRec.createWorkflow')}
+                                <Box component="span" sx={menuIconSlotSx}><WorkflowIcon running={false} size="1.2em" showTooltip={false} /></Box>{t('chartRec.createWorkflow')}
                             </MenuItem>
                         </Menu>
                         <Tooltip title={t('chartRec.getIdeaSuggestions')}>
@@ -3568,13 +3568,13 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // analysis with their own question or click one of these. It floats above
     // the panes, starting over the input and reaching across into the canvas,
     // with its pointer on the input.
-    // An overlay layer, so it keeps a soft elevation shadow and a faint hairline in either contrast
-    // rather than the near-black anchor outline.
+    // Styled by the look: a soft, shadowed bubble, or (sharp) a flat square box in the frame grey; a tail at its
+    // bottom left points at the input either way.
     const calloutFill = theme.palette.background.paper;
     const calloutText = theme.palette.text.primary;
-    const calloutLine = alpha(theme.palette.text.primary, 0.08);
-    const calloutShadow = '0 8px 24px rgba(32, 33, 36, 0.14), 0 2px 6px rgba(32, 33, 36, 0.08)';
-    const calloutPillShadow = '0 4px 12px rgba(32, 33, 36, 0.14), 0 1px 3px rgba(32, 33, 36, 0.08)';
+    const calloutLine = frameColor(theme, 0.08);
+    const calloutShadow = ambientShadow('0 8px 24px rgba(32, 33, 36, 0.14), 0 2px 6px rgba(32, 33, 36, 0.08)');
+    const calloutPillShadow = ambientShadow('0 4px 12px rgba(32, 33, 36, 0.14), 0 1px 3px rgba(32, 33, 36, 0.08)');
     const showFollowUps = !!exampleFollowUps && !workspaceReadOnly && !chatWorkflow && !isChatFormulating;
     const followUpsBlock = showFollowUps && exampleFollowUps ? (
         <Popper open={!!followUpsAnchor} anchorEl={followUpsAnchor} placement="top-start" style={{ zIndex: 1250 }}
@@ -3587,18 +3587,18 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     ? [20, followUpsFolded ? 6 : 12] : [Math.max(20, reference.width - 0.3 * popper.width), 12] } }, { name: 'preventOverflow', options: { padding: 12 } }, { name: 'flip', enabled: false }]}>
         <Box ref={followUpsRef}>
         {followUpsFolded ? <ButtonBase onClick={() => setFollowUpsFolded(false)} sx={{
-            display: 'inline-flex', alignItems: 'center', gap: 0.5, pl: 1, pr: 1.25, py: 0.5, borderRadius: '999px',
+            display: 'inline-flex', alignItems: 'center', gap: 0.5, pl: 1, pr: 1.25, py: 0.5, borderRadius: cardRadius('999px'),
             bgcolor: calloutFill, color: calloutText, border: `1px solid ${calloutLine}`, boxShadow: calloutPillShadow,
             fontFamily: 'inherit', fontSize: textVar.xs, fontWeight: weight(500),
             transition: 'box-shadow 0.15s ease, transform 0.15s ease',
-            '&:hover, &.Mui-focusVisible': { boxShadow: calloutShadow, transform: 'translateY(-1px)' },
+            '&:hover, &.Mui-focusVisible': { boxShadow: calloutShadow, transform: hoverLift(1) },
         }}>
             <TipsAndUpdatesOutlinedIcon sx={{ fontSize: iconVar.sm, color: 'primary.main' }} />
             {t('chartRec.followUpsFolded', { defaultValue: 'Follow-up ideas' })}
         </ButtonBase> :
         <Box role="note" aria-label={t('chartRec.followUpsTitle', { defaultValue: 'Follow-up suggestions' })} sx={{
-            position: 'relative', width: 'min(440px, calc(100vw - 32px))', boxSizing: 'border-box',
-            px: 1.5, pt: 1, pb: 1.125, borderRadius: '12px',
+            position: 'relative', width: 'max-content', maxWidth: 'min(440px, calc(100vw - 32px))', boxSizing: 'border-box',
+            px: 1.5, pt: 1, pb: 1.125, borderRadius: cardRadius('12px'),
             bgcolor: calloutFill, color: calloutText, border: `1px solid ${calloutLine}`, boxShadow: calloutShadow,
             animation: 'followUpsIn 0.22s ease-out',
             '@keyframes followUpsIn': { from: { opacity: 0, transform: 'translateY(4px)' }, to: { opacity: 1, transform: 'none' } },

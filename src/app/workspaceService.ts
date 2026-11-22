@@ -19,10 +19,18 @@ import type { ServerConfig } from './dfSlice';
 
 export interface ScheduledRunProvenance {
     scheduleId: string;
+    /** The workflow's name (older runs: their schedule's). */
     scheduleName: string;
+    /** The workflow file it ran (runs made since schedules are part of workflows). */
+    workflow?: string;
     scheduledFor: string;
     forked?: boolean;
+    /** Its workflow was deleted, so no workflow card lists it; session lists show it instead. */
+    workflowGone?: boolean;
 }
+
+/** Whether a session belongs in session lists: not a scheduled run, which its workflow's card lists, unless that workflow is gone. */
+export const listedAsSession = (session: { scheduled_run?: ScheduledRunProvenance }) => !session.scheduled_run || !!session.scheduled_run.workflowGone;
 
 export function createExternalTableReference(reference: Omit<ExternalTableReference, 'id'>): ExternalTableReference {
     return { ...reference, id: `external:${encodeURIComponent(reference.connectorId)}:${encodeURIComponent(reference.tableKey)}` };

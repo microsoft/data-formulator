@@ -1,5 +1,35 @@
 {
   "upload": {
+    "livePick": {
+      "umbrella": "Brauche ich diese Woche einen Regenschirm?",
+      "umbrellaBusy": "Ich schaue in den Himmel…",
+      "umbrellaHint": "Die Wochenvorhersage für Städte in deiner Nähe, live geladen und auf einer Karte",
+      "warmer": "Ist diese Woche wärmer als sonst?",
+      "warmerBusy": "Ich wühle in altem Wetter…",
+      "warmerHint": "Die Vorhersage dieser Woche neben derselben Woche der letzten zehn Jahre, für Städte in deiner Nähe",
+      "daylightShorter": "Wie schnell werden die Tage kürzer?",
+      "daylightLonger": "Wie schnell werden die Tage länger?",
+      "daylightBusy": "Ich beobachte die Sonne…",
+      "daylightHint": "Tageslichtstunden der nächsten vier Monate, von Nord nach Süd",
+      "wiki": "Was liest die Welt heute?",
+      "wikiBusy": "Ich schaue der Welt über die Schulter…",
+      "wikiHint": "Die meistgelesenen Wikipedia-Artikel von gestern und ihr Verlauf diese Woche",
+      "countries": "Was liest jedes Land heute?",
+      "countriesBusy": "Ich schaue der Welt beim Lesen zu…",
+      "countriesHint": "Die gestern meistgelesenen Wikipedia-Artikel rund um die Welt, auf einer Karte",
+      "failed": "Das hat nicht geklappt. Versuch es gleich noch einmal.",
+      "failedDetail": "Live-Daten für „{{question}}“ konnten nicht geladen werden: {{reason}}",
+      "moon": "Wann ist der nächste Vollmond?",
+      "moonBusy": "Ich schaue nach dem Mond…",
+      "moonHint": "Die Mondphasen der nächsten zwei Monate"
+    },
+    "sessionStart": {
+      "list": "Zeig mir, was in meinen verbundenen Quellen steckt",
+      "scheduledWorkflow": "Ich möchte einen wiederkehrenden Workflow erstellen, der Berichte erstellt",
+      "workflow": "Ich möchte einen wiederverwendbaren Workflow erstellen, der Berichte erstellt",
+      "connect": "Führe mich durch das Verbinden einer neuen Datenquelle",
+      "discover": "Hilf mir, Tools einzurichten, um online Daten zu finden"
+    },
     "title": "Daten laden",
     "sampleDatasets": "Beispieldatensätze",
     "sampleDatasetsDesc": "Kuratierte Beispieldatensätze",

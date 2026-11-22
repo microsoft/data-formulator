@@ -5,9 +5,9 @@ description: >-
   workflow schedules, sessions, and MCP servers.
 when_to_use: >-
   The user wants to connect or repair a data source, create or revise a reusable
-  workflow, schedule a workflow or change a schedule, find, open, rename, or
+  workflow, schedule a workflow or change its schedule, find, open, rename, or
   delete sessions, or add, fix, or switch MCP servers and their tools. Not for loading data from an already connected source or for analysis,
-  or for only reading saved workflows and schedules: they are files under workflows://
+  or for only reading saved workflows and their schedules: they are files under workflows://
   (list_files, read_file).
 always_on: false
 tools:
@@ -19,7 +19,6 @@ actions:
   - propose_connection
   - update_connector_form
   - propose_workflow
-  - propose_schedule
   - propose_session_changes
   - propose_mcp_changes
 ---
@@ -40,16 +39,15 @@ dialogs. Every setup task follows the same flow:
 4. **Apply directly when certain.** Set `user_review_needed: false` only when the
    user explicitly asked for the change and every value is supplied or verified.
    The application then submits the form automatically through the same path as
-   a manual submit. It still shows the form for review when anything is missing,
-   invalid, or elevated (schedule auto-approval). Connections always
-   wait for the user's Connect.
+   a manual submit. It still shows the form for review when anything is missing
+   or invalid. Connections always wait for the user's Connect, and workflows
+   (with their schedules) for the user's Save or Run.
 
 | Setup task | Inspect | Action | Done when |
 |---|---|---|---|
 | Connect or repair a data source | `list_connectors`, `read_connector_form` | `propose_connection`, `update_connector_form` | The form shows Connected. |
 | Create or revise a workflow | Conversation, workspace inputs, `workflows://` | `propose_workflow` | The user saves or runs the proposal. |
-| Create a workflow and schedule it | Conversation, workspace inputs, `workflows://schedules.json` | `propose_workflow` with `schedule` | The user saves the workflow and its schedule together. |
-| Schedule a workflow or change a schedule | `workflows://` | `propose_schedule` | The form shows the saved schedule. |
+| Schedule a workflow, or change, pause, or remove its schedule | `workflows://` (the workflow's file) | `propose_workflow` with `replaces` and the definition's `schedule` | The user saves the revised workflow. |
 | Find, open, rename, or delete sessions | `list_sessions` | `propose_session_changes` | The session panel lists the sessions for the user to act on. |
 | Add, fix, or switch MCP servers | `list_mcp_servers` | `propose_mcp_changes` | The form shows the server connected or the change applied. |
 
@@ -147,33 +145,37 @@ check results.
 
 ## Schedules
 
-A schedule runs a saved workflow unattended in a new session at a time of day on
-selected weekdays. `list_files` with path `workflows://` gives each workflow's path,
-parameters, and schedules; `workflows://schedules.json` gives schedule IDs, recent
-runs, whether scheduling is available, and the server model connections. If scheduling is unavailable, explain why instead of proposing.
+A workflow can run unattended in a new session at a time of day on selected
+weekdays. Its schedule is the `schedule` field of its definition; there is no
+separate schedule object. `list_files` with path `workflows://` shows each
+workflow's path, parameters, and schedule (cadence, next run or paused, and the
+latest runs' results); its file holds the `schedule` block itself.
 
-When the user wants a new or revised workflow to run on a schedule, propose both
-at once: pass `schedule` to `propose_workflow` (timing, inputs, options; no
-workflow path). Saving the proposal then creates the workflow and its schedule,
-so do not defer scheduling to a later turn. Read `workflows://schedules.json` first
-for availability and server model connections; if scheduling is unavailable, propose
-the workflow alone and explain why. For a workflow that exists only as an earlier
-proposal in the conversation, propose it again with `schedule`.
-
-`propose_schedule` schedules saved workflows or changes existing schedules. When
-the user has not chosen among several saved workflows or a timing, propose the form anyway with what is known: omit
-`workflow` to let the user pick it from the form's list, and leave unknown
-timing at the form defaults. To change a schedule, pass its `schedule_id`
-and only the fields that change (the form lets the user update it or save a new
-schedule); to pause or resume one, set `enabled`.
+- **Schedule a new workflow:** include `schedule` in the proposed definition.
+  Saving the proposal then creates the workflow with its schedule, so do not
+  defer scheduling to a later turn. For a workflow that exists only as an
+  earlier proposal in the conversation, propose it again with `schedule`.
+- **Schedule, reschedule, pause, or unschedule a saved workflow:** read its file,
+  then propose the complete definition with `replaces` and the `schedule` block
+  changed: set `enabled: false` to pause, `enabled: true` to resume, or leave
+  `schedule` out to remove the schedule. When revising anything else, keep the
+  existing `schedule` block unchanged, or the revision removes it.
+- **Built-in and server workflows** cannot be replaced. To schedule one, propose
+  a new workflow from its definition with `schedule`; the user saves it as their
+  own copy.
 
 Translate everyday cadence into `time` (24-hour `HH:MM`) and `weekdays`
 (0=Monday … 6=Sunday): "every weekday morning" is weekdays 0-4, "daily" is all
-seven. Omit `timezone` unless the user names one; the form uses theirs. Fill
-required workflow parameters in `setup.parameters` from the conversation, and
-leave unknown ones for the user. Set `auto_approve` only when the user explicitly
-asks; it always requires review. Scheduling is only available in the local app;
-on a hosted deployment, explain that instead of proposing.
+seven. Leave out `timezone`, `model_id`, and `language` unless the user names
+them (keep an existing schedule's values); the form fills them in from the
+user's timezone, selected model, and app language. Fill required workflow
+parameters in `setup.parameters` from the conversation, and leave unknown ones
+for the user; free guidance for the runs goes in `setup.instructions`. The form
+approves requests automatically (`auto_approve`: commands, and the first
+loading option); set `auto_approve: false` when the user wants unattended runs
+to decline them instead. Scheduling is only available in the local
+app; if `propose_workflow` says it is unavailable, propose the workflow without
+`schedule` and explain why.
 
 ## Sessions
 

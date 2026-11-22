@@ -332,8 +332,6 @@ def _register_blueprints():
     app.register_blueprint(workflow_bp)
     from data_formulator.routes.tasks import task_bp
     app.register_blueprint(task_bp)
-    from data_formulator.routes.schedules import schedule_bp
-    app.register_blueprint(schedule_bp)
 
     from data_formulator.routes.configurations import configuration_bp
     app.register_blueprint(configuration_bp)
@@ -689,6 +687,10 @@ def run_app():
 
     # Register blueprints (this is where heavy imports happen)
     _register_blueprints()
+    # Admin connectors were registered at import, before plugins could load: add those a plugin provides.
+    from data_formulator.data_connector import register_admin_connectors
+    with app.app_context():
+        register_admin_connectors()
     _safety_checks()
 
     from data_formulator.workflows.scheduler import start_scheduler

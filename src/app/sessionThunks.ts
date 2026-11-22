@@ -22,6 +22,14 @@ export function generateWorkspaceId(): string {
     return `session_${date}_${time}_${generateUUID().slice(0, 4)}`;
 }
 
+/** When a session was started, from its id (see `generateWorkspaceId`); now if the id has no date. */
+function sessionIdDate(sessionId: string): Date {
+    const match = /^session_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})_/.exec(sessionId);
+    if (!match) return new Date();
+    const [year, month, day, hour, minute, second] = match.slice(1).map(Number);
+    return new Date(year, month - 1, day, hour, minute, second);
+}
+
 /**
  * Give backend requests a workspace without entering a session. The backend
  * creates the folder lazily and hides it until it holds work; the UI stays on
@@ -38,7 +46,15 @@ export const ensureActiveWorkspace = () => (dispatch: AppDispatch, getState: Get
  * can be reopened; an empty workspace is discarded instead of lingering.
  */
 export const leaveSession = () => async (dispatch: AppDispatch, getState: GetState) => {
-    const state = getState();
+    const workspace = await putAway(getState());
+    // Another session may have been opened while saving.
+    if (getState().activeWorkspace?.id === workspace?.id) {
+        dispatch(dfActions.resetState());
+    }
+};
+
+/** Save the session being left so it can be reopened, or discard it when empty. */
+async function putAway(state: DataFormulatorState) {
     const workspace = state.activeWorkspace;
     if (workspace && !workspace.readOnly) {
         if (dfSelectors.selectSessionEmpty(state)) {
@@ -47,10 +63,21 @@ export const leaveSession = () => async (dispatch: AppDispatch, getState: GetSta
             try { await saveWorkspaceState(getSerializableState(state)); } catch { /* best effort */ }
         }
     }
-    // Another session may have been opened while saving.
-    if (getState().activeWorkspace?.id === workspace?.id) {
-        dispatch(dfActions.resetState());
-    }
+    return workspace;
+}
+
+/**
+ * Start a blank session in place of the current one (the "+" / New buttons).
+ * The current session is saved, or discarded when empty, as on leaving; the
+ * new one is saved only once it holds work (autosave skips an empty session).
+ */
+export const startNewSession = () => async (dispatch: AppDispatch, getState: GetState) => {
+    const state = getState();
+    if (dfSelectors.selectInSession(state) && dfSelectors.selectSessionEmpty(state) && !state.activeWorkspace?.readOnly) return;
+    // Straight from one session to the next: passing through the landing page would move the URL twice.
+    const workspace = await putAway(state);
+    if (getState().activeWorkspace?.id !== workspace?.id) return;
+    dispatch(dfActions.resetForNewWorkspace({ id: generateWorkspaceId(), displayName: defaultSessionName() }));
 };
 
 /**
@@ -73,8 +100,13 @@ export const openSession = (sessionId: string, displayName?: string, options: { 
     try {
         const result = await loadWorkspace(sessionId);
         if (result) {
+            // A blank session ("+") is saved only once it holds work; reopened before that (reload, back/forward)
+            // it gets the name it was started with, still owned by auto-naming.
+            const unsaved = !result.state.activeWorkspace && result.displayName === sessionId;
+            const blankName = unsaved ? displayName || defaultSessionName(sessionIdDate(sessionId)) : undefined;
             dispatch(dfActions.loadState({ ...result.state, activeWorkspace: {
-                ...result.state.activeWorkspace, id: sessionId, displayName: displayName || result.displayName, readOnly: result.readOnly,
+                ...result.state.activeWorkspace, id: sessionId, displayName: blankName || displayName || result.displayName, readOnly: result.readOnly,
+                ...(blankName ? { autoName: { name: blankName, sources: [] } } : {}),
             } }));
             if (result.workflowRun) {
                 // A scheduled run's outputs come from its checkpoint and workspace tables, as for a live run.

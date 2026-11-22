@@ -1,7 +1,7 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/app/dfSlice';
-import { ensureActiveWorkspace, generateWorkspaceId, leaveSession, openSession, renameSession } from '../../../../src/app/sessionThunks';
+import { ensureActiveWorkspace, generateWorkspaceId, leaveSession, openSession, renameSession, startNewSession } from '../../../../src/app/sessionThunks';
 import { deleteWorkspace, loadWorkspace, saveWorkspaceState, updateWorkspaceMeta } from '../../../../src/app/workspaceService';
 import type { AppDispatch } from '../../../../src/app/store';
 
@@ -115,6 +115,39 @@ describe('session lifecycle', () => {
         expect(loadWorkspace).toHaveBeenCalledWith('movies');
         expect(store.getState().activeWorkspace).toMatchObject({ id: 'movies', displayName: 'Movies' });
         expect(store.getState().sessionLoading).toBe(false);
+    });
+
+    it('starts a blank session straight from the current one, saving it first', async () => {
+        const store = makeStore();
+        store.dispatch(dfActions.setActiveWorkspace({ id: 'ws', displayName: 'Sales' }));
+        store.dispatch(dfActions.setWorkspaceFileCount(1));
+        // Passing through the landing page would move the URL twice (and back/forward handling would reopen 'ws').
+        const seen: Array<string | undefined> = [];
+        store.subscribe(() => seen.push(store.getState().activeWorkspace?.id));
+
+        await store.dispatch(startNewSession());
+
+        expect(saveWorkspaceState).toHaveBeenCalledOnce();
+        expect(seen).not.toContain(undefined);
+        const blank = store.getState();
+        expect(blank.activeWorkspace?.id).not.toBe('ws');
+        expect(dfSelectors.selectInSession(blank)).toBe(true);
+        expect(dfSelectors.selectSessionEmpty(blank)).toBe(true);
+
+        await store.dispatch(startNewSession());
+        expect(store.getState().activeWorkspace?.id).toBe(blank.activeWorkspace?.id);
+    });
+
+    it('names a blank session reopened before it was saved after when it was started', async () => {
+        const store = makeStore();
+        const id = 'session_20261120_232539_b746';
+        vi.mocked(loadWorkspace).mockResolvedValueOnce({ state: {}, displayName: id, readOnly: false });
+
+        await store.dispatch(openSession(id));
+
+        const { displayName, autoName } = store.getState().activeWorkspace!;
+        expect(displayName).toMatch(/^Analysis Session · Nov 20, /);
+        expect(autoName).toEqual({ name: displayName, sources: [] });
     });
 
     it('renames the active session in place without resetting it', async () => {

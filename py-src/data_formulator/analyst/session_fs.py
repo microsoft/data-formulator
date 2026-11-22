@@ -59,14 +59,14 @@ UNIT_PARAMS = ("offset", "limit", "rows", "columns", "sheet", "pages")
 
 
 def kind_of(path: str) -> str:
-    """What a session path holds: table, chart, report, thread, reference, index, workflow, schedules, PDF, Excel,
+    """What a session path holds: table, chart, report, thread, reference, index, workflow, PDF, Excel,
     data file, CSV, Word, app, image, binary, or text."""
     lower = names.canonical(path).lower()
     if lower.startswith(names.SOURCES):
         rest = lower[len(names.SOURCES):]
         return "source" if "/" not in rest.rstrip("/") or lower.endswith("/") else "source table"
     if lower.startswith(names.WORKFLOWS):
-        return "schedules" if lower == f"{names.WORKFLOWS}schedules.json" else "workflow"
+        return "workflow"
     if lower.startswith(names.SESSION):
         folder = names.folder_of(lower)
         return {"tables": "table", "charts": "chart", "reports": "report", "threads": "thread",

@@ -7,8 +7,9 @@
 - ``scratch/<path>``: execution intermediates and terminal output.
 - ``sources://<source_id>/<path>``: connected-source catalogs, one level per listing; a table's item is its
   metadata view (``session_sources``). Searched with everything, after the session, from the cache.
-- ``workflows://<path>``: the user's saved workflows, the built-in examples and server workflows (read-only),
-  with ``workflows://schedules.json``; listed and searched only when a name reaches them.
+- ``workflows://<path>``: the user's saved workflows, the built-in examples and server workflows (read-only);
+  listed and searched only when a name reaches them. A workflow's schedule is its ``schedule:`` field, and its
+  listing line says when it runs next (design-docs/78).
 
 Older names (``session/charts/<id>.json``, ``sources/…``, ``workflows/…``) are accepted and normalized
 (``analyst/names.py``, design-docs/74). Each item is read in the unit that fits it (lines, table rows, PDF pages, Excel sheets); see
@@ -51,7 +52,6 @@ WORKFLOWS = names.WORKFLOWS
 DATA = "data/"
 SOURCES = names.SOURCES
 DEFAULT_ROOTS = ("files", "session", "scratch")
-SCHEDULES = f"{names.WORKFLOWS}schedules.json"
 _TEXT_SUFFIXES = (
     ".md", ".markdown", ".txt", ".csv", ".tsv", ".json", ".jsonl", ".yaml", ".yml", ".toml", ".ini", ".cfg",
     ".py", ".sql", ".r", ".js", ".jsx", ".ts", ".tsx", ".html", ".htm", ".css", ".xml", ".svg", ".log", ".sh",
@@ -138,43 +138,34 @@ class SessionFiles:
         from data_formulator.analyst.skills.configure import automation
         self._workflow_store = automation.workflow_store(self.ctx)
         try:
-            scheduling = automation.list_schedules(self.ctx)
-        except Exception as error:  # the workflows are still listed and readable
+            states = automation.schedule_states(self.ctx)
+        except Exception:  # the workflows are still listed and readable
             logger.debug("schedules could not be listed", exc_info=True)
-            scheduling = {"available": False, "error": str(error)[:200]}
-        schedules = scheduling.get("schedules") or []
-        found = {f"{WORKFLOWS}{item['path']}": {
-            **item, "schedules": [schedule for schedule in schedules if schedule["workflow"] == item["path"]]}
-            for item in self._workflow_store.list_all()}
-        found[SCHEDULES] = {"name": "Workflow schedules", "scheduling": scheduling}
-        return found
+            states = {}
+        return {f"{WORKFLOWS}{item['path']}": {**item, "scheduler": states.get(item["path"])}
+                for item in self._workflow_store.list_all()}
 
     def _workflow_detail(self, path: str) -> str:
+        from data_formulator.analyst.skills.configure import automation
         item = self.workflows().get(path) or {}
-        if path == SCHEDULES:
-            scheduling = item.get("scheduling") or {}
-            if not scheduling.get("available"):
-                return f"scheduling unavailable: {scheduling.get('error', '')}".rstrip(": ")
-            count = len(scheduling.get("schedules") or [])
-            return f"{count} {'schedule' if count == 1 else 'schedules'}; server models; IDs for propose_schedule"
         if item.get("error"):
             return f"invalid: {item['error'][:120]}"
         parts = [{"user": "saved by the user", "demo": "built-in example", "server": "server workflow"}.get(
             item.get("origin"), "")]
         if item.get("parameters"):
             parts.append("parameters: " + ", ".join(str(parameter.get("name", "")) for parameter in item["parameters"]))
-        for schedule in item.get("schedules") or []:
-            state = f"next {schedule['next_at']}" if schedule.get("enabled") and schedule.get("next_at") else \
-                ("on" if schedule.get("enabled") else "paused")
-            parts.append(f'schedule "{schedule["name"]}" ({schedule["id"]}): {schedule["cadence"]}, {state}')
+        schedule, state = item.get("schedule"), item.get("scheduler")
+        if schedule:
+            parts.append(f"scheduled: {automation.cadence(schedule)}"
+                         + (", paused" if schedule.get("enabled") is False else
+                            f", next {state['next_at']}" if state and state.get("next_at") else ""))
+            if state and state.get("recent_runs"):
+                parts.append("last runs: " + ", ".join(status.replace("_", " ") for status in state["recent_runs"]))
         return " · ".join(part for part in parts if part)
 
     def _workflow_text(self, path: str) -> str:
-        item = self.workflows().get(path)
-        if item is None:
+        if self.workflows().get(path) is None:
             raise FileNotFoundError(path)
-        if path == SCHEDULES:
-            return json.dumps(item["scheduling"], indent=2, ensure_ascii=False, default=str)
         return self._workflow_store.read(path[len(WORKFLOWS):])
 
     def data_files(self) -> dict[str, str]:
@@ -456,9 +447,9 @@ class SessionFiles:
         if cut is not None or offset - 1 + len(chunk) < len(lines):
             result["more"] = _more(offset, len(chunk), len(lines), cut)
         note = (self.session_view(path) or {}).get("note") if path.startswith(names.SESSION) else None
-        if path.startswith(WORKFLOWS) and path != SCHEDULES:
+        if path.startswith(WORKFLOWS):
             origin = (self.workflows().get(path) or {}).get("origin")
-            note = ("Read-only. To revise it, propose the complete revised definition with propose_workflow"
+            note = ("Read-only. To revise it, including its schedule, propose the complete revised definition with propose_workflow"
                     + (f' and replaces="{path}".' if origin == "user" else
                        "; built-in and server workflows are not replaced, so the user saves the revision as a new workflow."))
         note = note or app_note

@@ -1,5 +1,35 @@
 {
   "upload": {
+    "livePick": {
+      "umbrella": "Do I need an umbrella this week?",
+      "umbrellaBusy": "Checking the sky…",
+      "umbrellaHint": "This week's forecast for cities near you, loaded live and charted on a map",
+      "warmer": "Is this week warmer than usual?",
+      "warmerBusy": "Digging through old weather…",
+      "warmerHint": "This week's forecast next to the same week in the past ten years, for cities near you",
+      "daylightShorter": "How fast are the days getting shorter?",
+      "daylightLonger": "How fast are the days getting longer?",
+      "daylightBusy": "Watching the sun…",
+      "daylightHint": "Hours of daylight over the next four months, from north to south",
+      "wiki": "What's the world reading about today?",
+      "wikiBusy": "Reading over the world's shoulder…",
+      "wikiHint": "Yesterday's most-read Wikipedia articles, and how they trended this week",
+      "countries": "What is each country reading today?",
+      "countriesBusy": "Peeking at the world's reading…",
+      "countriesHint": "Yesterday's most-read Wikipedia articles around the world, on a map",
+      "failed": "That didn't come through. Try again in a bit.",
+      "failedDetail": "Could not load live data for \"{{question}}\": {{reason}}",
+      "moon": "When's the next full moon?",
+      "moonBusy": "Checking the moon…",
+      "moonHint": "The moon's phases over the next two months"
+    },
+    "sessionStart": {
+      "list": "Show me what's in my connected sources",
+      "scheduledWorkflow": "I want to create a recurring workflow to create reports",
+      "workflow": "I want to create a reusable workflow to create reports",
+      "connect": "Walk me through connecting a new data source",
+      "discover": "Help me set up tools to discover data online"
+    },
     "title": "Load Data",
     "sampleDatasets": "Sample Datasets",
     "sampleDatasetsDesc": "Curated example datasets",

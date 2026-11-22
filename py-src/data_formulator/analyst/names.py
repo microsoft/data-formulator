@@ -6,7 +6,7 @@ else is an object named with a scheme, reached through tools only:
 - ``session://index``, ``session://tables/<name>``, ``session://charts/<id>``, ``session://reports/<id>``,
   ``session://threads/<n>``, ``session://references/<id>``
 - ``sources://<source_id>/<path>``: connected-source catalogs
-- ``workflows://<store path>``: saved workflows and ``workflows://schedules.json``
+- ``workflows://<store path>``: saved workflows (a workflow's schedule is part of its file)
 
 Older names stay accepted (saved trajectories, workflows and reports hold them) and are normalized here:
 ``session/charts/<id>.json``, ``session/reports/<id>.md``, ``sources/…``, ``workflows/…``, and the report embeds

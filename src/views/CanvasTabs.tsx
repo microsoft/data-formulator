@@ -15,7 +15,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import ArticleIcon from '@mui/icons-material/Article';
 import { chartFamilyIcon, FileTypeIcon, FormIcon, InsightIcon, isAppFile, TableIcon } from '../icons';
-import { WorkflowGears } from '../components/FunComponents';
+import { WorkflowIcon } from '../components/FunComponents';
 import { AgentToyIcon } from './AgentToyIcon';
 import { draftLabelKey } from './ArtifactDraft';
 import { useDispatch, useSelector } from 'react-redux';
@@ -107,7 +107,7 @@ const useTabLabel = () => {
                 const title = turn?.workflow ? turn.displayId : turn?.form?.title || turn?.prompt
                     || (turn?.content || '').replace(/[#*`>|]/g, ' ').replace(/\s+/g, ' ').trim();
                 const icon = turn?.workflow || turn?.form?.kind === 'workflow'
-                    ? <WorkflowGears running={turn.workflow?.status === 'running'} size={14} color="currentColor" showTooltip={false} />
+                    ? <WorkflowIcon running={turn.workflow?.status === 'running'} size={14} color="currentColor" showTooltip={false} />
                     : turn?.form ? <FormIcon sx={glyphSx} /> : <AgentToyIcon sx={glyphSx} />;
                 return { title: title || t('canvas.response', { defaultValue: 'Response' }), icon };
             }

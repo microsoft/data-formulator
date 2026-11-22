@@ -3016,24 +3016,17 @@ def load_connectors(identity: str | None = None) -> None:
 # Registration
 # ---------------------------------------------------------------------------
 
-def register_data_connectors(app: Flask) -> None:
-    """Register the global connectors blueprint + admin-provisioned connectors.
+def register_admin_connectors() -> None:
+    """Register the admin connectors (``connectors.yaml`` and ``DF_SOURCES__*``) not registered yet.
 
-    Called from ``app.py`` during startup.
-
-    - Registers ``connectors_bp`` with all shared routes.
-    - Loads admin connectors from ``DATA_FORMULATOR_HOME/connectors.yaml``
-      and ``DF_SOURCES__*`` env vars.
-    - User connectors are loaded lazily on first request (need identity).
+    Run again after plugins load, so an admin connector whose loader is a plugin is registered too: the
+    first run, at import, comes before the CLI knows it is in single-user mode and may load plugins.
     """
     from data_formulator.data_loader import DATA_LOADERS, DISABLED_LOADERS
 
-    # 1. Register the global management blueprint
-    app.register_blueprint(connectors_bp)
-
-    admin_specs = _load_admin_specs()
-
-    for spec in admin_specs:
+    for spec in _load_admin_specs():
+        if spec.source_id in DATA_CONNECTORS:
+            continue
         loader_class = DATA_LOADERS.get(spec.loader_type)
         if not loader_class:
             if spec.loader_type in DISABLED_LOADERS:
@@ -3061,6 +3054,24 @@ def register_data_connectors(app: Flask) -> None:
             spec.loader_type,
             f", pinned={list(spec.default_params.keys())}" if spec.default_params else "",
         )
+
+
+def register_data_connectors(app: Flask) -> None:
+    """Register the global connectors blueprint + admin-provisioned connectors.
+
+    Called from ``app.py`` during startup.
+
+    - Registers ``connectors_bp`` with all shared routes.
+    - Loads admin connectors from ``DATA_FORMULATOR_HOME/connectors.yaml``
+      and ``DF_SOURCES__*`` env vars.
+    - User connectors are loaded lazily on first request (need identity).
+    """
+    from data_formulator.data_loader import DATA_LOADERS, DISABLED_LOADERS
+
+    # 1. Register the global management blueprint
+    app.register_blueprint(connectors_bp)
+
+    register_admin_connectors()
 
     for key, reason in DISABLED_LOADERS.items():
         if key not in DATA_CONNECTORS:

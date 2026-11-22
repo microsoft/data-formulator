@@ -27,7 +27,6 @@ _ACTIONS: dict[str, Callable[[dict[str, Any], SkillContext], Generator[Event, No
     "propose_connection": connections.propose_connection,
     "update_connector_form": connections.update_connector_form,
     "propose_workflow": automation.propose_workflow,
-    "propose_schedule": automation.propose_schedule,
     "propose_session_changes": sessions.propose_session_changes,
     "propose_mcp_changes": mcp.propose_mcp_changes,
 }

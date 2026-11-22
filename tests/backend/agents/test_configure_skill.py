@@ -25,11 +25,6 @@ def _workflow_files(ctx: SkillContext | None = None) -> dict[str, dict]:
     return {item["path"]: item for item in SessionFiles(ctx or _context()).list("workflows://")["files"]}
 
 
-def _schedules(ctx: SkillContext | None = None) -> dict:
-    from data_formulator.analyst.session_files import SessionFiles
-    return json.loads(SessionFiles(ctx or _context()).read("workflows://schedules.json")["content"])
-
-
 def _action(name: str, spec: dict, ctx: SkillContext | None = None) -> tuple[list[dict], str | None]:
     events, generator = [], ConfigureSkill().handle_action(name, spec, ctx or _context())
     try:
@@ -121,46 +116,6 @@ def test_list_sessions_can_find_every_empty_session(sessions) -> None:
     assert "session_blank" in {item["id"] for item in result["sessions"]}
 
 
-def test_schedule_proposal_validates_workflow_and_gates_direct_saves(scheduling) -> None:
-    assert "workflows://demo/gas-price-review.yaml" in _workflow_files()
-
-    events, _ = _action("propose_schedule", {
-        "workflow": "demo/gas-price-review.yaml", "time": "09:00", "weekdays": [4, 0, 1, 2, 3],
-        "timezone": "America/Los_Angeles", "model_id": "server-model", "user_review_needed": False,
-    })
-    form = events[0]["form"]
-    assert form["kind"] == "schedule" and form["auto_submit"] is True
-    assert form["schedule"]["config"]["weekdays"] == [0, 1, 2, 3, 4]
-    assert form["schedule"]["config"]["name"] == "Fuel Price Trends"
-    assert form["schedule"]["issues"] == []
-
-    events, _ = _action("propose_schedule", {
-        "workflow": "demo/gas-price-review.yaml", "time": "09:00", "weekdays": [0],
-        "auto_approve": True, "user_review_needed": False,
-    })
-    assert events[0]["form"]["auto_submit"] is False
-
-    events, _ = _action("propose_schedule", {
-        "workflow": "demo/gas-price-review.yaml", "weekdays": [0], "timezone": "Mars/Base", "user_review_needed": False,
-    })
-    issues = events[0]["form"]["schedule"]["issues"]
-    assert events[0]["form"]["auto_submit"] is False
-    assert any("timezone" in issue for issue in issues)
-    events, _ = _action("propose_schedule", {"workflow": "demo/gas-price-review.yaml", "user_review_needed": False})
-    assert events[0]["form"]["auto_submit"] is False and events[0]["form"]["schedule"]["issues"] == []
-
-    events, observation = _action("propose_schedule", {"workflow": "unsaved.yaml", "time": "09:00", "weekdays": [0]})
-    assert events == [] and "Schedules run saved workflows" in observation
-    events, observation = _action("propose_schedule", {"workflow": "demo/gas-price-review.yaml", "time": "9am"})
-    assert events == [] and "HH:MM" in observation
-
-    events, _ = _action("propose_schedule", {"time": "10:30", "weekdays": [0, 1, 2, 3, 4, 5, 6], "user_review_needed": False})
-    form = events[0]["form"]
-    assert form["title"] == "Schedule a workflow" and form["auto_submit"] is False
-    assert "workflow" not in form["schedule"]["config"] and "workflow_name" not in form["schedule"]
-    assert form["schedule"]["issues"] == ["Choose the saved workflow to run."]
-
-
 def test_ask_user_keeps_multi_choice_only_with_options() -> None:
     from data_formulator.analyst.skills.meta.skill import MetaSkill
 
@@ -190,28 +145,6 @@ def test_ask_user_keeps_known_option_icons_only() -> None:
     ]
 
 
-def test_schedule_edits_merge_existing_config(scheduling) -> None:
-    saved = scheduling.save(IDENTITY, {"name": "Fuel", "workflow": "demo/gas-price-review.yaml", "model_id": "server-model",
-                                       "time": "08:00", "timezone": "UTC", "weekdays": [0]})
-    listed = _workflow_files()
-    # Each workflow lists its schedules; scheduling itself is described once, in schedules.json.
-    fuel = listed["workflows://demo/gas-price-review.yaml"]
-    assert f'schedule "Fuel" ({saved["id"]}): Mon at 08:00 (UTC)' in fuel["detail"]
-    assert all("schedule " not in item.get("detail", "") for path, item in listed.items()
-               if path not in ("workflows://demo/gas-price-review.yaml", "workflows://schedules.json"))
-    scheduling = _schedules()
-    assert scheduling["available"] is True and [item["id"] for item in scheduling["schedules"]] == [saved["id"]]
-    assert scheduling["server_models"] == [{"id": "server-model", "model": "gpt", "provider": "openai"}]
-
-    events, _ = _action("propose_schedule", {"schedule_id": saved["id"], "enabled": False,
-                                             "workflow": "workflows://demo/gas-price-review.yaml"})
-    form = events[0]["form"]
-    assert form["title"] == "Update Fuel"
-    assert form["schedule"]["target"] == {"id": saved["id"], "name": "Fuel"}
-    assert form["schedule"]["config"] | {"enabled": False} == form["schedule"]["config"]
-    assert form["schedule"]["config"]["time"] == "08:00"
-
-
 def test_workflow_revision_targets_only_saved_user_workflows(scheduling) -> None:
     import yaml
     from data_formulator.datalake.workspace import get_user_home
@@ -237,15 +170,6 @@ def test_workflow_revision_targets_only_saved_user_workflows(scheduling) -> None
     events, observation = _action("propose_workflow", {"definition": definition, "summary": "Revised",
                                                         "replaces": "demo/gas-price-review.yaml"})
     assert events == [] and "not one of the user's saved workflows" in observation
-
-
-def test_scheduling_unavailable_is_reported_without_a_form(monkeypatch) -> None:
-    monkeypatch.setattr("data_formulator.workflows.scheduler.scheduling_available", lambda: False)
-    monkeypatch.setattr("data_formulator.analyst.skills.configure.automation.workflows_unavailable", lambda: None)
-    events, observation = _action("propose_schedule", {"workflow": "demo/gas-price-review.yaml"})
-
-    assert _schedules()["available"] is False and len(_workflow_files()) > 1
-    assert events == [] and "only available in the local Data Formulator app" in observation
 
 
 def test_analyst_gates_setup_actions_until_configure_loads_and_streams_the_form(tmp_path, sessions) -> None:
@@ -308,32 +232,57 @@ def test_setup_identity_comes_from_the_app_and_must_own_the_workspace(sessions, 
         assert events == [] and "does not belong" in observation
 
 
-def test_workflow_proposal_carries_a_schedule_saved_with_it(scheduling) -> None:
-    definition = {"version": 1, "name": "Quakes", "overview": "Daily earthquake review", "deliverables": ["Report"],
-                  "parameters": [{"name": "min_magnitude", "label": "Minimum magnitude", "type": "number", "required": True}],
-                  "steps": [{"id": "work", "description": "Review quakes.", "instructions": "Map recent quakes."}]}
-    events, _ = _action("propose_workflow", {"definition": definition, "summary": "Daily quakes", "schedule": {
-        "time": "08:00", "weekdays": [6, 0, 1, 2, 3, 4, 5], "model_id": "server-model", "setup": {"parameters": {"min_magnitude": 2.5}},
-    }})
-    schedule = events[0]["content"]["form"]["workflow"]["schedule"]
-    assert schedule["config"]["weekdays"] == [0, 1, 2, 3, 4, 5, 6] and schedule["config"]["time"] == "08:00"
-    assert schedule["config"]["setup"]["parameters"] == {"min_magnitude": 2.5}
-    assert schedule["issues"] == []
+QUAKES = {"version": 1, "name": "Quakes", "overview": "Daily earthquake review", "deliverables": ["Report"],
+          "parameters": [{"name": "min_magnitude", "label": "Minimum magnitude", "type": "number", "required": True}],
+          "steps": [{"id": "work", "description": "Review quakes.", "instructions": "Map recent quakes."}]}
 
-    # Unknown inputs are left for the user; a path or schedule ID is not part of a new workflow's schedule.
-    events, _ = _action("propose_workflow", {"definition": definition, "summary": "Daily quakes", "schedule": {"timezone": "Mars/Base"}})
-    issues = events[0]["content"]["form"]["workflow"]["schedule"]["issues"]
-    assert any("timezone" in issue for issue in issues) and any("Minimum magnitude" in issue for issue in issues)
-    events, observation = _action("propose_workflow", {"definition": definition, "summary": "Daily quakes",
-                                                       "schedule": {"workflow": "demo/gas-price-review.yaml"}})
-    assert events == [] and "Saving the proposed workflow schedules it" in observation
-    events, observation = _action("propose_workflow", {"definition": definition, "summary": "Daily quakes", "schedule": {"time": "8am"}})
-    assert events == [] and "HH:MM" in observation
+
+def test_workflow_listing_shows_its_schedule(scheduling) -> None:
+    import yaml
+    from data_formulator.analyst.session_files import SessionFiles
+    from data_formulator.datalake.workspace import get_user_home
+    from data_formulator.workflows.instances import WorkflowStore
+
+    block = {"time": "08:00", "weekdays": [0], "timezone": "UTC", "model_id": "server-model",
+             "setup": {"parameters": {"min_magnitude": 2.5}}}
+    WorkflowStore(get_user_home(IDENTITY)).save("quakes.workflow.yaml", yaml.safe_dump({**QUAKES, "schedule": block}))
+    row = scheduling.sync(IDENTITY, None, "quakes.workflow.yaml", block)
+    listed = _workflow_files()
+    assert "workflows://schedules.json" not in listed
+    assert f"scheduled: Mon at 08:00 (UTC), next {row['next_at']}" in listed["workflows://quakes.workflow.yaml"]["detail"]
+    assert all("scheduled" not in item.get("detail", "") for path, item in listed.items() if path != "workflows://quakes.workflow.yaml")
+    read = SessionFiles(_context()).read("workflows://quakes.workflow.yaml")
+    assert yaml.safe_load(read["content"])["schedule"] == block and "including its schedule" in read["note"]
+
+    events, _ = _action("propose_workflow", {"definition": {**QUAKES, "schedule": {**block, "enabled": False}}, "summary": "Pause",
+                                             "replaces": "workflows://quakes.workflow.yaml"})
+    form = events[0]["content"]["form"]["workflow"]
+    assert form["target"] == {"id": "quakes.workflow.yaml", "name": "Quakes", "schedule": block}
+    assert form["definition"]["schedule"]["enabled"] is False and form["schedule_issues"] == []
+
+
+def test_workflow_proposal_carries_its_schedule(scheduling) -> None:
+    schedule = {"time": "08:00", "weekdays": [6, 0, 1, 2, 3, 4, 5], "setup": {"parameters": {"min_magnitude": 2.5}}}
+    events, _ = _action("propose_workflow", {"definition": {**QUAKES, "schedule": schedule}, "summary": "Daily quakes"})
+    form = events[0]["content"]["form"]["workflow"]
+    # The machine's values (timezone, model) are left for the form to fill in.
+    assert form["definition"]["schedule"] == schedule and form["schedule_issues"] == []
+    assert "schedule:" in form["content"]
+
+    events, _ = _action("propose_workflow", {"definition": {**QUAKES, "schedule": {
+        "time": "08:00", "weekdays": [0], "timezone": "Mars/Base", "model_id": "gone"}}, "summary": "Daily quakes"})
+    issues = events[0]["content"]["form"]["workflow"]["schedule_issues"]
+    # A schedule may leave required inputs to its instructions; an unknown timezone is still a problem.
+    assert any("timezone" in issue for issue in issues) and not any("Minimum magnitude" in issue for issue in issues)
+    assert "Choose a server-configured model connection." in issues
+    events, observation = _action("propose_workflow", {"definition": {**QUAKES, "schedule": {"time": "8am", "weekdays": [0]}},
+                                                       "summary": "Daily quakes"})
+    assert events == [] and "schedule.time" in observation
 
 
 def test_workflow_proposal_reports_unavailable_scheduling(scheduling, monkeypatch) -> None:
     monkeypatch.setattr("data_formulator.workflows.scheduler.scheduling_available", lambda: False)
-    definition = {"version": 1, "name": "Quakes", "overview": "Daily earthquake review", "deliverables": ["Report"],
-                  "steps": [{"id": "work", "description": "Review quakes.", "instructions": "Map recent quakes."}]}
-    events, observation = _action("propose_workflow", {"definition": definition, "summary": "Daily", "schedule": {"time": "08:00"}})
+    events, observation = _action("propose_workflow", {"definition": {**QUAKES, "schedule": {"time": "08:00", "weekdays": [0]}},
+                                                       "summary": "Daily"})
     assert events == [] and "without a schedule" in observation
+    assert len(_workflow_files()) > 1

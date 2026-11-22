@@ -45,19 +45,6 @@ export function formArtifactFromEvent(form: FormEvent): FormArtifact {
                 connector: { sourceType, prefilled: form.connector?.prefilled || {}, status: 'pending' },
             };
         }
-        case 'schedule': {
-            const schedule = form.schedule || {};
-            return {
-                kind: 'schedule', title: title || 'Schedule a workflow',
-                schedule: {
-                    ...targetOf(schedule.target),
-                    config: schedule.config || {},
-                    workflowName: schedule.workflow_name,
-                    issues: Array.isArray(schedule.issues) ? schedule.issues.map(String) : [],
-                    status: 'pending',
-                },
-            };
-        }
         case 'sessions': {
             const sessions = form.sessions || {};
             return {
@@ -82,9 +69,11 @@ export function formArtifactFromEvent(form: FormEvent): FormArtifact {
             const workflow = form.workflow || {};
             return {
                 kind: 'workflow', title: title || String(workflow.definition?.name || 'Workflow'),
-                workflow: { content: String(workflow.content ?? ''), definition: workflow.definition, ...targetOf(workflow.target),
-                    ...(workflow.schedule ? { schedule: { config: workflow.schedule.config || {},
-                        issues: Array.isArray(workflow.schedule.issues) ? workflow.schedule.issues.map(String) : [] } } : {}) },
+                workflow: { content: String(workflow.content ?? ''), definition: workflow.definition,
+                    ...(workflow.target?.id ? { target: { ...targetOf(workflow.target).target!,
+                        ...(workflow.target.schedule ? { schedule: workflow.target.schedule } : {}) } } : {}),
+                    ...(Array.isArray(workflow.schedule_issues) && workflow.schedule_issues.length
+                        ? { scheduleIssues: workflow.schedule_issues.map(String) } : {}) },
             };
         }
         case 'mcp': {
@@ -177,12 +166,8 @@ export function formArtifactStatus(form: FormArtifact): string {
             return form.connector.status === 'connected'
                 ? `Connected to ${form.connector.connectionName || form.connector.sourceType}`
                 : form.title;
-        case 'schedule': {
-            const { schedule } = form;
-            if (schedule.status !== 'saved') return form.title;
-            const verb = schedule.target && schedule.savedId === schedule.target.id ? 'Updated' : 'Saved';
-            return `${verb} schedule: ${schedule.config.name || form.title}`;
-        }
+        case 'schedule':
+            return form.schedule.status === 'saved' ? `Saved schedule: ${form.schedule.config.name || form.title}` : form.title;
         case 'sessions': {
             const { items } = form.sessions;
             const deleted = items.filter(item => item.deleted).length;
@@ -200,7 +185,7 @@ export function formArtifactStatus(form: FormArtifact): string {
             const { workflow } = form;
             if (!workflow.saved) return form.title;
             const verb = workflow.target && workflow.saved.path === workflow.target.id ? 'Updated' : 'Saved';
-            return `${verb}${workflow.schedule?.savedId ? ' and scheduled' : ''} workflow: ${workflow.definition.name}`;
+            return `${verb}${workflow.saved.scheduled ? ' and scheduled' : ''} workflow: ${workflow.definition.name}`;
         }
         case 'signin': {
             const { signin } = form;

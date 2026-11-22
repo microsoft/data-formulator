@@ -1,5 +1,35 @@
 {
   "upload": {
+    "livePick": {
+      "umbrella": "¿Necesito paraguas esta semana?",
+      "umbrellaBusy": "Mirando al cielo…",
+      "umbrellaHint": "El pronóstico de la semana para ciudades cercanas, cargado en vivo y en un mapa",
+      "warmer": "¿Esta semana hace más calor de lo normal?",
+      "warmerBusy": "Rebuscando en el tiempo de otros años…",
+      "warmerHint": "El pronóstico de esta semana junto a la misma semana de los últimos diez años, para ciudades cercanas",
+      "daylightShorter": "¿Qué tan rápido se acortan los días?",
+      "daylightLonger": "¿Qué tan rápido se alargan los días?",
+      "daylightBusy": "Mirando al sol…",
+      "daylightHint": "Horas de luz de los próximos cuatro meses, de norte a sur",
+      "wiki": "¿Qué está leyendo el mundo hoy?",
+      "wikiBusy": "Leyendo por encima del hombro del mundo…",
+      "wikiHint": "Los artículos de Wikipedia más leídos ayer y cómo evolucionaron esta semana",
+      "countries": "¿Qué está leyendo cada país hoy?",
+      "countriesBusy": "Espiando lo que lee el mundo…",
+      "countriesHint": "Los artículos de Wikipedia más leídos ayer en todo el mundo, en un mapa",
+      "failed": "No llegó. Inténtalo de nuevo en un rato.",
+      "failedDetail": "No se pudieron cargar datos en vivo para «{{question}}»: {{reason}}",
+      "moon": "¿Cuándo es la próxima luna llena?",
+      "moonBusy": "Mirando la luna…",
+      "moonHint": "Las fases de la luna en los próximos dos meses"
+    },
+    "sessionStart": {
+      "list": "Muéstrame qué hay en mis fuentes conectadas",
+      "scheduledWorkflow": "Quiero crear un flujo de trabajo recurrente que genere informes",
+      "workflow": "Quiero crear un flujo de trabajo reutilizable que genere informes",
+      "connect": "Guíame para conectar una nueva fuente de datos",
+      "discover": "Ayúdame a configurar herramientas para descubrir datos en línea"
+    },
     "title": "Cargar datos",
     "sampleDatasets": "Conjuntos de datos de muestra",
     "sampleDatasetsDesc": "Conjuntos de datos de ejemplo seleccionados",

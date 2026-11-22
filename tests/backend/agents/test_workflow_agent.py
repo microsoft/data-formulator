@@ -89,14 +89,17 @@ def test_workflow_authoring_rejects_unmanaged_hosted_mode(tmp_path, instance, mo
 
 def test_workflow_proposal_exposes_canonical_definition_schema():
     from data_formulator.analyst.skills import build_registry
-    from data_formulator.workflows.instances import WORKFLOW_DEFINITION_SCHEMA, WORKFLOW_STEP_SCHEMA
+    from data_formulator.workflows.instances import WORKFLOW_DEFINITION_SCHEMA, WORKFLOW_STEP_SCHEMA, authored_definition_schema
     from jsonschema import Draft202012Validator
 
     Draft202012Validator.check_schema(WORKFLOW_DEFINITION_SCHEMA)
     proposal = next(spec for spec in build_registry().tool_specs["configure"]
                     if spec["function"]["name"] == "propose_workflow")
     contract = proposal["function"]["parameters"]
-    assert contract["properties"]["definition"] == WORKFLOW_DEFINITION_SCHEMA
+    assert contract["properties"]["definition"] == authored_definition_schema()
+    # A proposal's schedule may leave the machine's values for the form; a saved file has them.
+    assert contract["properties"]["definition"]["properties"]["schedule"]["required"] == ["time", "weekdays"]
+    assert WORKFLOW_DEFINITION_SCHEMA["properties"]["schedule"]["required"] == ["time", "weekdays", "timezone", "model_id"]
     assert contract["required"] == ["definition", "summary"]
     assert "content" not in contract["properties"]
     assert "parameters" in WORKFLOW_DEFINITION_SCHEMA["properties"]

@@ -73,7 +73,7 @@ WORKSPACE_TOOLS = {"create_data", "update_data", "create_file", "edit_file", "mo
 PUBLISHED_TOOLS = {"create_data", "update_data", "create_file", "edit_file", "move_file", "delete_items"}
 # Runs may open a connection form for missing access, but never author workflows or manage app setup.
 RUN_EXCLUDED_TOOLS = {"long_response", "propose_workflow", "read_connector_form", "update_connector_form",
-                      "list_sessions", "propose_schedule", "propose_session_changes",
+                      "list_sessions", "propose_session_changes",
                       "list_mcp_servers", "propose_mcp_changes",
                       # Background tasks belong to chat runs for now; a workflow run is already a server job.
                       "start_task", "wait_tasks", "stop_task"}
@@ -154,11 +154,14 @@ Do not ask 'shall I continue'. Be concise. Make one tool call at a time.
 """
 
 
-def new_run(instance: dict, run_id: str, setup: dict | None = None, language: str = "en") -> dict:
-    instance = localize_definition(instance, language)
+def new_run(instance: dict, run_id: str, setup: dict | None = None, language: str = "en", *, require_values: bool = True) -> dict:
+    """A run's first checkpoint. A scheduled run passes ``require_values=False``: its instructions, not a form, say which
+    inputs to use."""
+    # When the workflow runs unattended is not part of the work.
+    instance = {key: value for key, value in localize_definition(instance, language).items() if key != "schedule"}
     steps = deepcopy(instance.get("steps") or initial_steps())
     return {"id": run_id, "definition": deepcopy(instance), "instance": deepcopy(instance), "language": language,
-            "plan": {"steps": steps}, "setup": resolve_setup(instance, setup),
+            "plan": {"steps": steps}, "setup": resolve_setup(instance, setup, require_values=require_values),
             "status": "running", "started_at": datetime.now(timezone.utc).isoformat(),
             "step_id": steps[0]["id"], "trajectory": [], "checks": {}, "evidence": {},
             "transitions": [], "calls": 0, "elapsed_seconds": 0, "revision": 0, "report": "",

@@ -20,19 +20,27 @@ describe('AppSwitcher', () => {
         expect(items[0]).not.toHaveClass('Mui-selected');
     });
 
-    it('reads as a breadcrumb in a space, linking back to Data Formulator', () => {
-        const { unmount } = render(<AppSwitcher appName="UIS Data Explorer" destinations={destinations} onGoHome={vi.fn()} />);
+    it('reads "Data Formulator / <space logo> <space>" in a space, and only "/ <space>" when the path is too long', () => {
+        const { container, rerender, unmount } = render(<AppSwitcher appName="UIS Data Explorer" destinations={destinations}
+            onGoHome={vi.fn()} logo="/api/spaces/unesco/logo" />);
         expect(screen.getByRole('link', { name: 'Data Formulator' })).toHaveAttribute('href', '/app');
+        expect(container).toHaveTextContent(/^Data Formulator\/UIS Data Explorer$/);
+        expect(container.querySelector('img')).toHaveAttribute('src', '/api/spaces/unesco/logo');
+        rerender(<AppSwitcher appName="UIS Data Explorer" destinations={destinations} onGoHome={vi.fn()} logo="/api/spaces/unesco/logo" spellOut={false} />);
+        expect(screen.queryByRole('link', { name: 'Data Formulator' })).toBeNull();
+        expect(container).toHaveTextContent(/^\/UIS Data Explorer$/);
+        expect(container.querySelector('img')).not.toBeNull();
         unmount();
-        render(<AppSwitcher appName="Data Formulator" onGoHome={vi.fn()}
+        render(<AppSwitcher appName="Data Formulator" onGoHome={vi.fn()} logo={null}
             destinations={destinations.map(destination => ({ ...destination, current: destination.key === 'app' }))} />);
-        expect(screen.queryByRole('link')).toBeNull();
+        expect(screen.queryByText('/')).toBeNull();
         expect(screen.getByRole('button', { name: 'Data Formulator' })).toBeInTheDocument();
     });
 
     it.each([
         ['NeurIPS in Data Formulator', 'NeurIPS'],
         ['Dataverse with Data Formulator', 'Dataverse'],
+        ['Lattice ❤️ Data Formulator', 'Lattice'],
     ])('shortens %s in the header and the menu', (name, shortName) => {
         const named = [destinations[0], { ...destinations[1], name }];
         const { rerender } = render(<AppSwitcher appName={name} destinations={named} onGoHome={vi.fn()} />);
@@ -46,6 +54,17 @@ describe('AppSwitcher', () => {
         expect(item).toHaveTextContent(new RegExp(`^Space: ${shortName}$`));
         expect(item).toHaveAttribute('href', '/space/unesco');
         expect(item).toHaveClass('Mui-selected');
+    });
+
+    it('is a link back to the front page when a session follows it in the path', () => {
+        const onGoHome = vi.fn((event: React.MouseEvent) => event.preventDefault());
+        render(<AppSwitcher appName="UIS Data Explorer" destinations={destinations} onGoHome={onGoHome} last={false} />);
+        expect(screen.queryByRole('button', { name: 'UIS Data Explorer' })).toBeNull();
+        const back = screen.getByRole('link', { name: 'UIS Data Explorer' });
+        expect(back).toHaveAttribute('href', '/space/unesco');
+        fireEvent.click(back);
+        expect(onGoHome).toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole('menu')).toBeNull();
     });
 
     it('takes the current one to its front page instead of reloading it', async () => {

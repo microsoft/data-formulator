@@ -15,7 +15,7 @@ They are not part of the pytest suites (live models, minutes per run).
 The **decisive move** is the first event that commits the run to a path:
 
 - an action (`visualize`, `write_report`, `write_app`, `propose_data_operation`,
-  `propose_connection`, `propose_workflow`, `propose_schedule`,
+  `propose_connection`, `propose_workflow` (a schedule is part of the workflow),
   `propose_session_changes`, `ask_user`, `long_response`),
 - a tool that changes the session (`create_data`, `update_data`, `create_file`,
   `edit_file`, `move_file`, `delete_items`, `run_terminal`),

@@ -710,6 +710,29 @@ it.each(['equalEarth', 'orthographic'] as const)('keeps %s maps naturally sized 
     }
 });
 
+it('shares one colour ramp between layers that split a field by a filter, but not between different ramps', async () => {
+    const rows = pipelineRows.map((row, index) => ({ ...row, high: 20 + index * 10 }));
+    const layers = (dryDomain: [number, number]) => parseMapSpec(JSON.stringify({ data: { d: { values: rows } }, layers: [
+        { id: 'wet', name: 'Wet', type: 'bubbles', data: 'd', lon: 'lon', lat: 'lat', filter: [{ field: 'pipeline', op: '>', value: 0 }],
+            color: { field: 'high', type: 'sequential', method: 'continuous', domain: [20, 85] }, size: { field: 'pipeline' } },
+        { id: 'dry', name: 'Dry', type: 'points', data: 'd', lon: 'lon', lat: 'lat', filter: [{ field: 'pipeline', op: '==', value: 0 }],
+            color: { field: 'high', type: 'sequential', method: 'continuous', domain: dryDomain }, size: { value: 4 } },
+    ] })).spec!;
+    const same = render(<MapView spec={layers([20, 85])} data={{ d: rows }} geoSets={{ countries }} />);
+    await flush();
+    let legends = same.container.querySelector('[data-map-legends]') as HTMLElement;
+    expect(within(legends).getAllByText('High')).toHaveLength(1);
+    expect(within(legends).queryByText(/^(Wet|Dry) · High$/)).toBeNull();
+    same.unmount();
+
+    const different = render(<MapView spec={layers([0, 100])} data={{ d: rows }} geoSets={{ countries }} />);
+    await flush();
+    legends = different.container.querySelector('[data-map-legends]') as HTMLElement;
+    expect(within(legends).getByText('Wet · High')).toBeInTheDocument();
+    expect(within(legends).getByText('Dry · High')).toBeInTheDocument();
+    different.unmount();
+});
+
 it('shares matching category legends across layers, including hover, toggling, and still pictures', async () => {
     const spec = pipelineMap();
     const data = { d: pipelineRows, other: pipelineRows };

@@ -74,7 +74,7 @@ scratch/     file · downloads, tool outputs, intermediates: the one folder code
 session://   object · index · tables/<name> (description, columns; rows readable and searchable) ·
              charts/<id> · reports/<id> · threads/<n> · references/<id> (connected sources: cached metadata only)
 sources://   object · connected-source catalogs: <source_id>/<path>/<table> (metadata only; listed one level at a time)
-workflows:// object · saved and built-in workflows and schedules.json (read-only; listed and searched only when named)
+workflows:// object · saved and built-in workflows, with their schedules (read-only; listed and searched only when named)
 ```
 
 Every item has one name, the same in every tool. Files are paths from the workspace root, where

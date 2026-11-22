@@ -579,10 +579,9 @@ def _load_tool_specs(skill_dir: Path) -> list[dict[str, Any]]:
     for spec in specs:
         properties = spec.get("function", {}).get("parameters", {}).get("properties", {})
         if properties.get("definition") == {"$ref": "workflow-definition"}:
-            from copy import deepcopy
-            from data_formulator.workflows.instances import WORKFLOW_DEFINITION_SCHEMA
+            from data_formulator.workflows.instances import authored_definition_schema
 
-            properties["definition"] = deepcopy(WORKFLOW_DEFINITION_SCHEMA)
+            properties["definition"] = authored_definition_schema()
     return specs
 
 

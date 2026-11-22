@@ -42,7 +42,7 @@ import { WorkflowProgress } from './WorkflowPanel';
 import { formArtifactStatus } from '../app/setupForms';
 import { requestToolsDialog } from '../app/toolsSettings';
 import { mcpFormDone } from '../components/McpProposal';
-import { WorkflowGears } from '../components/FunComponents';
+import { WorkflowIcon } from '../components/FunComponents';
 import { createExternalTableReference, externalReferenceTitle, loadsAsConnectorReference, isSemanticConnectorTable, deleteWorkspaceFile, importConnectorFile, listWorkspaceFiles, onWorkspaceFilesChanged, type WorkspaceFile } from '../app/workspaceService';
 import dfLogo from '../assets/df-logo.svg';
 
@@ -118,6 +118,38 @@ import { useLayout } from '../app/LayoutProvider';
 
 const openToolActivity = (nodeId: string, execution: NonNullable<TextTurn['executions']>[number] | CodeExecution) => {
     window.dispatchEvent(new CustomEvent('df-view-tool-activity', { detail: { nodeId, execution } }));
+};
+
+/**
+ * A repair the app asked for on its own (the app the agent wrote failed when it opened), shown like a tool call:
+ * one quiet row, open to read the error and what the agent said about the fix.
+ */
+const AppRepairRow: React.FC<{ error: string; notes: string[]; live: boolean }> = ({ error, notes, live }) => {
+    const { t } = useTranslation();
+    const [expanded, setExpanded] = useState(false);
+    const label = live ? t('dataThread.appRepairRunning', { defaultValue: 'Fixing an error in the app…' })
+        : notes.length ? t('dataThread.appRepairDone', { defaultValue: 'Fixed an error in the app' })
+            : t('dataThread.appRepairFound', { defaultValue: 'Found an error in the app' });
+    const textSx = { fontSize: textVar.xxs, ...quietText } as const;
+    return <Box data-auto-repair sx={{ width: '100%', minWidth: 0 }}>
+        <ButtonBase onClick={() => setExpanded(previous => !previous)} aria-expanded={expanded} title={label}
+            sx={{ display: 'flex', width: '100%', minWidth: 0, justifyContent: 'flex-start', gap: 0.5, py: '2px', color: 'text.secondary',
+                textAlign: 'left', '&:hover': { bgcolor: 'action.hover' }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
+            <ChevronRightIcon sx={{ width: 10, height: 10, flexShrink: 0, transform: expanded ? 'rotate(90deg)' : undefined }} />
+            {live ? <CircularProgress size={8} color="inherit" sx={{ flexShrink: 0 }} />
+                : <BuildCircleOutlinedIcon sx={{ width: 10, height: 10, flexShrink: 0 }} />}
+            <Typography component="span" sx={{ minWidth: 0, ...textSx, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {label}
+            </Typography>
+        </ButtonBase>
+        <Collapse in={expanded} unmountOnExit>
+            <Box sx={{ pl: 1.75, py: 0.25, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                <Typography sx={{ ...textSx, color: 'text.disabled', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{error}</Typography>
+                {notes.map((note, index) => <Typography key={index} sx={{ ...textSx, color: 'text.secondary', whiteSpace: 'pre-wrap',
+                    overflowWrap: 'anywhere' }}>{note}</Typography>)}
+            </Box>
+        </Collapse>
+    </Box>;
 };
 
 const ToolActivitySelectionContext = React.createContext<{ nodeId: string; executionId: string } | null>(null);
@@ -1015,6 +1047,25 @@ let SingleThreadGroupView: FC<{
     const supersededPlanTurnIds = new Set(planTurnIds.slice(0, -1)
         .filter(id => turnById.get(id)!.plan!.some(item => item.status === 'open')));
 
+    // The agent's plain replies in a run the app started to repair itself (until the next message) belong to that
+    // repair's row, not the conversation.
+    const repairNotes = new Map<string, string[]>();
+    const repairReplyIds = new Set<string>();
+    {
+        let repair: string | undefined;
+        for (const id of thread.nodeIds) {
+            const turn = turnById.get(id);
+            if (!turn) continue;
+            if (turn.prompt) { repair = turn.auto === 'app-repair' ? turn.id : undefined; continue; }
+            const plain = !!turn.content && !turn.form && !turn.dataOperation && !turn.workflow && !turn.options?.length
+                && !(turn.executions?.length) && !codeCallsOf(turn).length;
+            if (repair && plain) {
+                repairNotes.set(repair, [...(repairNotes.get(repair) || []), turn.content]);
+                repairReplyIds.add(turn.id);
+            }
+        }
+    }
+
     const pushUserMessage = (turn: TextTurn, highlighted: boolean) => {
         const content = turn.workflowMessage?.kind === 'steering' ? `(steering) ${turn.prompt}` : turn.prompt!;
         const entry: InteractionEntry = { from: 'user', to: 'data-agent', role: 'prompt', content,
@@ -1024,18 +1075,12 @@ let SingleThreadGroupView: FC<{
         // A repair the app sent on its own (the app the agent just wrote failed when it opened) is a step of the
         // work, not something the user said.
         if (turn.auto === 'app-repair') {
-            const step: InteractionEntry = { from: 'data-agent', to: 'data-agent', role: 'instruction',
-                content: t('dataThread.appAutoRepair', { defaultValue: 'Found an error when the app opened; fixing it' }), timestamp: turn.createdAt };
-            // Laid out like the agent's own messages around it; the error itself is in the tooltip.
+            // Ambient, like a tool call: no gutter icon of its own.
+            const live = threadRunning && thread.nodeIds.indexOf(turn.id) >= lastPromptIndex;
             timelineItems.push({
-                key: `textturn-prompt-${turn.id}-0`, turnId: turn.id, type: 'artifact', artifactTone: 'agent', highlighted, interactionEntry: step,
-                gutterIcon: <BuildCircleOutlinedIcon sx={{ width: 14, height: 14 }} />,
-                element: <Tooltip title={turn.prompt} placement="right">
-                    <Box data-auto-repair sx={{ width: '100%', minWidth: 0 }}>
-                        <ThreadResponseCard responseKind="agent" selected={false} content={step.content}
-                            highlighted={focusedId?.type !== 'conversation' && highlighted} onSelect={() => undefined} />
-                    </Box>
-                </Tooltip>,
+                key: `textturn-prompt-${turn.id}-0`, turnId: turn.id, type: 'trigger', highlighted, secondaryActivity: true,
+                isRunning: live, live: live ? 'running' : undefined,
+                element: <AppRepairRow error={turn.prompt!} notes={repairNotes.get(turn.id) || []} live={live} />,
             });
             return;
         }
@@ -1081,10 +1126,10 @@ let SingleThreadGroupView: FC<{
         // timeline can still recolour it when the chain reaches it); a reply waiting for an answer keeps its face.
         const quietReply = quietOffChainSteps(theme) && !workflow && !turn.form && !rowHL && !awaitingAnswer;
         const gutterIcon = workflow
-            ? <WorkflowGears running={workflow.status === 'running'} color={workflow.status === 'paused'
+            ? <WorkflowIcon running={workflow.status === 'running'} color={workflow.status === 'paused'
                 ? theme.palette.warning.main : rowHL ? theme.palette.primary.main : theme.palette.text.secondary} />
             : turn.form?.kind === 'workflow'
-            ? <WorkflowGears running={false} color={iconColor} />
+            ? <WorkflowIcon running={false} color={iconColor} />
             : turn.form
             ? <FormIcon sx={{ width: 14, height: 14, color: iconColor }} />
             : quietReply
@@ -1143,6 +1188,8 @@ let SingleThreadGroupView: FC<{
         }
     };
     const pushAgentMessageContent = (turn: TextTurn, highlighted: boolean, nextNodeId: string | undefined) => {
+        // Shown in its repair's row (AppRepairRow).
+        if (repairReplyIds.has(turn.id)) return;
         const executions = turn.executions || [];
         // The thread shows code and commands; reads and searches stay in the conversation view.
         const codeExecutions = codeCallsOf(turn);
@@ -2358,7 +2405,7 @@ function layoutPreserveOrder(heights: number[], numColumns: number, columnHeight
     return columns;
 }
 
-export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: boolean}> = function ({ sx, centered = false, denseColumns = false }) {
+export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: boolean, emptyStarter?: React.ReactNode}> = function ({ sx, centered = false, denseColumns = false, emptyStarter }) {
     const { t } = useTranslation();
     const [activitySelection, setActivitySelection] = useState<{ nodeId: string; executionId: string } | null>(null);
     useEffect(() => {
@@ -2859,7 +2906,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
             } else if (kind === 'workflow-definition') {
                 const form = turnByIdTop.get(id)?.form;
                 if (form?.kind === 'workflow') outputs.push({ kind: 'workflow', id, title: form.workflow.definition.name,
-                    icon: <WorkflowGears running={false} color="currentColor" /> });
+                    icon: <WorkflowIcon running={false} color="currentColor" /> });
             } else if (kind === 'table' || kind === 'loaded-table') {
                 const node = kind === 'loaded-table' ? loadedTableNodes.find(item => item.id === id) : undefined;
                 // A source table roots the thread; it isn't something the thread made.
@@ -3197,7 +3244,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
                     </Typography>
                 </Box>
             ) : (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, maxWidth: 560, textAlign: 'left' }}>
+                <Box sx={{ display: 'flex', alignItems: emptyStarter ? 'flex-start' : 'center', gap: 1.5, maxWidth: emptyStarter ? 680 : 560, textAlign: 'left' }}>
                     <Box
                         component="img"
                         src={dfLogo}
@@ -3212,6 +3259,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
                         <Typography variant="body2" sx={{ mt: 0.25, fontSize: textVar.xs, lineHeight: 1.5, color: 'text.secondary' }}>
                             {t('dataThread.emptySession')}
                         </Typography>
+                        {emptyStarter}
                     </Box>
                 </Box>
             )}

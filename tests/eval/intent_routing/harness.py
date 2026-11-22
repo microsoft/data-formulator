@@ -46,7 +46,7 @@ TEMPLATE_NOTES = {
 
 ACTIONS = {
     "visualize", "write_report", "write_app", "write_html_app", "propose_data_operation", "load_data",
-    "propose_connection", "update_connector_form", "propose_workflow", "propose_schedule",
+    "propose_connection", "update_connector_form", "propose_workflow",
     "propose_session_changes", "ask_user", "long_response",
 }
 MUTATING_TOOLS = {

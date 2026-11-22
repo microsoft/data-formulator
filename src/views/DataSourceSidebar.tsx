@@ -36,7 +36,7 @@ import { requestWormholeDialog } from '../app/wormholeService';
 import { AllSessions, formatCompactTime, SessionBadges, sessionDateGroup, sessionGroupHeaderSx,
     sessionGroupLabelsFor, sessionTimeFor, sortSessions, useSessionActions, type SessionDateGroup, type SessionSortKey } from './AllSessions';
 import { generateUUID } from '../app/identity';
-import { generateWorkspaceId, leaveSession } from '../app/sessionThunks';
+import { generateWorkspaceId, startNewSession } from '../app/sessionThunks';
 import { defaultSessionName } from '../app/useWorkspaceAutoName';
 import { openSessionInNewTab } from '../app/sessionTabs';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
@@ -47,7 +47,7 @@ import AddIcon from '@mui/icons-material/Add';
 import AddCircleIcon from '@mui/icons-material/AddCircle';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import { InlineLoadingStatus, WorkflowGears } from '../components/FunComponents';
+import { InlineLoadingStatus, WorkflowIcon } from '../components/FunComponents';
 import { useProgressiveCount } from '../components/useProgressiveCount';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -66,7 +66,6 @@ import CheckIcon from '@mui/icons-material/Check';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 
 import { WorkflowPanel } from './WorkflowPanel';
-import { SchedulesPanel } from './WorkflowSchedules';
 
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
@@ -77,7 +76,6 @@ import { getConnectorIcon, connectorSortOrder, RelationalDBIcon, WormholeReceive
 import { loadTable } from '../app/tableThunks';
 import { listWorkspaces, importWorkspace, onWorkspaceListChanged } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
-import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import { borderColor, sidebarEdge, sidebarMenuSx, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarToolbarSx, ink, paper, weight } from '../app/tokens';
 import { ItemCard, ItemCardAction, MetadataCard, MetadataChips, starredColor, ViewAllButton } from '../components/ItemCard';
 
@@ -100,9 +98,10 @@ type SidebarTab = DataFormulatorState['dataSourceSidebarTab'];
 const selectSidebarTab = (state: DataFormulatorState): SidebarTab => {
     // Saved state from before the Workflows tab was renamed calls it 'knowledge'.
     const saved = (state.dataSourceSidebarTab as string | undefined) ?? 'sources';
-    const tab: SidebarTab = saved === 'knowledge' ? 'workflows' : saved as SidebarTab;
-    // A workflow or schedule tab remembered from elsewhere opens sessions where workflows are unavailable.
-    return (tab === 'workflows' || tab === 'schedules') && state.serverConfig?.WORKFLOWS_AVAILABLE !== true ? 'sessions' : tab;
+    // Schedules are part of workflows now (design-docs/78), so a remembered Schedules tab opens Workflows.
+    const tab: SidebarTab = saved === 'knowledge' || saved === 'schedules' ? 'workflows' : saved as SidebarTab;
+    // A workflow tab remembered from elsewhere opens sessions where workflows are unavailable.
+    return tab === 'workflows' && state.serverConfig?.WORKFLOWS_AVAILABLE !== true ? 'sessions' : tab;
 };
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -297,11 +296,15 @@ export const DataSourceSidebar: React.FC<{
                 pt: 1,
                 gap: 0.5,
             }}>
-                <Tooltip title={t('sidebar.openUpload', { defaultValue: 'Upload data' })} placement="right">
+                <Tooltip title={t('sidebar.newSession', { defaultValue: 'New session' })} placement="right">
                     <IconButton
                         size="small"
-                        onClick={() => onOpenUploadDialog?.('menu')}
-                        aria-label={t('sidebar.openUpload', { defaultValue: 'Upload data' })}
+                        // As the panel's New: save the open session and start a blank one.
+                        onClick={() => {
+                            if (isOpen && !isPinned) dispatch(dfActions.setDataSourceSidebarOpen(false));
+                            void dispatch(startNewSession());
+                        }}
+                        aria-label={t('sidebar.newSession', { defaultValue: 'New session' })}
                         sx={{
                         color: 'primary.main',
                         borderRadius: 1,
@@ -329,25 +332,15 @@ export const DataSourceSidebar: React.FC<{
                             <RelationalDBIcon fontSize="small" />
                         </IconButton>
                     </Tooltip>
-                    {workflowsAvailable && <><Tooltip title={t('workflow.title')} placement="right">
+                    {workflowsAvailable && <Tooltip title={t('workflow.title')} placement="right">
                         <IconButton size="small" onClick={() => { setInitialTab('workflows'); if (!isOpen) toggle(); else if (initialTab !== 'workflows') setInitialTab('workflows'); else toggle(); }} sx={{
                             color: isOpen && initialTab === 'workflows' ? 'primary.main' : 'text.secondary',
                             bgcolor: isOpen && initialTab === 'workflows' ? 'action.selected' : 'transparent',
                             borderRadius: 1,
                         }}>
-                            <WorkflowGears running={false} size={20} showTooltip={false} />
+                            <WorkflowIcon running={false} size={20} showTooltip={false} />
                         </IconButton>
-                    </Tooltip>
-                    <Tooltip title={t('sidebar.schedules', { defaultValue: 'Schedules' })} placement="right">
-                        <IconButton size="small" aria-label={t('sidebar.schedules', { defaultValue: 'Schedules' })}
-                            onClick={() => { setInitialTab('schedules'); if (!isOpen) toggle(); else if (initialTab !== 'schedules') setInitialTab('schedules'); else toggle(); }} sx={{
-                            color: isOpen && initialTab === 'schedules' ? 'primary.main' : 'text.secondary',
-                            bgcolor: isOpen && initialTab === 'schedules' ? 'action.selected' : 'transparent',
-                            borderRadius: 1,
-                        }}>
-                            <ScheduleOutlinedIcon fontSize="small" />
-                        </IconButton>
-                    </Tooltip></>}
+                    </Tooltip>}
                 </>
             </Box>
 
@@ -489,7 +482,7 @@ const DataSourceSidebarPanel: React.FC<{
     const [searchCatalogCache, setSearchCatalogCache] = useState<Record<string, CatalogCache>>({});
     const [searchingCatalog, setSearchingCatalog] = useState<Record<string, boolean>>({});
 
-    // Sidebar tab: 'sources', 'sessions', 'workflows' or 'schedules'.
+    // Sidebar tab: 'sources', 'sessions' or 'workflows'.
     // Stored in Redux so the active tab survives a session refresh; the
     // `initialTab` prop is derived from the same Redux value upstream.
     // Fall back to 'sources' for older persisted state that predates this field.
@@ -1335,10 +1328,6 @@ const DataSourceSidebarPanel: React.FC<{
             </IconButton>
         </Tooltip>
     </>;
-    const openRunSession = async (id: string) => {
-        await handleOpenSession(id);
-        dispatch(dfActions.setDataSourceSidebarOpen(false));
-    };
     const sessionBadges = (s: WorkspaceSummary) => <SessionBadges session={s} />;
     const sessionActions = (s: WorkspaceSummary, isCurrent: boolean) => (!s.read_only || !isCurrent) ? <>
         {!isCurrent && <ItemCardAction label={t('sidebar.openInNewTab', { defaultValue: 'Open in new tab' })}
@@ -1832,7 +1821,7 @@ const DataSourceSidebarPanel: React.FC<{
                             aria-label={t('sidebar.newSession', { defaultValue: 'New session' })}
                             onClick={() => {
                                 if (!isPinned) dispatch(dfActions.setDataSourceSidebarOpen(false));
-                                void dispatch(leaveSession());
+                                void dispatch(startNewSession());
                             }}
                             sx={sidebarPrimaryActionSx}>
                             {t('sidebar.new', { defaultValue: 'New' })}
@@ -2008,9 +1997,6 @@ const DataSourceSidebarPanel: React.FC<{
             </Box>
             )}
 
-            {activeTab === 'schedules' && (
-                <SchedulesPanel onOpenSession={openRunSession} headerActions={panelHeaderActions} />
-            )}
 
         </Box>
     );

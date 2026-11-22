@@ -41,6 +41,7 @@ from data_formulator.data_connector import (
     _visible_connector_items,
     connectors_bp,
     load_connectors,
+    register_admin_connectors,
     register_data_connectors,
 )
 from data_formulator.data_loader.external_data_loader import (
@@ -659,6 +660,26 @@ class TestRegisterConnectedSources:
             register_data_connectors(app)
 
         assert len(DATA_CONNECTORS) == 0
+
+    def test_registers_admin_connector_whose_plugin_loads_later(self, app, tmp_path, monkeypatch):
+        # The CLI loads plugins after import has registered the admin connectors.
+        for key in list(os.environ):
+            if key.startswith("DF_SOURCES__"):
+                monkeypatch.delenv(key)
+        (tmp_path / "connectors.yaml").write_text("connectors:\n  - type: stub\n    name: Plugin source\n")
+
+        with patch("data_formulator.data_connector._get_df_home", return_value=tmp_path), \
+             patch("data_formulator.data_loader.DISABLED_LOADERS", {}):
+            with patch("data_formulator.data_loader.DATA_LOADERS", {}):
+                register_data_connectors(app)
+            assert "stub" not in DATA_CONNECTORS
+            with patch("data_formulator.data_loader.DATA_LOADERS", {"stub": _StubLoader}):
+                register_admin_connectors()
+                first = DATA_CONNECTORS["stub"]
+                register_admin_connectors()
+
+        assert DATA_CONNECTORS["stub"] is first
+        assert "stub" in _ADMIN_CONNECTOR_IDS
 
     def test_logs_disabled_loaders(self, app, tmp_path, monkeypatch):
         for key in list(os.environ):

@@ -1,5 +1,35 @@
 {
   "upload": {
+    "livePick": {
+      "umbrella": "Preciso de guarda-chuva esta semana?",
+      "umbrellaBusy": "Olhando o céu…",
+      "umbrellaHint": "A previsão da semana para cidades perto de você, carregada ao vivo e no mapa",
+      "warmer": "Esta semana está mais quente que o normal?",
+      "warmerBusy": "Vasculhando o tempo de anos passados…",
+      "warmerHint": "A previsão desta semana ao lado da mesma semana dos últimos dez anos, para cidades perto de você",
+      "daylightShorter": "Com que rapidez os dias estão encurtando?",
+      "daylightLonger": "Com que rapidez os dias estão ficando mais longos?",
+      "daylightBusy": "Observando o sol…",
+      "daylightHint": "Horas de luz nos próximos quatro meses, de norte a sul",
+      "wiki": "O que o mundo está lendo hoje?",
+      "wikiBusy": "Lendo por cima do ombro do mundo…",
+      "wikiHint": "Os artigos da Wikipédia mais lidos ontem e como evoluíram nesta semana",
+      "countries": "O que cada país está lendo hoje?",
+      "countriesBusy": "Espiando o que o mundo lê…",
+      "countriesHint": "Os artigos da Wikipédia mais lidos ontem pelo mundo, num mapa",
+      "failed": "Não deu certo. Tente de novo daqui a pouco.",
+      "failedDetail": "Não foi possível carregar dados ao vivo para \"{{question}}\": {{reason}}",
+      "moon": "Quando é a próxima lua cheia?",
+      "moonBusy": "Olhando a lua…",
+      "moonHint": "As fases da lua nos próximos dois meses"
+    },
+    "sessionStart": {
+      "list": "Mostre o que há nas minhas fontes conectadas",
+      "scheduledWorkflow": "Quero criar um fluxo de trabalho recorrente que gere relatórios",
+      "workflow": "Quero criar um fluxo de trabalho reutilizável que gere relatórios",
+      "connect": "Guie-me para conectar uma nova fonte de dados",
+      "discover": "Ajude-me a configurar ferramentas para descobrir dados online"
+    },
     "title": "Carregar dados",
     "sampleDatasets": "Conjuntos de dados de exemplo",
     "sampleDatasetsDesc": "Conjuntos de dados de exemplo selecionados",

@@ -4,7 +4,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataFormulatorReducer, dfActions } from '../../../../src/app/dfSlice';
-import { LandingDataEntry, LandingSources } from '../../../../src/views/LandingDataEntry';
+import { LandingDataEntry, LandingSources, chipsThatFit } from '../../../../src/views/LandingDataEntry';
 import { SpaceDatasetTabs, inSentence } from '../../../../src/spaces/SpaceDatasetTabs';
 import type { SpaceConfig, SpaceStarter } from '../../../../src/spaces/types';
 
@@ -113,4 +113,13 @@ it('names a dataset mid-sentence in lower case, unless it reads as a proper name
     expect(inSentence('School and learning')).toBe('school and learning');
     expect(inSentence('SDG 4 education')).toBe('SDG 4 education');
     expect(inSentence('Microsoft at NeurIPS')).toBe('Microsoft at NeurIPS');
+});
+
+describe('a space\'s questions on one row', () => {
+    it('shows them all when they fit, else as many as fit beside "More", and never none', () => {
+        expect(chipsThatFit([100, 100, 100], 60, 312, 6)).toBe(3);
+        expect(chipsThatFit([100, 100, 100], 60, 311, 6)).toBe(2);
+        expect(chipsThatFit([100, 100, 100], 60, 200, 6)).toBe(1);
+        expect(chipsThatFit([400, 100], 60, 200, 6)).toBe(1);
+    });
 });

@@ -60,7 +60,10 @@ import dfLogo from '../assets/df-logo.svg';
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
 import { UnifiedDataUploadDialog, UploadTabType, ConnectorInstance } from './UnifiedDataUploadDialog';
-import { LandingDataEntry, LandingSources } from './LandingDataEntry';
+import { LandingDataEntry, LandingSources, LiveQuestionCarousel, QuickChatOptions } from './LandingDataEntry';
+import { availableLiveQuestions, fetchLiveData, livePickCopy, type LiveQuestion } from '../app/liveDataPick';
+import { loadTable } from '../app/tableThunks';
+import { buildSessionStartPrompts } from './dataLoadingSuggestions';
 import { ReportView } from './ReportView';
 import { CanvasChromeContext } from './CanvasHeader';
 import { CanvasTabs } from './CanvasTabs';
@@ -74,13 +77,13 @@ import { SpaceDatasetTabs, inSentence } from '../spaces/SpaceDatasetTabs';
 import { SPACE_COLUMN, SPACE_PAGE, SPACE_CHAT_CENTRE } from '../spaces/layout';
 import { SPACE_ID } from '../app/space';
 import type { SpaceStarter, SpaceStory } from '../spaces/types';
-import { listWorkflowLibrary, SchedulesPanel, useScheduleLibrary } from './WorkflowSchedules';
+import { listWorkflowLibrary } from './WorkflowSchedules';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import { Trans, useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { handleApiError } from '../app/errorHandler';
-import { listWorkspaceFiles, listWorkspaces, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, setWorkspaceStarred, updateWorkspaceMeta } from '../app/workspaceService';
+import { listedAsSession, listWorkspaceFiles, listWorkspaces, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, setWorkspaceStarred, updateWorkspaceMeta } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import { AppDispatch, store } from '../app/store';
@@ -107,15 +110,29 @@ const INITIAL_SESSION_COUNT = 12;
 const homeSessionGroupHeaderSx = { m: 0, mb: 1, textAlign: 'left', fontWeight: weight(600), color: 'text.secondary',
     ...metaText({ fontSize: textVar.xs, textTransform: 'uppercase', letterSpacing: '0.04em' }) } as const;
 
-type LibraryTab = 'sessions' | 'workflows' | 'schedules';
+type LibraryTab = 'sessions' | 'workflows';
+
+/** A heart in a space's title ("Lattice ❤ Data Formulator"): a small, muted pixel heart, not a full-size emoji. */
+const TITLE_HEART = /(❤️|❤|♥)/u;
+const PIXEL_HEART = ['..XX...XX..', '.XXXX.XXXX.', 'XXXXXXXXXXX', 'XXXXXXXXXXX', 'XXXXXXXXXXX',
+    '.XXXXXXXXX.', '..XXXXXXX..', '...XXXXX...', '....XXX....', '.....X.....'];
+const TitleHeart: React.FC = () => (
+    <Box component="svg" viewBox="0 0 11 10" role="img" aria-label="❤"
+        sx={{ width: '0.42em', height: '0.38em', mx: '0.18em', verticalAlign: '0.12em', shapeRendering: 'crispEdges',
+              fill: theme => alpha(theme.palette.error.main, 0.55) }}>
+        {PIXEL_HEART.flatMap((row, y) => [...row].map((cell, x) => cell === 'X'
+            ? <rect key={`${x}-${y}`} x={x} y={y} width={1} height={1} /> : null))}
+    </Box>
+);
+const withTitleHearts = (line: string) => line.split(TITLE_HEART).map((part, index) =>
+    TITLE_HEART.test(part) ? <TitleHeart key={index} /> : part);
 
 /** The landing page's saved-item tabs. Tab state lives here so switching re-renders only this section. */
 const LandingLibrary: React.FC<{ sessionsToolbar: React.ReactNode; sessions: React.ReactNode;
-    workflowsToolbar: React.ReactNode; workflows: React.ReactNode; showWorkflows?: boolean; onOpenSession: (id: string) => void }>
-    = ({ sessionsToolbar, sessions, workflowsToolbar, workflows, showWorkflows = true, onOpenSession }) => {
+    workflowsToolbar: React.ReactNode; workflows: React.ReactNode; showWorkflows?: boolean }>
+    = ({ sessionsToolbar, sessions, workflowsToolbar, workflows, showWorkflows = true }) => {
     const { t } = useTranslation();
     const [tab, setTab] = useState<LibraryTab>('sessions');
-    const [scheduleToolbar, setScheduleToolbar] = useState<HTMLElement | null>(null);
     return <>
         <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 2, rowGap: 1, mt: 3, mb: 1.5, borderBottom: 1, borderColor: 'divider' }}>
             <Tabs value={tab} onChange={(_, value) => setTab(value)} aria-label="Saved items"
@@ -124,20 +141,13 @@ const LandingLibrary: React.FC<{ sessionsToolbar: React.ReactNode; sessions: Rea
                     '& .MuiTouchRipple-root': { display: 'none' } }}>
                 <Tab id="home-sessions-tab" value="sessions" label={t('workspace.yourSessions')} aria-controls="home-sessions-panel" />
                 {showWorkflows && <Tab id="home-workflows-tab" value="workflows" label={t('workspace.yourWorkflows', { defaultValue: 'Your workflows' })} aria-controls="home-workflows-panel" />}
-                {showWorkflows && <Tab id="home-schedules-tab" value="schedules" label={t('workspace.yourSchedules', { defaultValue: 'Your schedules' })} aria-controls="home-schedules-panel" />}
             </Tabs>
             <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1, py: 0.5 }}>
-                {tab === 'schedules' ? <Box ref={setScheduleToolbar} sx={{ display: 'flex', alignItems: 'center', gap: 1 }} />
-                    : tab === 'workflows' ? workflowsToolbar : sessionsToolbar}
+                {tab === 'workflows' ? workflowsToolbar : sessionsToolbar}
             </Box>
         </Box>
         <Box role="tabpanel" id="home-sessions-panel" aria-labelledby="home-sessions-tab" hidden={tab !== 'sessions'}>{sessions}</Box>
-        {showWorkflows && <>
-        <Box role="tabpanel" id="home-workflows-panel" aria-labelledby="home-workflows-tab" hidden={tab !== 'workflows'}>{workflows}</Box>
-        <Box role="tabpanel" id="home-schedules-panel" aria-labelledby="home-schedules-tab" hidden={tab !== 'schedules'}>
-            <SchedulesPanel presentation="landing" toolbarContainer={scheduleToolbar} onOpenSession={onOpenSession} />
-        </Box>
-        </>}
+        {showWorkflows && <Box role="tabpanel" id="home-workflows-panel" aria-labelledby="home-workflows-tab" hidden={tab !== 'workflows'}>{workflows}</Box>}
     </>;
 };
 
@@ -168,7 +178,7 @@ export const DataFormulatorFC = ({ }) => {
     const theme = useTheme();
 
     const dispatch = useDispatch<AppDispatch>();
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
 
     // Auto-focus removed: focus is the only thing that opens the canvas, so
     // re-focusing whenever it clears would make closing impossible. Table
@@ -201,12 +211,13 @@ export const DataFormulatorFC = ({ }) => {
     }, [refreshPageConnectors, identityKey]);
 
     // What the user already has, so landing quick actions can suggest the next step.
-    const landingSchedules = useScheduleLibrary(canSchedule && !inSession);
-    const [hasUserWorkflows, setHasUserWorkflows] = useState(false);
+    const [userWorkflows, setUserWorkflows] = useState({ any: false, scheduled: false });
     useEffect(() => {
         if (inSession || !workflowsAvailable) return;
-        listWorkflowLibrary().then(items => setHasUserWorkflows(items.some(item => (item.origin || 'user') === 'user')))
-            .catch(() => setHasUserWorkflows(false));
+        listWorkflowLibrary().then(items => {
+            const own = items.filter(item => (item.origin || 'user') === 'user');
+            setUserWorkflows({ any: own.length > 0, scheduled: own.some(item => item.schedule) });
+        }).catch(() => setUserWorkflows({ any: false, scheduled: false }));
     }, [inSession, identityKey, workflowsAvailable]);
 
     // ── Demo sessions (loaded from manifest, fallback to hardcoded) ─────
@@ -767,8 +778,61 @@ export const DataFormulatorFC = ({ }) => {
         return () => cancelAnimationFrame(rafId);
     }, [canvasOpen, preferredColumns, splitWidth, tokens.canvas.min]);
 
+    // The landing's sources and ways to add data: under the chat, or after a space's centred chat.
+    const landingSources = {
+        onUpload: () => openUploadDialog('upload'),
+        onConnect: serverConfig.DISABLE_DATA_CONNECTORS ? undefined : () => openUploadDialog('add-connection'),
+        onLinkFolder: serverConfig?.IS_LOCAL_MODE && !serverConfig.DISABLE_DATA_CONNECTORS ? () => openUploadDialog('local-folder') : undefined,
+        onSelectConnector: (conn: ConnectorInstance) => {
+            // Already-authed connector → open the data-source
+            // sidebar focused on it. Otherwise open the upload
+            // dialog at the connector's auth/connect tab.
+            if (conn.connected || conn.sso_auto_connect) {
+                dispatch(dfActions.focusConnector(conn.id));
+            } else {
+                openUploadDialog(`connector:${conn.id}` as UploadTabType);
+            }
+        },
+        connectors: pageConnectors,
+    };
+    const askDatasets = t('landing.demoAskDatasets', { defaultValue: 'What datasets do we have here?' });
+    const quickActionContext = {
+        hasUserSources: pageConnectors.some(conn => (conn.connected || conn.sso_auto_connect) && conn.id !== 'sample_datasets'),
+        hasSessions: savedWorkspaces.some(listedAsSession),
+        hasWorkflows: userWorkflows.any,
+        canWorkflow: workflowsAvailable,
+        canSchedule,
+        hasSchedules: userWorkflows.scheduled,
+    };
+    // Under a blank session's note: a few things to ask the agent for (in a space, its own questions).
+    // The live-data pick (not in a space, which shows only its own data): one everyday question, picked at random,
+    // whose live data the app loads for the agent to chart.
+    // The live-data questions this deployment offers, one at a time in a carousel.
+    const liveQuestions = availableLiveQuestions(!!serverConfig.IS_LOCAL_MODE);
+    const runLivePick = async (liveQuestion: LiveQuestion) => {
+        try {
+            const live = await fetchLiveData(t, liveQuestion, { language: i18n.language });
+            const names: string[] = [];
+            for (const table of live.tables) names.push((await dispatch(loadTable({ table })).unwrap()).table.id);
+            dispatch(dfActions.queueAnalystTask({ text: live.request(names), displayText: live.label, images: [], attachments: [] }));
+        } catch (error) {
+            // The link says only that it did not come through; the reason (say, a rate limit) goes to the system messages.
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), type: 'warning', component: 'live data',
+                value: t('upload.livePick.failedDetail', { defaultValue: 'Could not load live data for "{{question}}": {{reason}}',
+                    question: livePickCopy(t, liveQuestion).ask, reason: error instanceof Error ? error.message : String(error) }) }));
+            throw error;
+        }
+    };
+    const sessionStarter = activeWorkspace?.readOnly ? undefined : <>
+        <QuickChatOptions onPick={text => startAnalystChat(text)}
+            suggestions={space ? [askDatasets, ...(space.suggestions || [])] : buildSessionStartPrompts(t, {
+                workflows: workflowsAvailable, schedules: canSchedule, connectors: !serverConfig.DISABLE_DATA_CONNECTORS, local: !!serverConfig.IS_LOCAL_MODE,
+            })} />
+        {!space && <LiveQuestionCarousel questions={liveQuestions} copyFor={question => livePickCopy(t, question)} onRun={runLivePick} />}
+    </>;
+
     const threadPanel = (
-        <DataThread centered={!canvasOpen} denseColumns={isPhone} sx={{
+        <DataThread centered={!canvasOpen} denseColumns={isPhone} emptyStarter={sessionStarter} sx={{
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
@@ -910,7 +974,7 @@ export const DataFormulatorFC = ({ }) => {
         <Typography sx={{ display: 'inline', fontSize: textVar.sm, ml: 1 }}> @ {new Date().getFullYear()}</Typography>
     </Box>
 
-    const spaceSessions = sortedSavedWorkspaces.filter(w => !w.scheduled_run);
+    const spaceSessions = sortedSavedWorkspaces.filter(listedAsSession);
     const spaceLibrary = space && <SpaceLanding space={space}
         sessions={spaceSessions.length > 0 && <Box sx={itemCardGridSx}>
             {spaceSessions.slice(0, INITIAL_SESSION_COUNT).map(w => workspaceCard(w))}
@@ -945,7 +1009,6 @@ export const DataFormulatorFC = ({ }) => {
 
             {/* ── Saved workspaces section ──────────────────────────── */}
             <LandingLibrary workflowsToolbar={toolbar} workflows={saved} showWorkflows={saved !== undefined}
-                onOpenSession={id => void handleOpenWorkspace(id)}
                 sessionsToolbar={<>
                     <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
                     <Select
@@ -1044,7 +1107,7 @@ export const DataFormulatorFC = ({ }) => {
         {space ? headingLines.map((line, index) => <Box component="span" key={index} sx={{ display: 'block' }}>
             {/* The badge hangs off the last line's end, so the title stays centred on its words. */}
             <Box component="span" sx={{ position: 'relative' }}>
-                {line}
+                {withTitleHearts(line)}
                 {space.badge && index === headingLines.length - 1 && <Box component="span" sx={{ position: 'absolute', left: '100%', top: '50%',
                     transform: 'translateY(-50%)', ml: 1.5, px: 1, py: '2px', whiteSpace: 'nowrap',
                     fontSize: { xs: 12, sm: 14 }, fontWeight: weight(600), lineHeight: 1.3, letterSpacing: 0,
@@ -1055,23 +1118,6 @@ export const DataFormulatorFC = ({ }) => {
         </Box>) : appName}
     </Typography>;
 
-    // The landing's sources and ways to add data: under the chat, or after a space's centred chat.
-    const landingSources = {
-        onUpload: () => openUploadDialog('upload'),
-        onConnect: serverConfig.DISABLE_DATA_CONNECTORS ? undefined : () => openUploadDialog('add-connection'),
-        onLinkFolder: serverConfig?.IS_LOCAL_MODE && !serverConfig.DISABLE_DATA_CONNECTORS ? () => openUploadDialog('local-folder') : undefined,
-        onSelectConnector: (conn: ConnectorInstance) => {
-            // Already-authed connector → open the data-source
-            // sidebar focused on it. Otherwise open the upload
-            // dialog at the connector's auth/connect tab.
-            if (conn.connected || conn.sso_auto_connect) {
-                dispatch(dfActions.focusConnector(conn.id));
-            } else {
-                openUploadDialog(`connector:${conn.id}` as UploadTabType);
-            }
-        },
-        connectors: pageConnectors,
-    };
 
     let dataUploadRequestBox = <Box sx={{
             margin: '4px 4px 4px 8px', 
@@ -1227,21 +1273,14 @@ export const DataFormulatorFC = ({ }) => {
                     space={space ? {
                         // What the space has, and its analyses of the dataset in the tab below (design-docs/69).
                         suggestions: [
-                            t('landing.demoAskDatasets', { defaultValue: 'What datasets do we have here?' }),
+                            askDatasets,
                             ...(spaceDataset ? [t('landing.demoAskAnalysis', { defaultValue: 'Show me your analysis of {{name}}',
                                 name: inSentence(spaceDataset.kicker || spaceDataset.title) })] : []),
                             ...(space.suggestions || []),
                         ],
                         placeholder: space.chat_placeholder,
                     } : undefined}
-                    quickActionContext={{
-                        hasUserSources: pageConnectors.some(conn => (conn.connected || conn.sso_auto_connect) && conn.id !== 'sample_datasets'),
-                        hasSessions: savedWorkspaces.some(w => !w.scheduled_run),
-                        hasWorkflows: hasUserWorkflows,
-                        canWorkflow: workflowsAvailable,
-                        canSchedule,
-                        hasSchedules: landingSchedules.schedules.length > 0,
-                    }}
+                    quickActionContext={quickActionContext}
                 />
             </Box>
             </Box>

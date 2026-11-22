@@ -13,9 +13,13 @@ import { ink, weight } from './tokens';
 
 const menuItemSx = { fontSize: textVar.md, minHeight: 34, py: 0.5 };
 
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// "NeurIPS in Data Formulator", "Dataverse with Data Formulator", "Lattice ❤️ Data Formulator": the logo already says
+// Data Formulator, so the path shows only the space's own part.
 const shortSpaceName = (name: string, standardName = 'Data Formulator') => {
-    const suffix = [` in ${standardName}`, ` with ${standardName}`].find(suffix => name.endsWith(suffix));
-    return suffix ? name.slice(0, -suffix.length) : name;
+    const short = name.replace(new RegExp(`\\s+(?:in|with|for|on|\\S{1,3})\\s+${escapeRegExp(standardName)}$`, 'iu'), '');
+    return short.trim() ? short : name;
 };
 
 /** Data Formulator and the spaces on this server, as places the app-name menu can switch to. */
@@ -57,36 +61,57 @@ export const destinationItems = (destinations: AppDestination[], onGoHome: (even
     ];
 };
 
+/** The "/" between the parts of the header's path. */
+export const PathSlash: React.FC<{ compact?: boolean }> = ({ compact }) => (
+    <Box component="span" aria-hidden="true" sx={{ fontWeight: weight(400), lineHeight: 1.2, color: 'text.disabled', px: 0.25, flexShrink: 0,
+        ...(compact && { fontSize: textVar.xl }) }}>/</Box>
+);
+
 /**
- * The app name; on a server with spaces, a menu to switch between Data Formulator and each space.
- * In a space it reads as a breadcrumb, "Data Formulator / <space>", the first part linking to the app.
- * A space's logo is on its front page only.
+ * The app's and space's parts of the header's path, after Data Formulator's logo: "Data Formulator / <space logo>
+ * <space>" in a space; when the whole path does not fit (``spellOut`` false) or the toolbar is narrow, the logo stands
+ * for Data Formulator: "/ <space logo> <space>". An earlier part goes back to its
+ * level; the last part (with ⌄) opens a menu of the alternatives at its level, here Data Formulator and each space.
+ * With a session open, the session is the last part (App.tsx), so this is a link back to the front page.
  */
-export const AppSwitcher: React.FC<{ appName: string; destinations: AppDestination[]; onGoHome: (event: React.MouseEvent) => void; compact?: boolean }> = ({
-    appName, destinations, onGoHome, compact,
+export const AppSwitcher: React.FC<{ appName: string; destinations: AppDestination[]; onGoHome: (event: React.MouseEvent) => void; compact?: boolean;
+    last?: boolean; logo?: string | null; spellOut?: boolean }> = ({
+    appName, destinations, onGoHome, compact, last = true, logo, spellOut = true,
 }) => {
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const standard = destinations.find(destination => destination.key === 'app');
+    const current = destinations.find(destination => destination.current);
     const inSpace = !!standard && !standard.current;
     const nameSx = { fontWeight: weight(400), lineHeight: 1.2, letterSpacing: 0, ...(compact && { fontSize: textVar.xl }) };
     const shown = inSpace ? shortSpaceName(appName, standard.name) : appName;
+    const name = <>
+        {inSpace && logo && <Box component="img" src={logo} alt="" draggable={false}
+            sx={{ height: compact ? 18 : 20, width: 'auto', mr: 0.75, display: 'block', flexShrink: 0 }} />}
+        <Typography noWrap component="h1" title={appName} sx={{ maxWidth: compact ? { xs: 160, sm: 320 } : 360, ...nameSx }}>
+            {shown}
+        </Typography>
+    </>;
+    const partSx = { textTransform: 'none', minWidth: 0, height: compact ? undefined : 36, px: 0.75, gap: 0.25,
+        '& .MuiButton-endIcon': { ml: 0.25 }, '&:hover': { backgroundColor: ink(0.04) } };
     return (
         <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-            {inSpace && !compact && <>
+            {/* "Data Formulator /" (data-path-product: App.tsx measures it), or just "/" when the path is too long. */}
+            {inSpace && !compact && spellOut && <Box data-path-product sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                 <Link href={standard.path} color="inherit" underline="none" draggable={false}
                     sx={{ ...nameSx, whiteSpace: 'nowrap', px: 0.75, py: 0.5, borderRadius: 1, flexShrink: 0, '&:hover': { backgroundColor: ink(0.04) } }}>
                     {standard.name}
                 </Link>
-                <Box component="span" aria-hidden="true" sx={{ ...nameSx, color: 'text.disabled', px: 0.25 }}>/</Box>
-            </>}
-            <Button color="inherit" onClick={(event) => setAnchorEl(event.currentTarget)} aria-haspopup="menu"
-                endIcon={<KeyboardArrowDownIcon sx={{ fontSize: iconVar.md, color: 'text.secondary' }} />}
-                sx={{ textTransform: 'none', minWidth: 0, height: compact ? undefined : 36, px: 0.75, gap: 0.25,
-                    '& .MuiButton-endIcon': { ml: 0.25 }, '&:hover': { backgroundColor: ink(0.04) } }}>
-                <Typography noWrap component="h1" title={appName} sx={{ maxWidth: compact ? { xs: 160, sm: 320 } : 360, ...nameSx }}>
-                    {shown}
-                </Typography>
-            </Button>
+                <PathSlash />
+            </Box>}
+            {inSpace && (compact || !spellOut) && <PathSlash compact={compact} />}
+            {last
+                ? <Button color="inherit" onClick={(event) => setAnchorEl(event.currentTarget)} aria-haspopup="menu" sx={partSx}
+                    endIcon={<KeyboardArrowDownIcon sx={{ fontSize: iconVar.md, color: 'text.secondary' }} />}>
+                    {name}
+                </Button>
+                : <Button color="inherit" component="a" href={current?.path ?? '/app'} draggable={false} onClick={onGoHome} sx={partSx}>
+                    {name}
+                </Button>}
             <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }} transformOrigin={{ vertical: 'top', horizontal: 'left' }}>
                 {destinationItems(destinations, onGoHome, () => setAnchorEl(null))}

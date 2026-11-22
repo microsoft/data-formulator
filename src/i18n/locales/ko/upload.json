@@ -1,5 +1,35 @@
 {
   "upload": {
+    "livePick": {
+      "umbrella": "이번 주에 우산이 필요할까?",
+      "umbrellaBusy": "하늘을 살피는 중…",
+      "umbrellaHint": "근처 도시의 이번 주 예보를 실시간으로 불러와 지도에 표시",
+      "warmer": "이번 주는 평소보다 따뜻할까?",
+      "warmerBusy": "지난 날씨를 뒤지는 중…",
+      "warmerHint": "근처 도시의 이번 주 예보를 지난 10년의 같은 주와 나란히",
+      "daylightShorter": "낮은 얼마나 빨리 짧아지고 있을까?",
+      "daylightLonger": "낮은 얼마나 빨리 길어지고 있을까?",
+      "daylightBusy": "해를 지켜보는 중…",
+      "daylightHint": "앞으로 넉 달 동안의 낮 시간, 북쪽에서 남쪽까지",
+      "wiki": "오늘 세상은 무엇을 읽고 있을까?",
+      "wikiBusy": "세상의 어깨너머로 읽는 중…",
+      "wikiHint": "어제 가장 많이 읽힌 위키백과 문서와 이번 주 추이",
+      "countries": "오늘 각 나라는 무엇을 읽고 있을까?",
+      "countriesBusy": "세상이 읽는 것을 엿보는 중…",
+      "countriesHint": "어제 세계 곳곳에서 가장 많이 읽힌 위키백과 문서를 지도에",
+      "failed": "가져오지 못했어요. 잠시 후 다시 시도하세요.",
+      "failedDetail": "\"{{question}}\"의 실시간 데이터를 불러오지 못했습니다: {{reason}}",
+      "moon": "다음 보름달은 언제일까?",
+      "moonBusy": "달을 살피는 중…",
+      "moonHint": "앞으로 두 달간의 달의 위상"
+    },
+    "sessionStart": {
+      "list": "연결된 소스에 무엇이 있는지 보여줘",
+      "scheduledWorkflow": "보고서를 만드는 반복 워크플로를 만들고 싶어",
+      "workflow": "보고서를 만드는 재사용 가능한 워크플로를 만들고 싶어",
+      "connect": "새 데이터 소스 연결 과정을 안내해 줘",
+      "discover": "온라인에서 데이터를 찾는 도구 설정을 도와줘"
+    },
     "title": "데이터 로드",
     "sampleDatasets": "샘플 데이터 세트",
     "sampleDatasetsDesc": "엄선된 샘플 데이터 세트",

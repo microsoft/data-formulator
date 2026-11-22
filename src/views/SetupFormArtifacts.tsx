@@ -2,14 +2,15 @@
 // Licensed under the MIT License.
 
 /**
- * Canvas views for the configure skill's setup forms: schedules, sessions, and
- * workflow proposals (connectors render through `ConnectorFormCard`). Each is a
+ * Canvas views for the configure skill's setup forms: sessions and workflow
+ * proposals, whose schedule is part of the workflow (connectors render through
+ * `ConnectorFormCard`; schedule forms from older threads render read-only). Each is a
  * prefilled artifact the user reviews and submits through the same APIs as the
  * matching manual dialog. A form revising an existing item lets the user update
  * it or save a new one. A form the agent applied directly submits itself once.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import i18n from '../i18n';
@@ -29,6 +30,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import { apiRequest } from '../app/apiClient';
+import { getAgentLanguage } from '../app/utils';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { textVar } from '../app/layout';
@@ -37,8 +39,8 @@ import { takeAutoSubmit } from '../app/setupForms';
 import { openSessionInNewTab } from '../app/sessionTabs';
 import { notifyWorkspaceFilesChanged } from '../app/workspaceService';
 import type { ScheduleConfig, ScheduleFormArtifact, SessionsFormArtifact, SetupFormTarget, TextTurn, WorkflowFormArtifact } from '../components/ComponentType';
-import { defaultScheduleConfig, listWorkflowLibrary, saveSchedule, ScheduleConfigFields, scheduleCadence, workflowApi, WorkflowLibraryItem,
-    WorkflowSetup, WorkflowSetupFields, workflowSetupContentSx } from './WorkflowSchedules';
+import { availableModel, defaultScheduleConfig, ScheduleChanges, scheduleCadence, scheduleFacts, schedulingAvailable as fetchSchedulingAvailable, workflowApi,
+    WorkflowSetup, RunInputs, workflowSetupContentSx } from './WorkflowSchedules';
 import { executeWorkflow } from './WorkflowPanel';
 import { weight } from '../app/tokens';
 
@@ -75,88 +77,26 @@ const SetupFormFrame: React.FC<{ icon: React.ReactNode; title: string; done?: bo
         {actions && <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 3 }}>{actions}</Box>}
     </Box>;
 
-export const ScheduleFormArtifactView: React.FC<{ turn: TextTurn; form: ScheduleFormArtifact }> = ({ turn, form }) => {
+/** A schedule form from before schedules were part of workflows (design-docs/78): shown as it was, read-only. */
+export const ScheduleFormArtifactView: React.FC<{ turn: TextTurn; form: ScheduleFormArtifact }> = ({ form }) => {
     const { t } = useTranslation();
-    const dispatch = useDispatch<AppDispatch>();
-    const models = useSelector((state: DataFormulatorState) => state.globalModels);
-    const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
-    const [items, setItems] = useState<WorkflowLibraryItem[] | null>(null);
-    const [available, setAvailable] = useState<boolean | null>(null);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState('');
-    const [mode, setMode] = useState<TargetMode>('update');
-    const { schedule } = form;
-    const saved = schedule.status === 'saved';
-    const updating = !!schedule.target && mode === 'update';
-    const config: ScheduleConfig = useMemo(() => ({
-        ...defaultScheduleConfig(models, selectedModelId), ...schedule.config,
-    }), [models, selectedModelId, schedule.config]);
-    const update = (patch: Partial<ScheduleFormArtifact['schedule']>, extra: Partial<TextTurn> = {}) =>
-        dispatch(dfActions.updateTextTurn({ id: turn.id, ...extra, form: { ...form, schedule: { ...schedule, ...patch } } }));
-
-    useEffect(() => {
-        let cancelled = false;
-        Promise.all([listWorkflowLibrary(), apiRequest<{ available: boolean }>('/api/schedules')])
-            .then(([library, { data }]) => { if (!cancelled) { setItems(library); setAvailable(data.available); } })
-            .catch(reason => { if (!cancelled) { setItems([]); setAvailable(false); setError(errorMessage(reason, t('workflow.loadFailed'))); } });
-        return () => { cancelled = true; };
-    }, []);
-
-    const problems = [
-        !config.workflow || (items && !items.some(item => item.path === config.workflow)) ? t('setupForm.chooseWorkflow', { defaultValue: 'Choose a saved workflow.' }) : '',
-        !config.name.trim() ? t('setupForm.nameSchedule', { defaultValue: 'Name the schedule.' }) : '',
-        !config.weekdays.length ? t('setupForm.chooseDays', { defaultValue: 'Choose at least one day.' }) : '',
-        !config.model_id ? t('setupForm.chooseModel', { defaultValue: 'Choose a server model connection.' }) : '',
-    ].filter(Boolean);
-
-    const submit = async () => {
-        if (saving || problems.length || !available) return;
-        setSaving(true); setError('');
-        try {
-            const result = await saveSchedule(config, updating ? schedule.target!.id : undefined);
-            update({ config, status: 'saved', savedId: result.id, nextAt: result.next_at, issues: [] },
-                { answered: true });
-        } catch (reason) {
-            setError(errorMessage(reason, t('schedule.saveFailed')));
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    // A directly applied schedule submits once, after the library loads, when it has no open issues.
-    useEffect(() => {
-        if (items === null || available === null || saved || !takeAutoSubmit(turn.id)) return;
-        // Elevated options always need the user's own Save, even if the agent asked to apply directly.
-        if (!problems.length && !schedule.issues?.length && available && !config.auto_approve) void submit();
-    }, [items, available]);
-
-    if (saved) {
-        return <SetupFormFrame icon={<ScheduleOutlinedIcon />} title={form.title} done>
-            <ItemCard compact title={config.name}
-                captions={[config.enabled === false
-                    ? t('setupForm.schedulePaused', { defaultValue: 'Saved paused. Resume it from the Schedules tab.' })
-                    : t('setupForm.scheduleSaved', { defaultValue: 'Saved. Manage it from the Schedules tab.' })]}
-                meta={<>
-                    <MetaChip icon={<HistoryOutlinedIcon />}>{scheduleCadence(config)} · {config.timezone}</MetaChip>
-                    {config.enabled !== false && schedule.nextAt && <MetaChip icon={<ScheduleOutlinedIcon />}
-                        label={t('setupForm.nextRun', { defaultValue: 'Next run' })}>{new Date(schedule.nextAt).toLocaleString()}</MetaChip>}
-                </>} />
-        </SetupFormFrame>;
-    }
-    return <SetupFormFrame icon={<ScheduleOutlinedIcon />} title={form.title} actions={<Button variant="contained" disableElevation
-        disabled={saving || !available || problems.length > 0} onClick={() => void submit()}
-        startIcon={saving ? <CircularProgress size={14} color="inherit" /> : undefined}>
-        {updating ? t('setupForm.updateSchedule', { defaultValue: 'Update schedule' }) : t('setupForm.saveSchedule', { defaultValue: 'Save schedule' })}
-    </Button>}>
-        {schedule.target && <TargetChoice target={schedule.target} noun={t('setupForm.scheduleNoun', { defaultValue: 'schedule' })}
-            value={mode} onChange={setMode} disabled={saving} />}
-        {!!schedule.issues?.length && <Alert severity="warning">{schedule.issues.map(issue => <Box key={issue}>{issue}</Box>)}</Alert>}
-        {error && <Alert severity="error">{error}</Alert>}
-        {items === null ? <CircularProgress size={18} /> : available === false
-            ? <Alert severity="info">{t('schedule.localOnly')}</Alert>
-            : <ScheduleConfigFields items={items} config={config} disabled={saving}
-                onChange={next => update({ config: next, issues: [] })} />}
+    const { config } = form.schedule;
+    return <SetupFormFrame icon={<ScheduleOutlinedIcon />} title={form.title} done={form.schedule.status === 'saved'}>
+        <ItemCard compact title={config.name || form.title}
+            captions={[t('setupForm.scheduleMoved', { defaultValue: "Schedules are part of workflows now: use the workflow's schedule button to change it." })]}
+            meta={config.weekdays && config.time ? <MetaChip icon={<HistoryOutlinedIcon />}>
+                {scheduleCadence({ weekdays: config.weekdays, time: config.time })}{config.timezone ? ` · ${config.timezone}` : ''}</MetaChip> : undefined} />
     </SetupFormFrame>;
+};
+
+/** How a revision changes the workflow's schedule, or null when it leaves it as it is. */
+const scheduleChange = (before?: Partial<ScheduleConfig>, after?: Partial<ScheduleConfig>) => {
+    if (!before && !after) return null;
+    if (!after) return 'removed';
+    if (!before) return 'added';
+    if ((before.enabled !== false) !== (after.enabled !== false)) return after.enabled === false ? 'paused' : 'resumed';
+    const same = (keys: (keyof ScheduleConfig)[]) => keys.every(key => JSON.stringify(before[key]) === JSON.stringify(after[key]));
+    return same(['time', 'weekdays', 'timezone', 'setup', 'model_id', 'auto_approve', 'catch_up', 'language', 'max_retries']) ? null : 'changed';
 };
 
 type SessionItem = SessionsFormArtifact['sessions']['items'][number];
@@ -308,28 +248,34 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
         .map(parameter => [parameter.name, parameter.default ?? (parameter.type === 'boolean' ? false : '')])));
     const [instructions, setInstructions] = useState('');
     const [error, setError] = useState('');
-    // A schedule proposed with the workflow is saved with it; the user can add or drop one in the Save dialog.
+    // The definition's schedule is saved with it; the user can change, add, or drop it in the Save dialog. The proposal may leave out
+    // the machine's values (timezone, model), which come from the schedule it revises or the user's defaults.
     const models = useSelector((state: DataFormulatorState) => state.globalModels);
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
+    const proposedSchedule = definition.schedule;
     const [schedulingAvailable, setSchedulingAvailable] = useState<boolean | null>(null);
-    const [scheduleOn, setScheduleOn] = useState(!!proposal.schedule);
-    const [scheduleConfig, setScheduleConfig] = useState<ScheduleConfig>(() => {
-        const proposed = proposal.schedule?.config;
-        return { ...defaultScheduleConfig(models, selectedModelId), ...proposed, setup: {
-            parameters: { ...Object.fromEntries((definition.parameters || []).flatMap(parameter =>
-                parameter.default === undefined ? [] : [[parameter.name, parameter.default]])), ...proposed?.setup?.parameters },
-            instructions: proposed?.setup?.instructions || '' } };
-    });
+    const [scheduleOn, setScheduleOn] = useState(!!proposedSchedule);
+    // What saving writes: the proposal, over the schedule it revises, over the defaults; a model the server has.
+    const scheduleConfig: ScheduleConfig = (() => {
+        const defaults = defaultScheduleConfig(models, selectedModelId, definition.parameters);
+        const merged: ScheduleConfig = { ...defaults, ...target?.schedule, ...proposedSchedule,
+            setup: { parameters: { ...defaults.setup!.parameters, ...proposedSchedule?.setup?.parameters },
+                instructions: proposedSchedule?.setup?.instructions || '' } };
+        return { ...merged, model_id: availableModel(merged.model_id, models, selectedModelId) };
+    })();
     const scheduling = scheduleOn && schedulingAvailable === true;
     const scheduleIncomplete = scheduling && (!scheduleConfig.weekdays.length || !scheduleConfig.model_id);
+    const change = target ? scheduleChange(target.schedule, proposedSchedule) : null;
     const generation = useRef(0);
     useEffect(() => { generation.current += 1; return () => { generation.current += 1; }; }, [workspaceId, turn.id]);
+    const chooseMode = (next: TargetMode) => {
+        setMode(next);
+        // A new copy of a scheduled workflow would run alongside it, so it starts unscheduled.
+        setScheduleOn(next === 'new' && target?.schedule ? false : !!proposedSchedule);
+    };
     const openSave = () => {
         setWorkflowName(definition.name); setSaveError(''); setSaveOpen(true);
-        setScheduleConfig(previous => previous.model_id ? previous
-            : { ...previous, model_id: defaultScheduleConfig(models, selectedModelId).model_id });
-        void apiRequest<{ available: boolean }>('/api/schedules')
-            .then(({ data }) => setSchedulingAvailable(data.available)).catch(() => setSchedulingAvailable(false));
+        void fetchSchedulingAvailable().then(setSchedulingAvailable).catch(() => setSchedulingAvailable(false));
         // Read the target's hash when the dialog opens, so edits made after that are not silently overwritten.
         if (target) void workflowApi<{ content_hash?: string }>('read', { path: target.id })
             .then(result => setTargetHash(result.content_hash)).catch(() => setTargetHash(undefined));
@@ -366,12 +312,15 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
                 <Typography component="h1" variant="h6" sx={{ fontWeight: weight(600), m: 0 }}>{definition.name}</Typography>
                 <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', mt: 0.25, mb: 0.5 }}>
                     {target ? t('workflow.definitionRevises', { name: target.name }) : t('workflow.definition')}</Typography>
-                {proposal.schedule?.savedId && <Typography data-workflow-schedule sx={{ display: 'flex', alignItems: 'center', gap: 0.5,
+                {proposedSchedule && <Typography data-workflow-schedule sx={{ display: 'flex', alignItems: 'center', gap: 0.5,
                     fontSize: textVar.sm, color: 'text.secondary', mb: 0.5, '& svg': { fontSize: 14 } }}>
                     <ScheduleOutlinedIcon />
-                    {t('workflow.scheduledCaption', { cadence: scheduleCadence({ ...defaultScheduleConfig([]), ...proposal.schedule.config } as ScheduleConfig),
-                        timezone: proposal.schedule.config.timezone || '' })}
+                    {proposedSchedule.enabled === false ? t('workflow.scheduledPausedCaption', { cadence: scheduleCadence(proposedSchedule) })
+                        : t('workflow.scheduledCaption', { cadence: scheduleCadence(proposedSchedule),
+                            timezone: proposedSchedule.timezone || scheduleConfig.timezone })}
                 </Typography>}
+                {change && <Typography data-workflow-schedule-change sx={{ fontSize: textVar.sm, color: 'warning.main', mb: 0.5 }}>
+                    {t(`workflow.scheduleChange.${change}`)}</Typography>}
                 <Tabs value={definitionView} onChange={(_, value) => setDefinitionView(value)} aria-label={t('workflow.definitionView')}
                     sx={{ minHeight: 36, borderBottom: 1, borderColor: 'divider', '& .MuiTab-root': { minHeight: 36, px: 1.5, fontSize: textVar.sm, textTransform: 'none' } }}>
                     <Tab id={`workflow-illustration-${turn.id}`} aria-controls={`workflow-definition-view-${turn.id}`} value="illustration" label={t('workflow.illustration')} />
@@ -442,32 +391,26 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
                         const content = name === definition.name ? proposal.content
                             : dumpYaml({ ...(loadYaml(proposal.content) as Record<string, unknown>), name }, { lineWidth: -1 });
                         const contentHash = proposal.saved?.path === path ? proposal.saved.content_hash : updating ? targetHash : undefined;
-                        const saved = await workflowApi<{ path: string; content_hash: string }>('save', { path, content,
+                        // The file's schedule block is what the Save dialog shows; where nothing is scheduled, it has none.
+                        const schedule = schedulingAvailable ? { schedule: scheduling ? { ...scheduleConfig, language: getAgentLanguage() } : null }
+                            : proposedSchedule ? { schedule: null } : {};
+                        const saved = await workflowApi<{ path: string; content_hash: string; content: string }>('save', { path, content, ...schedule,
                             ...(contentHash ? { content_hash: contentHash } : {}) });
                         if (current !== generation.current) return;
-                        const workflow: WorkflowFormArtifact['workflow'] = { ...proposal, content, definition: { ...definition, name }, saved };
-                        let scheduleError = '';
-                        if (scheduling) {
-                            const config = { ...scheduleConfig, workflow: saved.path, name: scheduleConfig.name || name };
-                            try {
-                                const result = await saveSchedule(config, proposal.schedule?.savedId);
-                                workflow.schedule = { config, issues: [], savedId: result.id, nextAt: result.next_at };
-                            } catch (reason) {
-                                scheduleError = t('workflow.scheduleFailed', { error: errorMessage(reason, t('schedule.saveFailed')) });
-                            }
-                            if (current !== generation.current) return;
-                        }
+                        const workflow: WorkflowFormArtifact['workflow'] = { ...proposal, content: saved.content ?? content, definition: { ...definition, name,
+                            ...(scheduling ? { schedule: scheduleConfig } : {}) },
+                            saved: { path: saved.path, content_hash: saved.content_hash, ...(scheduling ? { scheduled: true } : {}) } };
+                        if (!scheduling) delete workflow.definition.schedule;
                         dispatch(dfActions.updateTextTurn({ id: turn.id, form: { ...form, title: name, workflow } }));
                         notifyWorkspaceFilesChanged();
-                        // The workflow is saved either way; a failed schedule keeps the dialog open to retry.
-                        if (scheduleError) setSaveError(scheduleError); else setSaveOpen(false);
+                        setSaveOpen(false);
                     } catch (reason) { if (current === generation.current) setSaveError(errorMessage(reason, t('workflow.saveFailed'))); }
                     finally { if (current === generation.current) setSaving(false); }
             }}>
                 <DialogTitle id={`workflow-save-${turn.id}`}>{t('workflow.saveWorkflow')}</DialogTitle>
                 <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
                     {saveError && <Alert severity="error">{saveError}</Alert>}
-                    {target && <TargetChoice target={target} noun={t('setupForm.workflowNoun')} value={mode} onChange={setMode} disabled={saving} />}
+                    {target && <TargetChoice target={target} noun={t('setupForm.workflowNoun')} value={mode} onChange={chooseMode} disabled={saving} />}
                     <TextField autoFocus required label={t('workflow.workflowName')} size="small" value={workflowName} disabled={saving}
                         onChange={event => setWorkflowName(event.target.value)} slotProps={{ htmlInput: { maxLength: 200 } }} />
                     {!updating && <TextField required label={t('workflow.filename')} size="small" value={filename} disabled={saving}
@@ -476,10 +419,11 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
                         control={<Checkbox size="small" checked={scheduleOn} disabled={saving} onChange={event => setScheduleOn(event.target.checked)} />}
                         label={t('workflow.alsoSchedule')} />}
                     {scheduling && <>
-                        {!!proposal.schedule?.issues?.length && <Alert severity="warning">
-                            {proposal.schedule.issues.map(issue => <Box key={issue}>{issue}</Box>)}</Alert>}
-                        <ScheduleConfigFields items={[]} config={scheduleConfig} onChange={setScheduleConfig} disabled={saving} hideName
-                            fixedWorkflow={{ path: '', name: workflowName, parameters: definition.parameters }} />
+                        {!!proposal.scheduleIssues?.length && <Alert severity="warning">
+                            {proposal.scheduleIssues.map(issue => <Box key={issue}>{issue}</Box>)}</Alert>}
+                        <ScheduleChanges label={t('schedule.summaryOf', { name: workflowName })}
+                            before={updating && target?.schedule ? scheduleFacts(target.schedule, definition.parameters || [], models) : undefined}
+                            after={scheduleFacts(scheduleConfig, definition.parameters || [], models)} />
                     </>}
                 </DialogContent>
                 <DialogActions><Button disabled={saving} onClick={() => setSaveOpen(false)}>{t('app.cancel')}</Button>
@@ -505,9 +449,8 @@ export const WorkflowFormArtifactView: React.FC<{ turn: TextTurn; form: Workflow
                     <Box component="span" sx={{ color: 'primary.main' }}>{definition.name}</Box>
                 </DialogTitle>
                 <DialogContent sx={workflowSetupContentSx}>
-                    <WorkflowSetupFields parameters={definition.parameters || []} values={values} onChange={setValues} disabled={starting} />
-                    <TextField label={t('workflow.additionalInstructions')} size="small" multiline minRows={3} value={instructions} disabled={starting}
-                        onChange={event => setInstructions(event.target.value)} slotProps={{ htmlInput: { maxLength: 8000 } }} />
+                    <RunInputs parameters={definition.parameters || []} values={values} onChange={setValues}
+                        instructions={instructions} onInstructionsChange={setInstructions} disabled={starting} />
                 </DialogContent>
                 <DialogActions sx={{ px: 3, py: 1.5, borderTop: 1, borderColor: 'divider' }}><Button disabled={starting} onClick={() => setSetupOpen(false)}>{t('app.cancel')}</Button>
                     <Button type="submit" startIcon={<PlayArrowIcon />} disabled={starting || busy || readOnly || !hasModel}>{t('workflow.runWorkflow')}</Button></DialogActions>

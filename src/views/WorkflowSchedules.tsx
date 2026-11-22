@@ -2,35 +2,28 @@
 // Licensed under the MIT License.
 
 /**
- * Workflow schedules: the sidebar Schedules tab, the Schedules dialog, and the
- * fields shared with agent-proposed schedule forms; plus the workflow library
- * API, setup fields, and run chips they share with the workflow panel.
+ * A workflow's schedule (design-docs/78): the `schedule:` block of its file, set in the schedule dialog its card
+ * opens; plus the workflow library API, setup fields, and run chips the workflow panel shares.
  */
 
-import React, { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
-import i18n, { SUPPORTED_UI_LANGUAGES } from '../i18n';
-import { Alert, Autocomplete, Box, Button, ButtonBase, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider,
-    FormControlLabel, IconButton, MenuItem, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
-import { dump as dumpYaml, load as loadYaml } from 'js-yaml';
-import { MarkdownEditor } from '../components/MarkdownEditor';
+import i18n from '../i18n';
+import { Autocomplete, Box, ButtonBase, Checkbox, CircularProgress, Select,
+    FormControlLabel, MenuItem, Switch, TextField, Tooltip, Typography } from '@mui/material';
 import PauseIcon from '@mui/icons-material/Pause';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
-import AddIcon from '@mui/icons-material/Add';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import { ItemCard, itemCardGridSx, ViewAllButton } from '../components/ItemCard';
-import { sidebarPrimaryActionSx, sidebarToolbarSx, ink, paper, weight } from '../app/tokens';
+import { ink, weight } from '../app/tokens';
+import { mutedChipBg } from '../components/ItemCard';
 import { apiRequest } from '../app/apiClient';
 import { getAgentLanguage } from '../app/utils';
 import { DataFormulatorState } from '../app/dfSlice';
-import { iconVar, textVar } from '../app/layout';
-import { ListDetailDialog } from '../components/ListDetailDialog';
+import { textVar } from '../app/layout';
 import type { ScheduleConfig } from '../components/ComponentType';
 
 export interface WorkflowParameter {
@@ -38,7 +31,15 @@ export interface WorkflowParameter {
     required?: boolean; default?: string | number | boolean; options?: string[]; allow_custom?: boolean;
 }
 export interface WorkflowSetup { parameters: Record<string, string | number | boolean>; instructions: string }
-export interface WorkflowLibraryItem { path: string; name: string; overview?: string; error?: string; origin?: 'user' | 'demo' | 'server'; parameters?: WorkflowParameter[]; content?: string }
+export interface WorkflowLibraryItem {
+    path: string; name: string; overview?: string; error?: string; origin?: 'user' | 'demo' | 'server'; parameters?: WorkflowParameter[]; content?: string;
+    /** The file's `schedule:` block (the user's own workflows only). */
+    schedule?: ScheduleConfig;
+}
+export type ScheduledRun = { id: string; scheduled_for: string; status: string; message: string; attempts: number };
+/** The scheduler's state for one workflow, keyed by its path in the workflow list. Kept after the schedule is removed
+ *  while it has runs (`scheduled: false`), so the card still lists them. */
+export interface WorkflowScheduleState { id: string; scheduled: boolean; enabled: boolean; next_at: string | null; history: ScheduledRun[] }
 
 /** POST to a `/api/workflows/<route>` endpoint and return its data. */
 export async function workflowApi<T>(route: string, body: object = {}, signal?: AbortSignal): Promise<T> {
@@ -49,6 +50,12 @@ export async function workflowApi<T>(route: string, body: object = {}, signal?: 
 }
 
 export const listWorkflowLibrary = async () => (await workflowApi<{ items: WorkflowLibraryItem[] }>('list', { language: getAgentLanguage() })).items;
+
+/** Whether this app runs schedules (the local app only). */
+export const schedulingAvailable = async () => (await workflowApi<{ scheduling?: boolean }>('list', { language: getAgentLanguage() })).scheduling === true;
+
+/** Demo and server workflows are read-only: scheduling one saves the user's own copy. */
+export const schedulesByCopy = (item: Pick<WorkflowLibraryItem, 'origin'>) => item.origin === 'demo' || item.origin === 'server';
 
 export const workflowSetupContentSx = {
     display: 'flex', flexDirection: 'column', gap: 2.5, pb: 2.5,
@@ -85,264 +92,302 @@ export const WorkflowSetupFields: React.FC<{ parameters: WorkflowParameter[]; va
     </>;
 };
 
-export interface WorkflowSchedule {
-    id: string; config: ScheduleConfig; next_at: string;
-    history?: { id: string; scheduled_for: string; status: string; message: string; attempts: number }[];
-}
+/** A workflow's run inputs, as one flat form: its parameters in a two-column grid, then free instructions. Shared by the
+ *  Run and settings dialogs. */
+export const RunInputs: React.FC<{ parameters: WorkflowParameter[]; values: WorkflowSetup['parameters'];
+    onChange: (values: WorkflowSetup['parameters']) => void; instructions: string; onInstructionsChange: (instructions: string) => void;
+    disabled: boolean }> = ({ parameters, values, onChange, instructions, onInstructionsChange, disabled }) => {
+    const { t } = useTranslation();
+    return <>
+        {!!parameters.length && <Box role="group" aria-label={t('workflow.runInputs')} sx={{ display: 'grid', alignItems: 'start', gap: 2,
+            gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'repeat(2, minmax(0, 1fr))' } }}>
+            <WorkflowSetupFields parameters={parameters} values={values} onChange={onChange} disabled={disabled} />
+        </Box>}
+        <TextField size="small" multiline minRows={2} fullWidth label={t('workflow.additionalInstructions')} value={instructions}
+            disabled={disabled} onChange={event => onInstructionsChange(event.target.value)} slotProps={{ htmlInput: { maxLength: 8000 } }} />
+    </>;
+};
 
 // 0 = Monday; 2024-01-01 was a Monday.
 const weekdayName = (day: number) => new Date(2024, 0, 1 + day).toLocaleDateString(i18n.language, { weekday: 'short' });
 
-export const scheduleCadence = (config: ScheduleConfig) => {
+export const scheduleCadence = (config: Pick<ScheduleConfig, 'weekdays' | 'time'>) => {
     const days = [...config.weekdays].sort();
     const cadence = days.length === 7 ? i18n.t('schedule.daily') : days.join() === '0,1,2,3,4' ? i18n.t('schedule.weekdays')
         : days.map(weekdayName).join(', ');
-    return i18n.t('schedule.cadenceAt', { cadence, time: config.time });
+    return i18n.t('schedule.cadenceAt', { cadence, time: clockTime(config.time) });
 };
 
-export const defaultScheduleConfig = (models: { id: string }[], selectedModelId?: string): ScheduleConfig => ({
-    name: '', workflow: '', model_id: models.find(model => model.id === selectedModelId)?.id || models[0]?.id || '', time: '09:00',
+/** A schedule's `HH:MM` on the user's clock, as run times are shown: 13:55 is "1:55 PM" in English. */
+export const clockTime = (time: string) => {
+    const [hours, minutes] = time.split(':').map(Number);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return time;
+    return new Date(2000, 0, 1, hours, minutes).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+};
+
+/** A new schedule's values: 09:00 daily in the user's timezone, with their selected model, the workflow's default inputs, and
+ *  requests approved automatically. */
+export const defaultScheduleConfig = (models: { id: string }[], selectedModelId?: string, parameters: WorkflowParameter[] = []): ScheduleConfig => ({
+    model_id: models.find(model => model.id === selectedModelId)?.id || models[0]?.id || '', time: '09:00',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, weekdays: [0, 1, 2, 3, 4, 5, 6], enabled: true,
-    auto_approve: false, max_retries: 2, catch_up: false, language: getAgentLanguage(),
+    auto_approve: true, max_retries: 2, catch_up: false, language: getAgentLanguage(),
+    setup: { parameters: Object.fromEntries(parameters.flatMap(parameter => parameter.default === undefined ? [] : [[parameter.name, parameter.default]])),
+        instructions: '' },
 });
 
-const schedulesChanged = new EventTarget();
-export const onSchedulesChanged = (listener: () => void) => {
-    schedulesChanged.addEventListener('change', listener);
-    return () => schedulesChanged.removeEventListener('change', listener);
+export const scheduleModelKnown = (config: Pick<ScheduleConfig, 'model_id'>, models: { id: string }[]) =>
+    !!config.model_id && models.some(model => model.id === config.model_id);
+
+/** The schedule's model when the server still has it, else the default available one (the selected model, or the first). */
+export const availableModel = (modelId: string | undefined, models: { id: string }[], selectedModelId?: string) =>
+    models.some(model => model.id === modelId) ? modelId! : models.find(model => model.id === selectedModelId)?.id || models[0]?.id || '';
+
+const shortRunTime = (value: string) => new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+/** When a schedule runs next, briefly: the date alone when it runs at its own time on this clock, which the cadence says. */
+const shortNextRun = (nextAt: string, schedule: ScheduleConfig) => {
+    const next = new Date(nextAt);
+    const clock = `${String(next.getHours()).padStart(2, '0')}:${String(next.getMinutes()).padStart(2, '0')}`;
+    return clock === schedule.time ? next.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : shortRunTime(nextAt);
 };
 
-/** Save a schedule through the same route as the Schedules dialog and notify schedule views. */
-export async function saveSchedule(config: ScheduleConfig, identifier?: string): Promise<WorkflowSchedule> {
-    const { data } = await apiRequest<{ schedule: WorkflowSchedule }>('/api/schedules', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...(identifier ? { id: identifier } : {}), config }) });
-    schedulesChanged.dispatchEvent(new Event('change'));
-    return data.schedule;
+/** The schedule line at the bottom of a workflow card: its cadence and when it runs next, or that it is paused. */
+export const ScheduleLine: React.FC<{ schedule: ScheduleConfig; nextAt?: string | null; textOnly?: boolean }> = ({ schedule, nextAt, textOnly }) => {
+    const { t } = useTranslation();
+    const paused = schedule.enabled === false;
+    const cadence = scheduleCadence(schedule);
+    const text = paused ? `${t('schedule.paused')} · ${cadence}`
+        : nextAt ? `${cadence} (${t('schedule.nextShort', { time: shortNextRun(nextAt, schedule) })})` : cadence;
+    // Under a card's title, tucked close so the two read as one.
+    if (textOnly) return <Box component="span" data-workflow-schedule sx={{ display: 'block', mt: '-4px', lineHeight: 1.4 }}>{text}</Box>;
+    return <Box data-workflow-schedule sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5, minWidth: 0,
+        fontSize: textVar.xs, lineHeight: 1.7, color: 'text.secondary', '& .MuiSvgIcon-root': { fontSize: 13, flexShrink: 0 } }}>
+        {paused ? <PauseIcon aria-hidden sx={{ color: 'warning.main' }} /> : <ScheduleOutlinedIcon aria-hidden />}
+        <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</Box>
+    </Box>;
+};
+
+/** One fact of a schedule, as the Schedule tab and a proposal's review show it. */
+type ScheduleFact = { key: string; label: string; value: string };
+
+/** What a schedule does, in words: when, with which model, whether it approves requests, and its inputs and instructions. */
+export function scheduleFacts(schedule: ScheduleConfig, parameters: WorkflowParameter[], models: { id: string; model?: string }[]): ScheduleFact[] {
+    const t = i18n.t.bind(i18n);
+    const shown = (value: unknown) => value === undefined || value === null || value === '' ? t('workflow.notSpecified')
+        : typeof value === 'boolean' ? (value ? t('workflow.inputYes') : t('workflow.inputNo')) : String(value);
+    const values = schedule.setup?.parameters || {};
+    return [
+        { key: 'when', label: t('schedule.when'), value: `${scheduleCadence(schedule)} (${schedule.timezone})` },
+        // A model the server no longer has gives way to its default (the first), as the scheduler does.
+        { key: 'model', label: t('schedule.model'), value: models.find(model => model.id === schedule.model_id)?.model
+            || (models[0] ? t('schedule.defaultModel', { model: models[0].model }) : schedule.model_id) },
+        { key: 'approvals', label: t('schedule.approvals'), value: schedule.auto_approve === true ? t('schedule.approvalsOn') : t('schedule.approvalsOff') },
+        { key: 'status', label: t('schedule.status'), value: schedule.enabled === false ? t('schedule.paused') : t('schedule.on') },
+        ...parameters.map(parameter => ({ key: `input:${parameter.name}`, label: parameter.label, value: shown(values[parameter.name] ?? parameter.default) })),
+        ...(schedule.setup?.instructions ? [{ key: 'instructions', label: t('workflow.additionalInstructions'), value: schedule.setup.instructions }] : []),
+    ];
 }
 
-const scheduleTimes = Array.from({ length: 48 }, (_, index) => `${String(index >> 1).padStart(2, '0')}:${index % 2 ? '30' : '00'}`);
-const parseScheduleTime = (text: string) => {
-    const match = text.trim().match(/^(\d{1,2}):?(\d{2})$/);
-    return match && +match[1] < 24 && +match[2] < 60 ? `${match[1].padStart(2, '0')}:${match[2]}` : null;
+const factGridSx = { display: 'grid', gridTemplateColumns: 'minmax(96px, max-content) minmax(0, 1fr)', columnGap: 2, rowGap: 0.75, m: 0,
+    fontSize: textVar.sm, lineHeight: 1.6, '& dt': { color: 'text.secondary' }, '& dd': { m: 0, minWidth: 0, overflowWrap: 'anywhere' } } as const;
+
+/** A schedule described: a label and value per fact. */
+export const ScheduleSummary: React.FC<{ facts: ScheduleFact[]; label: string }> = ({ facts, label }) =>
+    <Box component="dl" aria-label={label} sx={factGridSx}>
+        {facts.map(fact => <React.Fragment key={fact.key}><dt>{fact.label}</dt><dd>{fact.value}</dd></React.Fragment>)}
+    </Box>;
+
+/** How a revision changes a schedule: each fact that differs, before → after; a new schedule is described in full. */
+export const ScheduleChanges: React.FC<{ before?: ScheduleFact[]; after: ScheduleFact[]; label: string }> = ({ before, after, label }) => {
+    const { t } = useTranslation();
+    if (!before) return <ScheduleSummary facts={after} label={label} />;
+    const old = new Map(before.map(fact => [fact.key, fact.value]));
+    const changed = after.filter(fact => old.get(fact.key) !== fact.value);
+    if (!changed.length) return <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary' }}>{t('schedule.unchanged')}</Typography>;
+    return <Box component="dl" aria-label={label} sx={factGridSx}>
+        {changed.map(fact => <React.Fragment key={fact.key}><dt>{fact.label}</dt><dd>
+            {old.has(fact.key) && <><Box component="span" sx={{ color: 'text.secondary', textDecoration: 'line-through' }}>{old.get(fact.key)}</Box>{' → '}</>}
+            <Box component="span" sx={{ fontWeight: weight(500) }}>{fact.value}</Box></dd></React.Fragment>)}
+    </Box>;
 };
 
-/** Schedule fields shared by the Schedules dialog and agent-proposed schedule forms. */
-export const ScheduleConfigFields: React.FC<{ items: WorkflowLibraryItem[]; config: ScheduleConfig; onChange: (config: ScheduleConfig) => void;
-    disabled: boolean; hideName?: boolean;
-    /** The workflow being scheduled when it is fixed (a proposal saved with its schedule); hides the workflow choice. */
-    fixedWorkflow?: WorkflowLibraryItem }> = ({ items, config, onChange, disabled, hideName = false, fixedWorkflow }) => {
+/** The schedule settings being edited on a workflow's page; Save writes them. */
+export interface ScheduleDraft { on: boolean; config: ScheduleConfig; dirty: boolean }
+
+/** The draft for a workflow's `schedule:` block, or for a new schedule: 09:00 daily, the default model, approvals on. A block
+ *  without `auto_approve` declines, as the scheduler reads it. */
+export const scheduleDraftOf = (schedule: ScheduleConfig | undefined, models: { id: string }[], selectedModelId?: string): ScheduleDraft => {
+    const config = { ...defaultScheduleConfig(models, selectedModelId), ...schedule, ...(schedule ? { auto_approve: schedule.auto_approve === true } : {}) };
+    return { on: !!schedule && schedule.enabled !== false, dirty: false,
+        config: { ...config, model_id: availableModel(config.model_id, models, selectedModelId) } };
+};
+
+/** What saving a draft writes: the schedule running, in the app's language; off pauses it (kept), or leaves none. */
+export const scheduleDraftToSave = (draft: ScheduleDraft, current?: ScheduleConfig): ScheduleConfig | null | undefined =>
+    draft.on ? { ...draft.config, enabled: true, language: getAgentLanguage() } : current ? { ...current, enabled: false } : undefined;
+
+const scheduleTimes = Array.from({ length: 48 }, (_, index) => `${String(index >> 1).padStart(2, '0')}:${index % 2 ? '30' : '00'}`);
+/** A typed time as `HH:MM`: as the field shows it ("1:55 PM"), with am/pm ("1:55pm", "9 am"), or 24-hour ("13:55"). */
+const parseScheduleTime = (text: string) => {
+    const typed = text.trim().toLowerCase();
+    const shown = scheduleTimes.find(time => clockTime(time).toLowerCase() === typed);
+    if (shown) return shown;
+    const match = typed.match(/^(\d{1,2})(?::?(\d{2}))?\s*(?:([ap])\.?\s*m?\.?)?$/);
+    if (!match) return null;
+    let hours = +match[1];
+    const minutes = +(match[2] ?? '0');
+    if (match[3]) {
+        if (hours < 1 || hours > 12) return null;
+        hours = hours % 12 + (match[3] === 'p' ? 12 : 0);
+    } else if (match[2] === undefined) return null;
+    return hours < 24 && minutes < 60 ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}` : null;
+};
+
+// The page's compact layout, as the map style panel's: small section headings, then one labelled row per setting.
+const sectionSx = { fontSize: textVar.xxs, fontWeight: weight(600), letterSpacing: '0.06em', textTransform: 'uppercase', color: 'text.secondary', mb: 0.75 } as const;
+const rowLabelSx = { fontSize: textVar.sm, color: 'text.secondary', width: 120, flexShrink: 0, lineHeight: 1.5 } as const;
+const controlSx = { fontSize: textVar.sm, '& .MuiInputBase-root': { fontSize: textVar.sm }, '& .MuiInputBase-input': { fontSize: textVar.sm, py: 0.5 } } as const;
+const captionSx = { fontSize: textVar.xs, color: 'text.secondary', lineHeight: 1.5, minWidth: 0 } as const;
+
+/** A timezone worth naming: only one other than the user's own. */
+const otherZone = (timezone: string) => timezone && timezone !== Intl.DateTimeFormat().resolvedOptions().timeZone ? timezone : '';
+
+// What a workflow uses and makes, as quiet reference under its schedule: small grey labels, values and items in the body size.
+const referenceGridSx = { display: 'grid', gridTemplateColumns: 'minmax(80px, max-content) minmax(0, 1fr)', columnGap: 2, rowGap: 0.25, m: 0, alignItems: 'baseline',
+    fontSize: textVar.sm, lineHeight: 1.5, '& dt': { fontSize: textVar.xs, color: 'text.secondary', maxWidth: 200 },
+    '& dd': { m: 0, minWidth: 0, overflowWrap: 'anywhere' } } as const;
+const referenceListSx = { m: 0, p: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 0.25,
+    fontSize: textVar.sm, lineHeight: 1.5, color: 'text.secondary',
+    '& li': { position: 'relative', pl: 1.5, overflowWrap: 'anywhere' },
+    '& li::before': { content: '""', position: 'absolute', left: 2, top: '0.62em', width: 4, height: 4, borderRadius: '50%', bgcolor: 'text.disabled' } } as const;
+
+const PageSection: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) =>
+    <Box component="section" aria-label={title}>
+        <Typography component="h3" sx={sectionSx}>{title}</Typography>
+        {children}
+    </Box>;
+
+const SettingRow: React.FC<{ label: React.ReactNode; top?: boolean; children: React.ReactNode }> = ({ label, top, children }) =>
+    <Box sx={{ display: 'flex', alignItems: top ? 'flex-start' : 'center', gap: 1.5, minHeight: 32 }}>
+        <Typography component="div" sx={{ ...rowLabelSx, ...(top ? { pt: 0.75 } : {}) }}>{label}</Typography>
+        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>{children}</Box>
+    </Box>;
+
+/** A workflow's schedule settings, one row each: whether it runs on a schedule, when, with which model and instructions, and
+ *  whether it approves requests. Its inputs are not set here: the instructions say what to use, and the defaults apply otherwise.
+ *  The switch pauses or resumes a saved schedule at once (`onToggle`); the other settings are a draft until saved. */
+export const ScheduleSettings: React.FC<{ draft: ScheduleDraft; onChange: (draft: ScheduleDraft) => void; current?: ScheduleConfig;
+    onToggle?: (on: boolean) => void; state?: WorkflowScheduleState; copy?: boolean; disabled: boolean }> = ({
+    draft, onChange, current, onToggle, state, copy, disabled }) => {
     const { t } = useTranslation();
     const models = useSelector((state: DataFormulatorState) => state.globalModels);
     const [customDays, setCustomDays] = useState(false);
     const [timeText, setTimeText] = useState<string | null>(null);
+    const config = draft.config;
+    const set = (patch: Partial<ScheduleConfig>) => onChange({ ...draft, dirty: true, config: { ...config, ...patch } });
     const commitTime = (text: string) => {
         const time = parseScheduleTime(text);
-        if (time) onChange({ ...config, time });
+        if (time) set({ time });
         setTimeText(null);
     };
-    const workflow = fixedWorkflow ?? items.find(item => item.path === config.workflow);
+    const timeField = <Autocomplete freeSolo disableClearable forcePopupIcon openOnFocus size="small" options={scheduleTimes} disabled={disabled}
+        value={config.time} inputValue={timeText ?? clockTime(config.time)} getOptionLabel={clockTime}
+        sx={{ width: 130, '& .MuiAutocomplete-inputRoot.MuiInputBase-sizeSmall': { py: '2px' } }}
+        onInputChange={(_, text, reason) => { if (reason === 'input') setTimeText(text); }}
+        onChange={(_, text) => commitTime(text)} onBlur={() => timeText !== null && commitTime(timeText)}
+        slotProps={{ listbox: { sx: { maxHeight: 220, fontSize: textVar.sm } } }}
+        renderInput={params => <TextField {...params} sx={controlSx}
+            slotProps={{ htmlInput: { ...params.inputProps, 'aria-label': t('schedule.time') } }} />} />;
     const repeat = customDays ? 'custom' : config.weekdays.length === 7 ? 'daily'
         : config.weekdays.length === 5 && [0, 1, 2, 3, 4].every(day => config.weekdays.includes(day)) ? 'weekdays' : 'custom';
+    // Running, the rows below say when and the caption says when next; paused, the rows fold away and the caption says when.
+    const paused = !!current && current.enabled === false;
+    const status = !current ? t('schedule.notScheduled')
+        : paused ? `${t('schedule.paused')} · ${scheduleCadence(current)}${otherZone(current.timezone) ? ` (${current.timezone})` : ''}`
+        : state?.next_at ? t('schedule.nextRunAt', { time: shortRunTime(state.next_at) }) : '';
     return <>
-        {!fixedWorkflow && <TextField size="small" select required label={t('schedule.workflow')} value={config.workflow} disabled={disabled}
-            onChange={event => {
-                const selected = items.find(item => item.path === event.target.value);
-                onChange({ ...config, workflow: event.target.value, name: !config.name || config.name === workflow?.name ? selected?.name || '' : config.name,
-                    setup: { parameters: Object.fromEntries((selected?.parameters || []).flatMap(parameter => parameter.default === undefined ? [] : [[parameter.name, parameter.default]])), instructions: '' } });
-            }}>
-            {items.map(item => <MenuItem key={item.path} value={item.path}>{item.name}</MenuItem>)}
-        </TextField>}
-        {!hideName && <TextField size="small" required label={t('schedule.name')} value={config.name} disabled={disabled}
-            onChange={event => onChange({ ...config, name: event.target.value })} />}
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 2 }}>
-            <TextField size="small" select label={t('schedule.repeat')} value={repeat} disabled={disabled} onChange={event => {
-                setCustomDays(event.target.value === 'custom');
-                if (event.target.value !== 'custom') onChange({ ...config,
-                    weekdays: event.target.value === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4] });
-            }}>
-                <MenuItem value="daily">{t('schedule.everyDay')}</MenuItem>
-                <MenuItem value="weekdays">{t('schedule.weekdays')}</MenuItem>
-                <MenuItem value="custom">{t('schedule.customDays')}</MenuItem>
-            </TextField>
-            <Autocomplete freeSolo disableClearable forcePopupIcon openOnFocus size="small" options={scheduleTimes} disabled={disabled}
-                value={config.time} inputValue={timeText ?? config.time}
-                onInputChange={(_, text, reason) => { if (reason === 'input') setTimeText(text); }}
-                onChange={(_, text) => commitTime(text)} onBlur={() => timeText !== null && commitTime(timeText)}
-                slotProps={{ listbox: { sx: { maxHeight: 220 } } }}
-                renderInput={params => <TextField {...params} required label={t('schedule.time')} helperText={config.timezone}
-                    slotProps={{ htmlInput: { ...params.inputProps, inputMode: 'numeric' } }} />} />
-        </Box>
-        {repeat === 'custom' && <Box role="group" aria-label={t('schedule.weekdays')} sx={{ display: 'flex', flexWrap: 'wrap', mt: -1 }}>
-            {[0, 1, 2, 3, 4, 5, 6].map(index => <FormControlLabel key={index} sx={{ mr: 1 }} label={weekdayName(index)}
-                control={<Checkbox size="small" checked={config.weekdays.includes(index)} disabled={disabled} onChange={event => onChange({ ...config,
-                    weekdays: event.target.checked ? [...config.weekdays, index].sort() : config.weekdays.filter(day => day !== index) })} />} />)}
+        <SettingRow label={t('schedule.runOnSchedule')}>
+            <Switch size="small" checked={draft.on} disabled={disabled} slotProps={{ input: { 'aria-label': t('schedule.runOnSchedule') } }}
+                onChange={event => current && onToggle ? onToggle(event.target.checked) : onChange({ ...draft, on: event.target.checked, dirty: true })} />
+            {paused && <PauseIcon aria-hidden sx={{ fontSize: 14, color: 'warning.main', mr: -0.5 }} />}
+            <Typography data-schedule-description sx={captionSx}>{status}</Typography>
+        </SettingRow>
+        {draft.on && <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+            {copy && <Typography sx={{ ...captionSx, pl: '132px' }}>{t('schedule.savesCopy')}</Typography>}
+            <SettingRow label={t('schedule.when')}>
+                <Select size="small" value={repeat} disabled={disabled} sx={{ ...controlSx, minWidth: 130 }} inputProps={{ 'aria-label': t('schedule.repeat') }}
+                    onChange={event => {
+                        setCustomDays(event.target.value === 'custom');
+                        if (event.target.value !== 'custom') set({ weekdays: event.target.value === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4] });
+                    }}>
+                    <MenuItem value="daily" sx={controlSx}>{t('schedule.everyDay')}</MenuItem>
+                    <MenuItem value="weekdays" sx={controlSx}>{t('schedule.weekdays')}</MenuItem>
+                    <MenuItem value="custom" sx={controlSx}>{t('schedule.customDays')}</MenuItem>
+                </Select>
+                {timeField}
+                {otherZone(config.timezone) && <Typography sx={captionSx}>{config.timezone}</Typography>}
+            </SettingRow>
+            {repeat === 'custom' && <SettingRow label="">
+                <Box role="group" aria-label={t('schedule.weekdays')} sx={{ display: 'flex', flexWrap: 'wrap',
+                    '& .MuiFormControlLabel-root': { m: 0, mr: 1 }, '& .MuiFormControlLabel-label': { fontSize: textVar.sm }, '& .MuiCheckbox-root': { p: 0.5 } }}>
+                    {[0, 1, 2, 3, 4, 5, 6].map(index => <FormControlLabel key={index} label={weekdayName(index)}
+                        control={<Checkbox size="small" checked={config.weekdays.includes(index)} disabled={disabled} onChange={event => set({
+                            weekdays: event.target.checked ? [...config.weekdays, index].sort() : config.weekdays.filter(day => day !== index) })} />} />)}
+                </Box>
+            </SettingRow>}
+            <SettingRow label={t('schedule.model')}>
+                <Select size="small" value={config.model_id} disabled={disabled} sx={{ ...controlSx, minWidth: 160 }} inputProps={{ 'aria-label': t('schedule.model') }}
+                    onChange={event => set({ model_id: event.target.value })}>
+                    {models.map(model => <MenuItem key={model.id} value={model.id} sx={controlSx}>{model.model}</MenuItem>)}
+                </Select>
+            </SettingRow>
+            <SettingRow label={t('schedule.instructions')} top>
+                <TextField size="small" multiline minRows={1} fullWidth placeholder={t('schedule.instructionsPlaceholder')} disabled={disabled}
+                    value={config.setup?.instructions || ''} sx={{ '& .MuiInputBase-root': { fontSize: textVar.sm, py: 0.6 } }}
+                    slotProps={{ htmlInput: { maxLength: 8000, 'aria-label': t('schedule.instructions') } }}
+                    onChange={event => set({ setup: { parameters: config.setup?.parameters || {}, instructions: event.target.value } })} />
+            </SettingRow>
+            <SettingRow label={t('schedule.autoApprove')}>
+                <Tooltip title={config.auto_approve === true ? t('schedule.approveAllOn') : t('schedule.approveAllOff')} placement="right">
+                    <Switch size="small" checked={config.auto_approve === true} disabled={disabled}
+                        slotProps={{ input: { 'aria-label': t('schedule.approveAll') } }} onChange={event => set({ auto_approve: event.target.checked })} />
+                </Tooltip>
+            </SettingRow>
         </Box>}
-        {workflow && <>
-            <Divider><Typography variant="caption">{t('schedule.workflowInputs')}</Typography></Divider>
-            {!!workflow.parameters?.length && <WorkflowSetupFields parameters={workflow.parameters} values={config.setup?.parameters || {}} disabled={disabled}
-                onChange={parameters => onChange({ ...config, setup: { parameters, instructions: config.setup?.instructions || '' } })} />}
-            <TextField size="small" multiline minRows={2} label={t('workflow.additionalInstructions')} value={config.setup?.instructions || ''} disabled={disabled}
-                onChange={event => onChange({ ...config, setup: { parameters: config.setup?.parameters || {}, instructions: event.target.value } })} />
-        </>}
-        <Divider><Typography variant="caption">{t('schedule.runSettings')}</Typography></Divider>
-        <TextField size="small" select required label={t('schedule.modelConnection')} value={config.model_id} disabled={disabled}
-            error={!config.model_id} helperText={!config.model_id ? t('schedule.modelRequired') : undefined}
-            onChange={event => onChange({ ...config, model_id: event.target.value })}>
-            {models.map(model => <MenuItem key={model.id} value={model.id}>{model.model}</MenuItem>)}
-        </TextField>
-        <TextField size="small" select label={t('schedule.language')} value={config.language || 'en'} disabled={disabled}
-            onChange={event => onChange({ ...config, language: event.target.value })}>
-            {SUPPORTED_UI_LANGUAGES.map(language => <MenuItem key={language} value={language}>
-                {new Intl.DisplayNames([language], { type: 'language' }).of(language) ?? language}</MenuItem>)}
-        </TextField>
-        <Box sx={{ display: 'flex', flexDirection: 'column', mt: -0.5,
-            '& .MuiFormControlLabel-root': { m: 0, gap: 0.5 }, '& .MuiCheckbox-root': { p: 0.5 } }}>
-            <FormControlLabel label={t('schedule.catchUp')} control={<Checkbox size="small" checked={config.catch_up} disabled={disabled} onChange={event => onChange({ ...config, catch_up: event.target.checked })} />} />
-            <Tooltip describeChild title={t('schedule.autoApproveHint')}>
-                <FormControlLabel label={t('schedule.autoApprove')} control={<Checkbox size="small" checked={config.auto_approve} disabled={disabled} onChange={event => onChange({ ...config, auto_approve: event.target.checked })} />} />
-            </Tooltip>
-        </Box>
     </>;
 };
 
-export const WorkflowSchedules: React.FC<{ items: WorkflowLibraryItem[]; onClose: () => void; initialSchedule?: WorkflowSchedule; startNew?: boolean;
-    onOpenSession?: (id: string) => void | Promise<void> }> = ({ items, onClose, initialSchedule, startNew, onOpenSession }) => {
+/** A workflow's page: what it does, its inputs with their defaults and its deliverables, then its schedule settings in a box
+ *  (just the switch until it runs on a schedule), in the compact rows of a settings panel. Changes beyond the schedule go
+ *  through the agent; the source is a secondary view. */
+export const WorkflowPage: React.FC<{ item: WorkflowLibraryItem; deliverables?: string[]; scheduling: boolean; state?: WorkflowScheduleState;
+    draft?: ScheduleDraft; onDraftChange: (draft: ScheduleDraft) => void; onToggle?: (on: boolean) => void; busy: boolean }> = ({
+    item, deliverables, scheduling, state, draft, onDraftChange, onToggle, busy }) => {
     const { t } = useTranslation();
-    const models = useSelector((state: DataFormulatorState) => state.globalModels);
-    const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
-    const [schedules, setSchedules] = useState<WorkflowSchedule[]>([]);
-    const [available, setAvailable] = useState(false);
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState('');
-    const [identifier, setIdentifier] = useState(initialSchedule?.id || '');
-    const [confirmDelete, setConfirmDelete] = useState(false);
-    const emptyConfig = (): ScheduleConfig => defaultScheduleConfig(models, selectedModelId);
-    const [config, setConfig] = useState<ScheduleConfig>(() => initialSchedule ? { ...emptyConfig(), ...initialSchedule.config } : emptyConfig());
-    const current = schedules.find(schedule => schedule.id === identifier);
-    const currentRuns = current?.history?.filter(run => run.status !== 'skipped') ?? [];
-    const [view, setView] = useState<'form' | 'yaml'>('form');
-    const [yamlDraft, setYamlDraft] = useState('');
-    const [yamlError, setYamlError] = useState('');
-    const toYaml = (value: ScheduleConfig) => {
-        const { name, workflow, time, timezone, weekdays, model_id, setup, ...flags } = value;
-        const block = (fields: object) => dumpYaml(fields, { lineWidth: 100, noRefs: true });
-        // Weekdays read best as one flow list; js-yaml can only set flow style by depth.
-        return block({ name, workflow, time, timezone }) + `weekdays: [${weekdays.join(', ')}]  # 0 = Monday\n`
-            + block({ model_id, ...(setup ? { setup } : {}), ...flags });
-    };
-    const editYaml = (text: string) => {
-        setYamlDraft(text);
-        try {
-            const parsed = loadYaml(text);
-            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(t('schedule.yamlExpected'));
-            setConfig({ ...emptyConfig(), ...(parsed as Partial<ScheduleConfig>) });
-            setYamlError('');
-        } catch (reason) { setYamlError(reason instanceof Error ? reason.message : t('schedule.invalidYaml')); }
-    };
-    const select = (schedule?: WorkflowSchedule) => {
-        const next = schedule ? { ...emptyConfig(), ...schedule.config } : emptyConfig();
-        setIdentifier(schedule?.id || ''); setConfig(next);
-        setYamlDraft(toYaml(next)); setYamlError('');
-        setError('');
-    };
-    const refresh = async () => {
-        const { data } = await apiRequest<{ available: boolean; schedules: WorkflowSchedule[] }>('/api/schedules');
-        setAvailable(data.available); setSchedules(data.schedules);
-        return data.schedules;
-    };
-    useEffect(() => {
-        void refresh().then(list => { if (!initialSchedule && !startNew && list[0]) select(list[0]); })
-            .catch(reason => setError(String(reason))).finally(() => setLoading(false));
-    }, []);
-    const persist = async (next: ScheduleConfig) => {
-        const saved = await saveSchedule(next, identifier || undefined);
-        const list = await refresh();
-        return list.find(schedule => schedule.id === saved.id);
-    };
-    const act = async (action: () => Promise<void>, failure: string) => {
-        setSaving(true); setError('');
-        try { await action(); } catch (reason) { setError(reason instanceof Error ? reason.message : failure); }
-        finally { setSaving(false); }
-    };
-    return <><ListDetailDialog title={t('schedule.title')} listLabel={t('schedule.list')} createLabel={t('schedule.new')} busy={saving} onClose={onClose} width={780} contentMaxWidth={460}
-        fillHeight={view === 'yaml'}
-        selectedKey={identifier || null} onSelect={key => select(schedules.find(schedule => schedule.id === key))}
-        items={schedules.map(schedule => ({ key: schedule.id, primary: schedule.config.name, secondary: scheduleCadence(schedule.config),
-            muted: !schedule.config.enabled }))}
-        onSubmit={event => {
-            event.preventDefault();
-            // A saved schedule is done; the panel behind lists it. A failed save keeps the form open.
-            void act(async () => { await saveSchedule(config, identifier || undefined); onClose(); }, t('schedule.saveFailed'));
-        }}
-        footer={available && <>
-            {current && <Button color="error" disabled={saving} sx={{ mr: 'auto' }} onClick={() => setConfirmDelete(true)}>{t('app.delete')}</Button>}
-            {current && <Button variant="outlined" disabled={saving} onClick={() => void act(async () => {
-                const enabled = !current.config.enabled;
-                await persist({ ...current.config, enabled });
-                setConfig(previous => ({ ...previous, enabled }));
-            }, t('schedule.updateFailed'))}>{current.config.enabled ? t('schedule.pause') : t('schedule.resume')}</Button>}
-            <Button type="submit" variant="contained" disableElevation
-                disabled={saving || !!yamlError || !config.weekdays.length || !config.model_id || !config.workflow}>{t('schedule.save')}</Button>
-        </>}>
-                        {available && !loading && <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                            <TextField size="small" required label={t('schedule.name')} value={config.name} disabled={saving} sx={{ flex: 1, minWidth: 0 }}
-                                onChange={event => {
-                                    const next = { ...config, name: event.target.value };
-                                    setConfig(next);
-                                    if (view === 'yaml') setYamlDraft(toYaml(next));
-                                }} />
-                            <ToggleButtonGroup size="small" exclusive value={view} aria-label={t('schedule.view')}
-                                onChange={(_, next: 'form' | 'yaml' | null) => {
-                                    if (!next) return;
-                                    if (next === 'yaml') { setYamlDraft(toYaml(config)); setYamlError(''); }
-                                    setView(next);
-                                }}
-                                sx={{ flexShrink: 0, '& .MuiToggleButton-root': { py: 0.125, px: 0.875, fontSize: textVar.xs, lineHeight: 1.5,
-                                    textTransform: 'none', color: 'text.secondary', '&.Mui-selected': { color: 'text.primary' } } }}>
-                                <ToggleButton value="form">{t('schedule.form')}</ToggleButton>
-                                <ToggleButton value="yaml">YAML</ToggleButton>
-                            </ToggleButtonGroup>
-                        </Box>}
-                        {current && <Box sx={{ mt: -0.75 }}>
-                            <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
-                                {current.config.enabled ? t('schedule.nextRunAt', { time: shortRunTime(current.next_at) }) : t('schedule.paused')}</Typography>
-                            {currentRuns.length > 0 && <RunList caption={t('schedule.previousRuns')} label={t('schedule.runsOf', { name: current.config.name })} limit={6} runs={currentRuns.map(run => ({
-                                key: run.id, status: run.status, time: run.scheduled_for, disabled: !onOpenSession,
-                                open: () => { void onOpenSession?.(`scheduled-${run.id}`); onClose(); },
-                            }))} />}
-                        </Box>}
-                        {error && <Alert severity="error">{error}</Alert>}
-                        {loading ? <CircularProgress size={18} /> : !available ? <Alert severity="info">{t('schedule.localOnly')}</Alert> : <>
-                    {view === 'yaml' ? <>
-                        <Box sx={{ flex: 1, minHeight: 240, border: 1, borderColor: yamlError ? 'error.main' : 'divider', borderRadius: 1, overflow: 'hidden',
-                            '& .cm-editor': { fontSize: textVar.sm } }}>
-                            <MarkdownEditor fileName="schedule.yaml" value={yamlDraft} onChange={editYaml} readOnly={saving} showToolbar={false} lineWrap />
-                        </Box>
-                        {yamlError && <Typography role="alert" sx={{ mt: -1, fontSize: textVar.xs, color: 'error.main' }}>{yamlError}</Typography>}
-                    </> : <ScheduleConfigFields key={identifier || 'new'} items={items} config={config} onChange={setConfig} disabled={saving} hideName />}
-                </>}
-    </ListDetailDialog>
-    <Dialog open={confirmDelete} onClose={() => !saving && setConfirmDelete(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>{t('schedule.deleteTitle')}</DialogTitle>
-        <DialogContent>
-            <Typography sx={{ overflowWrap: 'anywhere', mb: 1 }}>{current?.config.name}</Typography>
-            <Typography variant="body2" color="text.secondary">{t('schedule.deleteBody')}</Typography>
-        </DialogContent>
-        <DialogActions>
-            <Button disabled={saving} onClick={() => setConfirmDelete(false)}>{t('app.cancel')}</Button>
-            <Button color="error" variant="contained" disableElevation disabled={saving} onClick={() => void act(async () => {
-                await apiRequest(`/api/schedules/${identifier}`, { method: 'DELETE' });
-                const list = await refresh();
-                setConfirmDelete(false);
-                select(list[0]);
-            }, t('schedule.deleteFailed'))}>{t('app.delete')}</Button>
-        </DialogActions>
-    </Dialog>
-    </>;
+    const parameters = item.parameters || [];
+    return <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pb: 1 }}>
+        {item.overview && <Typography sx={{ fontSize: textVar.sm, lineHeight: 1.55, color: 'text.primary', overflowWrap: 'anywhere' }}>{item.overview}</Typography>}
+        {!!parameters.length && <PageSection title={t('workflow.defaultInputs')}>
+            <Box component="dl" sx={referenceGridSx}>
+                {parameters.map(parameter => <React.Fragment key={parameter.name}>
+                    <Tooltip title={parameter.description || ''} placement="top-start"><dt>{parameter.label}</dt></Tooltip>
+                    <dd>{parameter.default === undefined || parameter.default === ''
+                        ? <Box component="span" sx={{ color: 'text.disabled' }}>{t('workflow.notSpecified')}</Box> : String(parameter.default)}</dd>
+                </React.Fragment>)}
+            </Box>
+        </PageSection>}
+        {!!deliverables?.length && <PageSection title={t('workflow.deliverables')}>
+            <Box component="ul" sx={referenceListSx}>
+                {deliverables.map((deliverable, index) => <li key={index}>{deliverable}</li>)}</Box>
+        </PageSection>}
+        {scheduling && draft && <Box component="section" aria-label={t('schedule.action')}
+            sx={{ border: 1, borderColor: 'divider', borderRadius: 1, bgcolor: ink(0.02), px: 1.5, py: 0.5 }}>
+            <ScheduleSettings draft={draft} onChange={onDraftChange} onToggle={onToggle} current={item.origin === 'user' ? item.schedule : undefined}
+                state={state} copy={schedulesByCopy(item)} disabled={busy} />
+        </Box>}
+    </Box>;
 };
 
-const shortRunTime = (value: string) => new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 const runStatusDisplay = (value: string) => {
     const display = ({
@@ -358,146 +403,43 @@ const runStatusDisplay = (value: string) => {
 
 
 /** The latest two runs, shown inside a card under its metadata; the panel lists the rest. */
-export const CardRuns: React.FC<{ label: string; runs: RunEntry[]; next?: NextRun }> = ({ label, runs, next }) => {
-    const { t } = useTranslation();
-    return <RunList caption={t('schedule.runs')} label={label} runs={runs.slice(0, 2)} next={next} />;
-};
+export const CardRuns: React.FC<{ label: string; runs: RunEntry[] }> = ({ label, runs }) =>
+    <RunList label={label} runs={runs.slice(0, 2)} dateOnly />;
 
-/** A status icon plus run time as plain inline text that opens the run. */
-const RunLink: React.FC<{ status: string; time: string; label?: string; disabled?: boolean; onOpen: () => void }> = ({ status, time, label, disabled, onOpen }) => {
+/** A run as a shaded chip, like the app's metadata chips: its status icon and when it ran; it opens the run. `dateOnly` drops
+ *  the time where the card's schedule line already says it; the tooltip keeps both. */
+const RunLink: React.FC<{ status: string; time: string; label?: string; disabled?: boolean; dateOnly?: boolean; onOpen: () => void }> = ({
+    status, time, label, disabled, dateOnly, onOpen }) => {
     const display = runStatusDisplay(status);
-    return <Tooltip title={display.label}>
+    return <Tooltip title={`${display.label} · ${shortRunTime(time)}`}>
         <ButtonBase disabled={disabled} aria-label={label ?? `${display.label}, ${shortRunTime(time)}`}
             onClick={event => { event.stopPropagation(); onOpen(); }}
-            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, minWidth: 0, borderRadius: 0.5,
-                fontSize: textVar.xs, lineHeight: 1.7, color: 'text.secondary',
-                '&:hover': { color: 'text.primary', textDecoration: 'underline' },
+            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, minWidth: 0, px: 0.625, borderRadius: 0.5, bgcolor: mutedChipBg,
+                fontSize: textVar.xs, lineHeight: 1.7, color: 'text.secondary', fontVariantNumeric: 'tabular-nums',
+                '&:hover': { color: 'text.primary', bgcolor: ink(0.09) },
                 '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
             <Box component="span" role="img" aria-label={display.label}
-                sx={{ display: 'inline-flex', color: display.color, '& .MuiSvgIcon-root': { fontSize: 13 } }}>{display.icon}</Box>
-            <span>{shortRunTime(time)}</span>
+                sx={{ display: 'inline-flex', color: display.color, '& .MuiSvgIcon-root': { fontSize: 12 } }}>{display.icon}</Box>
+            <span>{dateOnly ? new Date(time).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : shortRunTime(time)}</span>
         </ButtonBase>
     </Tooltip>;
 };
 
-/** The upcoming run (or paused state): same shape as a run, muted and inert; the cadence lives in its tooltip. */
-const NextRunChip: React.FC<NextRun> = ({ time, cadence }) => {
-    const { t } = useTranslation();
-    const state = time ? t('schedule.nextRun') : t('schedule.paused');
-    return <Tooltip title={<>{state}<br />{cadence}</>}>
-        <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, minWidth: 0,
-            fontFamily: theme => theme.typography.fontFamily, fontSize: textVar.xs, lineHeight: 1.7, color: 'text.disabled' }}>
-            <Box component="span" role="img" aria-label={`${state}, ${cadence}`} sx={{ display: 'inline-flex', '& .MuiSvgIcon-root': { fontSize: 13 } }}>
-                {time ? <ScheduleOutlinedIcon /> : <PauseIcon />}</Box>
-            <span>{time ? shortRunTime(time) : state}</span>
-        </Box>
-    </Tooltip>;
-};
-
-type NextRun = { time?: string; cadence: string };
-
 export type RunEntry = { key: string; status: string; time: string; label?: string; disabled?: boolean; open: () => void };
 
 /** Newest-first run chips; `(more)` reveals the rest in a scrollable area. */
-export const RunList: React.FC<{ label: string; runs: RunEntry[]; limit?: number; caption?: string; next?: NextRun }> = ({ label, runs, limit = 3, caption, next }) => {
+export const RunList: React.FC<{ label: string; runs: RunEntry[]; limit?: number; caption?: string; dateOnly?: boolean }> = ({
+    label, runs, limit = 3, caption, dateOnly }) => {
     const { t } = useTranslation();
     const [showAll, setShowAll] = useState(false);
     return <Box role="group" aria-label={label} sx={{ mt: 0.5,
-        display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 1.25, rowGap: 0.25, ...(showAll ? { maxHeight: 160, overflowY: 'auto' } : {}) }}>
+        display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 0.5, rowGap: 0.5, ...(showAll ? { maxHeight: 160, overflowY: 'auto' } : {}) }}>
         {caption && <Typography component="span" sx={{ fontSize: textVar.xs, color: 'text.secondary', mr: 0.25 }}>{caption}</Typography>}
-        {next && <NextRunChip {...next} />}
         {(showAll ? runs : runs.slice(0, limit)).map(run => <RunLink key={run.key} status={run.status} time={run.time}
-            label={run.label} disabled={run.disabled} onOpen={run.open} />)}
+            label={run.label} disabled={run.disabled} dateOnly={dateOnly} onOpen={run.open} />)}
         {runs.length > limit && <ButtonBase onClick={event => { event.stopPropagation(); setShowAll(previous => !previous); }}
             sx={{ fontSize: textVar.xs, lineHeight: 1.7, color: 'text.secondary', borderRadius: 0.5, '&:hover': { color: 'text.primary', textDecoration: 'underline' } }}>
             {showAll ? t('schedule.less') : t('schedule.more')}
         </ButtonBase>}
-    </Box>;
-};
-
-export interface ScheduleLibrary { schedules: WorkflowSchedule[]; available: boolean; loading: boolean; error: string }
-
-/** Load schedules; refreshes on saves, tab return, `refreshKey` changes, and every 10s while a run is active. */
-export function useScheduleLibrary(enabled: boolean, refreshKey?: unknown): ScheduleLibrary & { refresh: () => void } {
-    const [library, setLibrary] = useState<ScheduleLibrary>({ schedules: [], available: false, loading: enabled, error: '' });
-    const [tick, setTick] = useState(0);
-    useEffect(() => {
-        if (!enabled) return;
-        let cancelled = false;
-        setLibrary(previous => ({ ...previous, loading: true, error: '' }));
-        void apiRequest<{ available: boolean; schedules: WorkflowSchedule[] }>('/api/schedules').then(({ data }) => {
-            if (!cancelled) setLibrary({ schedules: data.schedules || [], available: data.available, loading: false, error: '' });
-        }).catch(reason => {
-            if (!cancelled) setLibrary({ schedules: [], available: false, loading: false,
-                error: reason instanceof Error ? reason.message : i18n.t('schedule.loadFailed') });
-        });
-        return () => { cancelled = true; };
-    }, [enabled, refreshKey, tick]);
-    const anyOccurrenceActive = library.schedules.some(schedule => schedule.history?.some(run => run.status === 'running' || run.status === 'retry'));
-    useEffect(() => onSchedulesChanged(() => setTick(value => value + 1)), []);
-    useEffect(() => {
-        if (!enabled) return;
-        const onVisible = () => { if (document.visibilityState === 'visible') setTick(value => value + 1); };
-        document.addEventListener('visibilitychange', onVisible);
-        const timer = anyOccurrenceActive ? window.setInterval(() => setTick(value => value + 1), 10000) : undefined;
-        return () => { document.removeEventListener('visibilitychange', onVisible); window.clearInterval(timer); };
-    }, [enabled, anyOccurrenceActive]);
-    return { ...library, refresh: () => setTick(value => value + 1) };
-}
-
-/** Workflow schedules: create, edit, and open runs. The sidebar tab, or a card grid on the landing page. */
-export const SchedulesPanel: React.FC<{ onOpenSession?: (id: string) => void | Promise<void>; headerActions?: React.ReactNode;
-    presentation?: 'sidebar' | 'landing'; toolbarContainer?: HTMLElement | null }> = ({ onOpenSession, headerActions, presentation = 'sidebar', toolbarContainer }) => {
-    const { t } = useTranslation();
-    const landing = presentation === 'landing';
-    const [items, setItems] = useState<WorkflowLibraryItem[]>([]);
-    const [editing, setEditing] = useState<{ schedule?: WorkflowSchedule; browse?: boolean } | null>(null);
-    const library = useScheduleLibrary(true);
-    const { schedules, available, loading, error } = library;
-    useEffect(() => { void listWorkflowLibrary().then(setItems).catch(() => setItems([])); }, []);
-    const openRun = (id: string) => void onOpenSession?.(`scheduled-${id}`);
-    const newButton = <Button variant="outlined" size="small" startIcon={<AddIcon />} disabled={!available} sx={sidebarPrimaryActionSx}
-        onClick={() => setEditing({})}>
-        {t('schedule.new')}
-    </Button>;
-    return <Box component="section" aria-label={t('schedule.title')} sx={landing ? { minWidth: 0 }
-        : { display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, flex: '0 1 auto', overflow: 'hidden' }}>
-        {!landing && <>
-        <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', px: 1.5, height: 40, minHeight: 40, boxSizing: 'border-box',
-            flexShrink: 0, borderBottom: `1px solid ${ink(0.16)}`, bgcolor: paper(0.76) }}>
-            <Typography sx={{ fontSize: textVar.md, fontWeight: weight(600), textAlign: 'left' }}>{t('schedule.title')}</Typography>
-            <ViewAllButton label={t('schedule.viewAll')} disabled={!available} onClick={() => setEditing({ browse: true })} />
-            <Box sx={{ flex: 1 }} />
-            {headerActions}
-        </Box>
-        <Box sx={sidebarToolbarSx}>
-            {newButton}
-            <Box sx={{ flex: 1 }} />
-            <Tooltip title={t('schedule.refresh')}><span><IconButton aria-label={t('schedule.refresh')} size="small" disabled={loading} onClick={library.refresh}
-                sx={{ width: 24, height: 24, p: 0, color: 'text.secondary', '&:hover': { color: 'text.primary', bgcolor: 'action.hover' } }}>
-                {loading ? <CircularProgress size={16} /> : <RefreshIcon sx={{ fontSize: iconVar.md }} />}
-            </IconButton></span></Tooltip>
-        </Box>
-        </>}
-        {landing && toolbarContainer && createPortal(newButton, toolbarContainer)}
-        <Box sx={landing ? itemCardGridSx : { overflowY: 'auto', minHeight: 0, py: 1, px: 0.75, display: 'grid', gap: 0.75, alignContent: 'start' }}>
-            {error ? <Alert severity="error" sx={{ fontSize: textVar.xs }}>{error}</Alert> : !loading && !available
-                ? <Alert severity="info" sx={{ fontSize: textVar.xs }}>{t('schedule.localOnly')}</Alert> : !loading && !schedules.length &&
-                <Typography sx={{ px: landing ? 0 : 1, py: 0.75, fontSize: textVar.xs, color: 'text.secondary' }}>{t('schedule.empty')}</Typography>}
-            {schedules.map(schedule => {
-                const runs = schedule.history?.filter(run => run.status !== 'skipped') ?? [];
-                const name = schedule.config.name;
-                return <ItemCard key={schedule.id} compact={!landing} title={name} openLabel={t('schedule.edit', { name })}
-                    onOpen={() => setEditing({ schedule })}
-                    captions={[`${scheduleCadence(schedule.config)}${schedule.config.enabled ? '' : ` · ${t('schedule.paused')}`}`]}
-                    meta={<CardRuns label={t('schedule.runsOfSchedule', { name })}
-                        next={{ time: schedule.config.enabled ? schedule.next_at : undefined, cadence: scheduleCadence(schedule.config) }} runs={runs.map((run, index) => ({
-                        key: run.id, status: run.status, time: run.scheduled_for, disabled: !onOpenSession, open: () => openRun(run.id),
-                        label: index === 0 ? t('schedule.openLatestRun', { name }) : t('schedule.openRun', { time: shortRunTime(run.scheduled_for), name }),
-                    }))} />} />;
-            })}
-        </Box>
-        {editing && <WorkflowSchedules items={items} initialSchedule={editing.schedule} startNew={!editing.schedule && !editing.browse} onOpenSession={onOpenSession}
-            onClose={() => { setEditing(null); library.refresh(); }} />}
     </Box>;
 };

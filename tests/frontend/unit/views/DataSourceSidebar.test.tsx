@@ -60,7 +60,7 @@ vi.mock('../../../../src/app/dfSlice', () => ({
 
 vi.mock('../../../../src/app/sessionThunks', () => ({
     generateWorkspaceId: () => 'session_test',
-    leaveSession: () => ({ type: 'session/leave' }),
+    startNewSession: () => ({ type: 'session/new' }),
     renameSession: (id: string, name: string) => ({ type: 'session/rename', payload: { id, name } }),
     openSession: (id: string, name: string) => ({ type: 'session/open', payload: { id, name } }),
 }));
@@ -202,7 +202,7 @@ describe('DataSourceSidebar', () => {
         try {
             render(<DataSourceSidebar />);
             const button = screen.getByRole('button', { name: 'workflow.title' });
-            fireEvent.mouseOver(button.querySelector('[data-workflow-gears]')!);
+            fireEvent.mouseOver(button.querySelector('[data-workflow-icon]')!);
             await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
             expect(screen.getAllByRole('tooltip')).toHaveLength(1);
             expect(screen.getByRole('tooltip')).toHaveTextContent('workflow.title');
@@ -438,14 +438,20 @@ describe('DataSourceSidebar', () => {
         expect(await screen.findByLabelText('Disconnect', { selector: 'button' })).toBeEnabled();
     });
 
-    it('leaves the session for the landing page and closes the unpinned sidebar', async () => {
+    it('starts a blank session and closes the unpinned sidebar', async () => {
         mockState.dataSourceSidebarTab = 'sessions';
         render(<DataSourceSidebar />);
 
-        fireEvent.click(await screen.findByRole('button', { name: 'New session' }));
+        // The sessions panel's New and the rail's + both start one.
+        const [rail, panel] = await screen.findAllByRole('button', { name: 'New session' });
+        fireEvent.click(panel);
 
         expect(dispatch).toHaveBeenCalledWith({ type: 'sidebar/setOpen', payload: false });
-        expect(dispatch).toHaveBeenCalledWith({ type: 'session/leave' });
+        expect(dispatch).toHaveBeenCalledWith({ type: 'session/new' });
+        dispatch.mockClear();
+        fireEvent.click(rail);
+        expect(dispatch).toHaveBeenCalledWith({ type: 'sidebar/setOpen', payload: false });
+        expect(dispatch).toHaveBeenCalledWith({ type: 'session/new' });
         expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'workspace/reset' }));
     });
 
@@ -661,18 +667,18 @@ describe('DataSourceSidebar', () => {
     });
 
     it.each([
-        { demo: false, workflows: true, rail: ['Upload data', 'Saved workspaces', 'Data connectors', 'workflow.title', 'Schedules'] },
-        { demo: true, workflows: true, rail: ['Upload data', 'Saved workspaces', 'Data connectors', 'workflow.title', 'Schedules'] },
-        { demo: false, workflows: false, rail: ['Upload data', 'Saved workspaces', 'Data connectors'] },
-    ])('offers uploads, data connectors, workflows and schedules on demos too, and workflows only where available (demo: $demo, workflows: $workflows)', async ({ demo, workflows, rail }) => {
-        // A tab remembered from before must not reopen a hidden panel.
+        { space: false, workflows: true, rail: ['New session', 'Saved workspaces', 'Data connectors', 'workflow.title'] },
+        { space: true, workflows: true, rail: ['New session', 'Saved workspaces', 'Data connectors', 'workflow.title'] },
+        { space: false, workflows: false, rail: ['New session', 'Saved workspaces', 'Data connectors'] },
+    ])('starts new sessions and offers data connectors and workflows (with their schedules) in spaces too, and workflows only where available (space: $space, workflows: $workflows)', async ({ space, workflows, rail }) => {
+        // The Schedules tab is gone (schedules are part of workflows): remembered, it opens Workflows, or Sessions where those are hidden.
         mockState.dataSourceSidebarTab = 'schedules';
         mockState.serverConfig.WORKFLOWS_AVAILABLE = workflows;
-        if (demo) Object.assign(mockState.serverConfig, { SPACE: { id: 'unesco', name: 'UIS', starters: [] } });
+        if (space) Object.assign(mockState.serverConfig, { SPACE: { id: 'unesco', name: 'UIS', starters: [] } });
         render(<DataSourceSidebar />);
 
-        const railButtons = ['Upload data', 'Saved workspaces', 'Data connectors', 'workflow.title', 'Schedules']
-            .filter(name => screen.queryByRole('button', { name }));
+        const railButtons = ['New session', 'Saved workspaces', 'Data connectors', 'workflow.title', 'Schedules']
+            .filter(name => screen.queryAllByRole('button', { name }).length);
         expect(railButtons).toEqual(rail);
         if (!workflows) {
             expect(await screen.findByRole('button', { name: 'Sort sessions' })).toBeInTheDocument();

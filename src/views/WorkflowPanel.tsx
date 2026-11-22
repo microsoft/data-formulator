@@ -1,12 +1,12 @@
-import { ShimmerText, WorkflowGears } from '../components/FunComponents';
+import { ShimmerText, WorkflowIcon } from '../components/FunComponents';
 import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { savedThemeFromResult, upsertSavedTheme } from '../app/savedThemes';
 import { useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { CanvasHeader } from './CanvasHeader';
 import i18n from '../i18n';
-import { Alert, Box, Button, ButtonBase, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
-    IconButton, Popover, TextField, Tooltip, Typography, alpha, useTheme } from '@mui/material';
+import { Alert, Box, Button, ButtonBase, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
+    FormControlLabel, IconButton, Popover, TextField, ToggleButton, Tooltip, Typography, alpha, useTheme } from '@mui/material';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
@@ -18,6 +18,7 @@ import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
+import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import { ArtifactDeleteButton, ThreadArtifactCard } from './DataThreadCards';
 import { exampleCardButtonSx, exampleCardDescriptionSx, exampleCardSx, exampleCardTitleSx, ItemCard, itemCardGridSx, MetadataCard, MetadataChips, ViewAllButton } from '../components/ItemCard';
 import { readingTypography, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarToolbarSx, ink, paper, weight } from '../app/tokens';
@@ -40,7 +41,7 @@ import { buildDictTableFromWorkspace } from '../app/tableThunks';
 import { applySessionDeletion, type DeletionPlan } from '../app/sessionDeletion';
 import { applySessionUpdate } from '../app/sessionFiles';
 import { loadWorkspace, notifyWorkspaceFilesChanged, WorkspaceLoadSupersededError } from '../app/workspaceService';
-import { createConversationRootId, createDictTable, computeInsightKey, DictTable, FieldItem, TextTurn, ClarificationResponse } from '../components/ComponentType';
+import { createConversationRootId, createDictTable, computeInsightKey, DictTable, FieldItem, TextTurn, ClarificationResponse, type ScheduleConfig } from '../components/ComponentType';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { FileTypeIcon } from '../icons';
 import { textVar, iconVar } from '../app/layout';
@@ -51,8 +52,10 @@ import { parseDataOperation } from '../dataOperations/models';
 import { ClarificationPanel, FailedDraftPanel } from './AgentPausePanel';
 import { formatClarificationResponses, normalizeClarifyEvent } from '../app/clarification';
 import ReactMarkdown from 'react-markdown';
-import { CardRuns, RunEntry, RunList, useScheduleLibrary, workflowApi as post, WorkflowLibraryItem,
-    WorkflowSetup, WorkflowSetupFields, workflowSetupContentSx } from './WorkflowSchedules';
+import { CardRuns, RunEntry, RunList, scheduleCadence, ScheduleDraft, scheduleDraftOf, scheduleDraftToSave, ScheduleLine, WorkflowPage,
+    workflowApi as post, WorkflowLibraryItem,
+    WorkflowScheduleState, WorkflowSetup, RunInputs, workflowSetupContentSx } from './WorkflowSchedules';
+import { load as loadYaml } from 'js-yaml';
 
 export interface Run {
     workflow_path?: string;
@@ -1076,7 +1079,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                 '& h2': { fontSize: '0.95rem', lineHeight: 1.4, letterSpacing: 0 },
                 '& h3': { fontSize: '0.875rem', lineHeight: 1.4, letterSpacing: 0 } } : { minWidth: 0, width: '100%' }) }}>
         {/* Under the tabs the header only carries status and run controls; a finished run needs neither. */}
-        {canvas && !interactionOnly && workflow.status !== 'completed' && <CanvasHeader icon={<WorkflowGears running={workflow.status === 'running'} size={18} color="text.secondary" showTooltip={false} />} title={turn.displayId || t('workflow.fallbackName')}
+        {canvas && !interactionOnly && workflow.status !== 'completed' && <CanvasHeader icon={<WorkflowIcon running={workflow.status === 'running'} size={18} color="text.secondary" showTooltip={false} />} title={turn.displayId || t('workflow.fallbackName')}
             meta={<Box component="span" sx={{ color: statusColor, textTransform: 'capitalize' }}>
                 {workflow.status === 'running' ? <ShimmerText tone="neutral" fontSize="inherit">{workflow.pauseRequested ? t('workflow.stopping') : workflow.planReviewPending ? t('workflow.reviewingPlan') : statusLabel('running')}</ShimmerText> : statusLabel(workflow.status)}
             </Box>}
@@ -1287,6 +1290,10 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
     </Box>;
 };
 
+/** Hands a saved workflow to the agent to change: it reads the file, asks what to change, and proposes the revision. */
+export const workflowEditPrompt = (item: { name: string; path: string }) =>
+    `Help me change the workflow "${item.name}" (workflows://${item.path}). Read it, ask me what I want to change, then propose the revised workflow.`;
+
 export const WORKFLOW_AUTHORING_PROMPT = 'Help me create a workflow from our current conversation and data. Suggest a few useful directions for me to choose from before drafting it. Do not save or execute it yet.';
 
 export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; onOpenSession?: (id: string) => void | Promise<void>; headerActions?: React.ReactNode;
@@ -1295,7 +1302,8 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
 }> = ({ onCreateSession, onOpenSession, headerActions, presentation = 'sidebar', renderLanding }) => {
     const { t, i18n } = useTranslation();
     const landing = presentation === 'landing';
-    const canSchedule = useSelector((state: DataFormulatorState) => state.serverConfig?.IS_LOCAL_MODE);
+    const globalModels = useSelector((state: DataFormulatorState) => state.globalModels);
+    const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const model = useSelector((state: DataFormulatorState) => [...state.globalModels, ...state.models]
         .find(item => item.id === state.selectedModelId));
     const workspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
@@ -1305,7 +1313,9 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
     const [runs, setRuns] = useState<Run[]>([]);
     const busy = useSelector((state: DataFormulatorState) => state.textTurns.some(turn => turn.workflow?.status === 'running'));
     const [loading, setLoading] = useState(false);
-    const [editor, setEditor] = useState<{ path: string; content: string; content_hash?: string; creating?: boolean; source?: string } | null>(null);
+    // The workflow's page: what it does and its schedule, read-only; its source (the file) is a secondary view.
+    const [editor, setEditor] = useState<{ path: string; content: string; content_hash?: string; creating?: boolean; source?: string;
+        view: 'page' | 'source'; schedule?: ScheduleDraft } | null>(null);
     const [saving, setSaving] = useState(false);
     const [deleteTarget, setDeleteTarget] = useState<WorkflowLibraryItem | null>(null);
     const [deletingInstance, setDeletingInstance] = useState(false);
@@ -1314,16 +1324,23 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
     const [setupInstructions, setSetupInstructions] = useState('');
     const [starting, setStarting] = useState(false);
     const [pendingRun, setPendingRun] = useState<{ path: string; content?: string; setup: WorkflowSetup; previousWorkspaceId?: string } | null>(null);
-    // Scheduled runs also appear among each workflow's previous runs.
-    const scheduleLibrary = useScheduleLibrary(!landing && !!canSchedule, busy);
+    // Each workflow's schedule state (the local app only): its next run and its scheduled runs, listed with its manual runs.
+    const [scheduling, setScheduling] = useState(false);
+    const [schedules, setSchedules] = useState<Record<string, WorkflowScheduleState>>({});
+    // Saving an edited workflow under a new filename: whether its copy keeps the schedule.
+    const [copyPrompt, setCopyPrompt] = useState<string | null>(null);
     const generation = useRef(0);
 
     const refresh = async (quiet = false) => {
         const current = generation.current;
         if (!quiet) setLoading(true);
         try {
-            const result = await post<{ items: WorkflowLibraryItem[]; runs: Run[] }>('list', { language: getAgentLanguage() });
-            if (current === generation.current) { setItems(result.items); setRuns(result.runs); }
+            const result = await post<{ items: WorkflowLibraryItem[]; runs: Run[]; scheduling?: boolean;
+                schedules?: Record<string, WorkflowScheduleState> }>('list', { language: getAgentLanguage() });
+            if (current === generation.current) {
+                setItems(result.items); setRuns(result.runs);
+                setScheduling(result.scheduling === true); setSchedules(result.schedules || {});
+            }
         } catch (reason) { if (current === generation.current && !quiet) handleApiError(reason, 'Load workflows'); }
         finally { if (current === generation.current && !quiet) setLoading(false); }
     };
@@ -1340,7 +1357,8 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
 
     // Run status changes server-side, so refresh when a run ends, the tab returns, or while any run is active.
     const wasBusy = useRef(busy);
-    const anyRunActive = runs.some(run => run.status === 'running');
+    const anyRunActive = runs.some(run => run.status === 'running')
+        || Object.values(schedules).some(state => state.history.some(run => run.status === 'running' || run.status === 'retry'));
     useEffect(() => {
         if (wasBusy.current && !busy) void refresh(true);
         wasBusy.current = busy;
@@ -1352,7 +1370,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
         return () => { document.removeEventListener('visibilitychange', onVisible); window.clearInterval(timer); };
     }, [workspaceId, anyRunActive]);
 
-    const edit = async (item: WorkflowLibraryItem) => {
+    const edit = async (item: WorkflowLibraryItem, view: 'page' | 'source' = 'page') => {
         const current = generation.current;
         try {
             const result = await post<{ content: string; content_hash?: string }>('read', { path: item.path });
@@ -1364,7 +1382,8 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                 let suffix = 2;
                 while (items.some(existing => existing.path === path)) path = `${stem}-copy-${suffix++}.yaml`;
             }
-            setEditor({ path, content: result.content ?? '', content_hash: path === item.path ? result.content_hash : undefined, source: item.path });
+            setEditor({ path, content: result.content ?? '', content_hash: path === item.path ? result.content_hash : undefined, source: item.path,
+                view, schedule: scheduleDraftOf(item.origin === 'user' ? item.schedule : undefined, globalModels, selectedModelId) });
         }
         catch (reason) { handleApiError(reason, 'Read workflow'); }
     };
@@ -1429,18 +1448,46 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
         let path = 'workflow.workflow.yaml';
         let suffix = 2;
         while (items.some(item => item.path === path)) path = `workflow-${suffix++}.workflow.yaml`;
-        setEditor({ path, content: '', creating: true });
+        setEditor({ path, content: '', creating: true, view: 'source' });
     };
     const editorItem = editor && !editor.creating ? items.find(item => item.path === editor.source) : undefined;
+    const editorDeliverables: string[] = (() => {
+        try {
+            const deliverables = (loadYaml(editor?.content || '') as { deliverables?: unknown } | null)?.deliverables;
+            return Array.isArray(deliverables) ? deliverables.map(String) : [];
+        } catch { return []; }
+    })();
+    const hasSchedule = (content: string) => { try { return !!(loadYaml(content) as { schedule?: unknown } | null)?.schedule; } catch { return false; } };
+    /** Save the editor's file; `schedule: null` saves it without its schedule (a copy that should not also run). */
+    /** Save the editor's file; `schedule` replaces its schedule block (null: a copy saved without it). */
+    const saveEditor = async (path: string, override: { schedule?: ScheduleConfig | null } = {}, keepDraft = false) => {
+        if (!editor) return;
+        setSaving(true);
+        try {
+            const saved = await post<{ path: string; content_hash?: string; content?: string }>('save', { path, content: editor.content,
+                content_hash: editor.content_hash, ...override });
+            setEditor(previous => previous && ({ ...previous, path, creating: false, source: path, content_hash: saved?.content_hash,
+                content: saved?.content ?? previous.content, schedule: previous.schedule && { ...previous.schedule, dirty: keepDraft && previous.schedule.dirty } }));
+            await refresh();
+            return true;
+        } catch (reason) { handleApiError(reason, 'Save workflow'); return false; }
+        finally { setSaving(false); }
+    };
     const workflowRunsFor = (item: WorkflowLibraryItem, beforeOpen?: () => void): RunEntry[] => [
         ...runs.filter(run => run.workflow_path === item.path || !run.workflow_path && run.name === item.name
             && items.filter(candidate => candidate.name === item.name).length === 1)
             .map(run => ({ key: run.id, status: run.status, time: run.started_at, disabled: busy, open: () => { beforeOpen?.(); void openRun(run); } })),
-        ...(openRunSession ? scheduleLibrary.schedules.filter(schedule => schedule.config.workflow === item.path)
-            .flatMap(schedule => (schedule.history || []).filter(run => run.status !== 'skipped'))
+        ...(openRunSession ? (schedules[item.path]?.history || [])
             .map(run => ({ key: `scheduled-${run.id}`, status: run.status, time: run.scheduled_for,
                 open: () => { beforeOpen?.(); void openRunSession(`scheduled-${run.id}`); } })) : []),
     ].sort((left, right) => Date.parse(right.time) - Date.parse(left.time));
+    /** The card's bottom line: its schedule, where this app runs schedules. */
+    const scheduleLineOf = (item: WorkflowLibraryItem) => scheduling && item.schedule
+        ? <ScheduleLine schedule={item.schedule} nextAt={schedules[item.path]?.next_at} /> : null;
+    // On landing cards, where a click runs the workflow; a sidebar card opens the page itself.
+    const scheduleButton = (item: WorkflowLibraryItem, sx: object) => scheduling && <Tooltip title={t('schedule.action')}><span>
+        <IconButton aria-label={t('schedule.actionItem', { name: item.name })} size="small" disabled={!!item.error} sx={sx}
+            onClick={event => { event.stopPropagation(); void edit(item); }}><ScheduleOutlinedIcon /></IconButton></span></Tooltip>;
     const editorRuns = editorItem ? workflowRunsFor(editorItem, () => setEditor(null)) : [];
 
     const toolbar = <Box sx={{ ...sidebarToolbarSx, flexWrap: 'wrap', ...(landing ? { p: 0, borderBottom: 0, bgcolor: 'transparent' } : {}) }}>
@@ -1485,34 +1532,45 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
             };
             if (!landing) {
                 const cardRuns = workflowRunsFor(item);
-                return <ItemCard key={item.path} compact title={item.name} openLabel={t('workflow.openItem', { name: item.name })} onOpen={() => void edit(item)}
-                    badges={origin === 'demo' && <Box component="span" sx={{ flexShrink: 0, fontSize: textVar.xxs, color: 'text.disabled' }}>{t('workflow.demoBadge')}</Box>}
+                const scheduled = scheduling && item.schedule;
+                return <ItemCard key={item.path} compact title={scheduled ? <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+                        {item.schedule!.enabled === false ? <PauseIcon aria-hidden sx={{ fontSize: iconVar.sm, color: 'warning.main', flexShrink: 0 }} />
+                            : <ScheduleOutlinedIcon aria-hidden sx={{ fontSize: iconVar.sm, color: 'text.secondary', flexShrink: 0 }} />}
+                        <span>{item.name}</span></Box> : origin === 'demo' ? t('workflow.demoTitle', { name: item.name }) : item.name} openLabel={t('workflow.openItem', { name: item.name })} onOpen={() => void edit(item)}
                     tooltip={item.error ? undefined : <MetadataCard title={item.name} description={item.overview}>
                         {!!item.parameters?.length && <MetadataChips items={item.parameters.map(parameter => ({ name: parameter.label || parameter.name }))} />}
                     </MetadataCard>}
-                    captions={item.error ? [<Box key="error" component="span" sx={{ color: 'error.main' }}>{item.error}</Box>] : []}
+                    captions={item.error ? [<Box key="error" component="span" sx={{ color: 'error.main' }}>{item.error}</Box>]
+                        : scheduled ? [<ScheduleLine key="schedule" schedule={item.schedule!} nextAt={schedules[item.path]?.next_at} textOnly />] : []}
                     persistentActions
-                    actions={<Tooltip title={t('workflow.runWorkflow')}><span><IconButton aria-label={t('workflow.runItem', { name: item.name })} size="small" disabled={runDisabled}
-                        sx={sidebarRowActionSx} onClick={openSetup}><PlayArrowIcon /></IconButton></span></Tooltip>}
+                    actions={<>
+                        <Tooltip title={t('workflow.runWorkflow')}><span><IconButton aria-label={t('workflow.runItem', { name: item.name })} size="small" disabled={runDisabled}
+                            sx={sidebarRowActionSx} onClick={openSetup}><PlayArrowIcon /></IconButton></span></Tooltip>
+                    </>}
                     meta={cardRuns.length > 0 && <CardRuns label={t('workflow.previousRunsOf', { name: item.name })} runs={cardRuns} />} />;
             }
             return <Box component="article" key={item.path} sx={{ ...exampleCardSx(runDisabled),
-                ...(!runDisabled ? { '&:hover .workflow-card-gears, &:has(:focus-visible) .workflow-card-gears': { color: 'primary.main' } } : {}),
+                ...(!runDisabled ? { '&:hover .workflow-card-icon, &:has(:focus-visible) .workflow-card-icon': { color: 'primary.main' } } : {}),
                 '& .workflow-secondary-action': { opacity: 0 },
                 '&:hover .workflow-secondary-action, &:focus-within .workflow-secondary-action': { opacity: 1 },
                 '@media (hover: none)': { '& .workflow-secondary-action': { opacity: 1 } } }}>
             <ButtonBase aria-label={t('workflow.runItem', { name: item.name })} disabled={runDisabled} onClick={openSetup}
                 sx={{ ...exampleCardButtonSx, display: 'block', p: 1.5 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, pr: origin === 'user' ? 2.5 : 0 }}>
-                    <Box component="span" className="workflow-card-gears" sx={{ display: 'flex', flexShrink: 0, color: 'text.secondary', transition: 'color 120ms ease' }}>
-                        <WorkflowGears running={false} size={16} color="inherit" showTooltip={false} />
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, pr: origin === 'user' ? (scheduling ? 5.5 : 2.5) : 0 }}>
+                    <Box component="span" className="workflow-card-icon" sx={{ display: 'flex', flexShrink: 0, color: 'text.secondary', transition: 'color 120ms ease' }}>
+                        <WorkflowIcon running={false} size={16} color="inherit" showTooltip={false} />
                     </Box>
                     <Typography sx={exampleCardTitleSx}>{item.name}</Typography>
                 </Box>
                 {(item.error || item.overview) && <Typography sx={item.error
                     ? { ...exampleCardDescriptionSx, display: 'block', overflow: 'visible', color: 'error.main' } : exampleCardDescriptionSx}>
                     {item.error || item.overview}</Typography>}
+                {origin === 'user' && scheduleLineOf(item)}
             </ButtonBase>
+            {origin === 'user' && <Box className="workflow-secondary-action"
+                sx={{ position: 'absolute', top: 4, right: 32, '& .MuiIconButton-root': { width: 24, height: 24, '& svg': { fontSize: 16 } } }}>
+                {scheduleButton(item, { color: 'text.secondary' })}
+            </Box>}
             {origin === 'user' && <Box className="workflow-secondary-action" sx={{ position: 'absolute', top: 4, right: 4 }}>
                 <ArtifactDeleteButton label={t('workflow.deleteItem', { name: item.path })} disabled={busy || deletingInstance}
                     onClick={() => setDeleteTarget(item)} />
@@ -1561,9 +1619,8 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                 <DialogContent sx={workflowSetupContentSx}>
                     {!model && <Alert severity="info">{t('workflow.selectModelToRun')}</Alert>}
                     {runTarget?.overview && <Typography variant="body2" color="text.secondary" sx={{ fontSize: textVar.sm, lineHeight: 1.65, overflowWrap: 'anywhere', mb: 0.5 }}>{runTarget.overview}</Typography>}
-                    <WorkflowSetupFields parameters={runTarget?.parameters || []} values={setupValues} onChange={setSetupValues} disabled={starting} />
-                    <TextField label={t('workflow.additionalInstructions')} size="small" multiline minRows={3} fullWidth disabled={starting}
-                        value={setupInstructions} onChange={event => setSetupInstructions(event.target.value)} slotProps={{ htmlInput: { maxLength: 8000 } }} />
+                    {runTarget && <RunInputs key={runTarget.path} parameters={runTarget.parameters || []} values={setupValues} onChange={setSetupValues}
+                        instructions={setupInstructions} onInstructionsChange={setSetupInstructions} disabled={starting} />}
                 </DialogContent>
                 <DialogActions sx={{ flexWrap: 'wrap', gap: 0.5, px: 3, py: 1.5, borderTop: 1, borderColor: 'divider' }}>
                     <Button disabled={starting} onClick={() => setRunTarget(null)}>{t('app.cancel')}</Button>
@@ -1591,6 +1648,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                         await post('delete', { path });
                         if (current !== generation.current) return;
                         setItems(previous => previous.filter(item => item.path !== path));
+                        setSchedules(({ [path]: _deleted, ...rest }) => rest);
                         setEditor(previous => previous?.source === path ? null : previous);
                         setDeleteTarget(null);
                     } catch (reason) { if (current === generation.current) handleApiError(reason, 'Delete workflow'); }
@@ -1599,12 +1657,28 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
             </DialogActions>
         </Dialog>
 
+        <Dialog open={!!copyPrompt} onClose={() => setCopyPrompt(null)} maxWidth="xs" fullWidth>
+            <DialogTitle>{t('workflow.copyScheduleTitle')}</DialogTitle>
+            <DialogContent><Typography variant="body2">{t('workflow.copyScheduleBody')}</Typography></DialogContent>
+            <DialogActions>
+                <Button onClick={() => { const path = copyPrompt!; setCopyPrompt(null); void saveEditor(path); }}>{t('workflow.copyKeepSchedule')}</Button>
+                <Button variant="contained" disableElevation onClick={() => { const path = copyPrompt!; setCopyPrompt(null); void saveEditor(path, { schedule: null }); }}>
+                    {t('workflow.copyWithoutSchedule')}</Button>
+            </DialogActions>
+        </Dialog>
+
         {editor && <ListDetailDialog title={t('workflow.title')} listLabel={t('workflow.list')} createLabel={t('workflow.new')} busy={saving} onClose={() => setEditor(null)} fillHeight
             selectedKey={editor.creating ? null : editor.source ?? null}
-            onSelect={key => { const item = items.find(candidate => candidate.path === key); if (item) void edit(item); else createWorkflow(); }}
+            onSelect={key => { const item = items.find(candidate => candidate.path === key); if (item) void edit(item, editor.view); else createWorkflow(); }}
             items={[...items].sort((left, right) => Number((right.origin || 'user') === 'user') - Number((left.origin || 'user') === 'user'))
-                .map(item => ({ key: item.path, primary: item.name,
-                    secondary: item.origin === 'demo' ? t('workflow.demoBadge') : item.origin === 'server' ? t('workflow.sharedBadge') : item.path }))}
+                .map(item => ({ key: item.path, primary: item.origin === 'demo' ? t('workflow.demoTitle', { name: item.name }) : item.name,
+                    // The file's name belongs to the source view; a demo says so in its title, and the list says when a workflow runs.
+                    secondary: item.origin === 'server' ? t('workflow.sharedBadge')
+                        : scheduling && item.schedule ? <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                            '& .MuiSvgIcon-root': { fontSize: 13, flexShrink: 0 } }}>
+                            {item.schedule.enabled === false ? <PauseIcon aria-hidden sx={{ color: 'warning.main' }} /> : <ScheduleOutlinedIcon aria-hidden />}
+                            {item.schedule.enabled === false ? `${t('schedule.paused')} · ${scheduleCadence(item.schedule)}` : scheduleCadence(item.schedule)}
+                        </Box> : undefined }))}
             footer={<>
                 {!editor.creating && (editorItem?.origin || 'user') === 'user' && editorItem && <Button color="error"
                     aria-label={t('workflow.deleteItem', { name: editorItem.path })} disabled={saving || busy || deletingInstance} sx={{ mr: 'auto' }}
@@ -1624,22 +1698,61 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                         }}>{t('workflow.createWithAgent')}</Button>
                     </Box>
                 </Tooltip>}
-                <Button variant="contained" disableElevation disabled={saving || !editor.content.trim() || !editor.path.trim()} onClick={async () => {
+                {editor.view === 'page' && editorItem && <Tooltip title={!model ? t('workflow.createNeedsModel') : busy ? t('workflow.createWaitForRun') : ''}>
+                    <Box component="span"><Button variant="outlined" disabled={saving || !model || readOnly || busy}
+                        sx={{ textTransform: 'none' }} onClick={() => {
+                            // Editing is its own conversation, in a new session, not mixed into the current analysis.
+                            onCreateSession(t('workflow.editSessionName', { name: editorItem.name }));
+                            setEditor(null);
+                            store.dispatch(dfActions.queueAnalystTask({ text: workflowEditPrompt(editorItem), images: [], attachments: [],
+                                intent: 'workflow-authoring' }));
+                            store.dispatch(dfActions.setDataSourceSidebarOpen(false));
+                        }}>{t('workflow.editWithAgent')}</Button></Box>
+                </Tooltip>}
+                {editor.view === 'page' && editorItem && editor.schedule?.dirty && <Button variant="contained" disableElevation
+                    disabled={saving || (editor.schedule.on && (!editor.schedule.config.weekdays.length || !editor.schedule.config.model_id))}
+                    onClick={() => {
+                        const schedule = editor.schedule && scheduleDraftToSave(editor.schedule, editorItem.origin === 'user' ? editorItem.schedule : undefined);
+                        if (schedule !== undefined) void saveEditor(editor.path, { schedule });
+                        else setEditor(previous => previous && ({ ...previous, schedule: previous.schedule && { ...previous.schedule, dirty: false } }));
+                    }}>{t('app.save')}</Button>}
+                {(editor.view === 'source' || !editorItem) && <Button variant="contained" disableElevation disabled={saving || !editor.content.trim() || !editor.path.trim()} onClick={() => {
                     const path = editor.path.trim();
-                    setSaving(true);
-                    try {
-                        const saved = await post<{ path: string; content_hash?: string }>('save', { path, content: editor.content, content_hash: editor.content_hash });
-                        setEditor(previous => previous && ({ ...previous, path, creating: false, source: path, content_hash: saved?.content_hash }));
-                        await refresh();
-                    } catch (reason) { handleApiError(reason, 'Save workflow'); }
-                    finally { setSaving(false); }
-                }}>{t('app.save')}</Button>
+                    if (!editor.creating && editor.source && path !== editor.source && hasSchedule(editor.content)) setCopyPrompt(path);
+                    else void saveEditor(path);                }}>{t('app.save')}</Button>}
             </>}>
             <Box>
-                <Typography sx={{ fontSize: textVar.lg, fontWeight: weight(500), overflowWrap: 'anywhere' }}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                <Typography sx={{ flex: 1, minWidth: 0, fontSize: textVar.lg, fontWeight: weight(500), overflowWrap: 'anywhere' }}>
                     {editor.creating ? t('workflow.new') : editorItem?.name ?? editor.path}</Typography>
+                {!editor.creating && editorItem && <Tooltip title={t('workflow.viewSource')}>
+                    <ToggleButton size="small" value="source" aria-label={t('workflow.viewSource')} selected={editor.view === 'source'}
+                        onChange={() => setEditor(previous => previous && ({ ...previous, view: previous.view === 'source' ? 'page' : 'source' }))}
+                        sx={{ flexShrink: 0, p: 0.5, borderRadius: 1, color: 'text.secondary',
+                            '&.Mui-selected, &.Mui-selected:hover': { color: 'primary.main', borderColor: 'primary.main', bgcolor: 'action.selected' } }}>
+                        <CodeIcon sx={{ fontSize: iconVar.lg }} />
+                    </ToggleButton>
+                </Tooltip>}
+                </Box>
                 {editorRuns.length > 0 && <RunList caption={t('schedule.previousRuns')} label={t('schedule.runsOf', { name: editorItem?.name })} limit={6} runs={editorRuns} />}
             </Box>
+            {editor.view === 'page' && editorItem ? <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                <WorkflowPage item={editorItem} deliverables={editorDeliverables} scheduling={scheduling} busy={saving}
+                    state={editor.source ? schedules[editor.source] : undefined} draft={editor.schedule}
+                    onDraftChange={schedule => setEditor(previous => previous && ({ ...previous, schedule }))}
+                    onToggle={on => {
+                        // Pausing or resuming a saved schedule writes only that, at once; other edits stay a draft.
+                        const current = editorItem.origin === 'user' ? editorItem.schedule : undefined;
+                        if (!current || !editor.schedule) return;
+                        const setOn = (value: boolean) => setEditor(previous => previous && previous.schedule
+                            ? { ...previous, schedule: { ...previous.schedule, on: value } } : previous);
+                        setOn(on);
+                        // Resuming runs it again, so with a model that is available now, as the draft has it.
+                        void saveEditor(editor.path, { schedule: { ...current, enabled: on,
+                            ...(on ? { model_id: editor.schedule.config.model_id, language: getAgentLanguage() } : {}) } }, true)
+                            .then(saved => { if (!saved) setOn(!on); });
+                    }} />
+            </Box> : <>
             <TextField size="small" label={t('workflow.filename')} disabled={saving} value={editor.path}
                 onChange={event => setEditor(previous => previous && ({ ...previous, path: event.target.value, content_hash: undefined }))} />
             <Box sx={{ flex: 1, minHeight: 240, overflow: 'hidden', border: 1, borderColor: 'divider' }}>
@@ -1647,6 +1760,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                     placeholder={t('workflow.yamlPlaceholder')}
                     onChange={content => setEditor(previous => previous && ({ ...previous, content }))} />
             </Box>
+            </>}
         </ListDetailDialog>}
 
     </Box>;

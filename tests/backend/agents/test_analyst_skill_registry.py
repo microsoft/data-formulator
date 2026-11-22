@@ -107,7 +107,7 @@ def test_setup_actions_are_owned_by_the_gated_configure_skill() -> None:
     tool_names = {spec["function"]["name"] for spec in registry.tools_for(["configure"])}
 
     assert action_names == {
-        "propose_connection", "update_connector_form", "propose_workflow", "propose_schedule", "propose_session_changes",
+        "propose_connection", "update_connector_form", "propose_workflow", "propose_session_changes",
         "propose_mcp_changes",
     }
     for action_name in action_names:

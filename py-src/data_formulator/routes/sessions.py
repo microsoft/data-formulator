@@ -24,6 +24,7 @@ Note: URL prefix kept as /api/sessions for frontend compatibility.
 
 import errno
 import json
+from functools import lru_cache
 import io
 import logging
 from datetime import datetime
@@ -203,6 +204,14 @@ def list_sessions():
     mgr = get_workspace_manager(identity_id)
     workspaces = mgr.list_workspaces()
 
+    @lru_cache(maxsize=1)
+    def schedule_ids() -> set[str] | None:
+        from data_formulator.workflows.scheduler import schedule_store, scheduling_available
+        if not scheduling_available():
+            return None
+        return {row["id"] for owner, site in schedule_store().scopes() if owner == identity_id
+                for row in schedule_store().list(owner, site)}
+
     sessions = []
     for w in workspaces:
         entry: dict = {
@@ -218,6 +227,10 @@ def list_sessions():
         entry["source_ids"] = w.get("source_ids", [])
         if w.get("scheduled_run"):
             entry["scheduled_run"] = w["scheduled_run"]
+            known = schedule_ids()
+            if known is not None and w["scheduled_run"].get("scheduleId") not in known:
+                # Its workflow was deleted: the run is no longer reached from a workflow card.
+                entry["scheduled_run"] = {**w["scheduled_run"], "workflowGone": True}
         if w.get("example_id"):
             entry["example_id"] = w["example_id"]
         if w.get("starred"):
