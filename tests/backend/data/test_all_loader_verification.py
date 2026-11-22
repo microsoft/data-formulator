@@ -143,7 +143,8 @@ class TestStaticMethods:
             params = cls.list_params()
             required = [p for p in params if p.get("required", False)]
             if cls.auth_mode() != "none":
-                assert len(required) > 0, f"{key}: should have at least one required param"
+                # Account-level sources are identified by their credentials; they declare optional scope params instead.
+                assert required or cls.IDENTITY_PARAMS, f"{key}: should have a required or identifying param"
 
 
 # ==================================================================

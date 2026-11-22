@@ -13,7 +13,7 @@ Any verified permission (owner, full or restricted user) can read performance da
 
 **Scope**
 
-One connection opens one property. Enter `site_url` exactly as Search Console shows it, including the trailing `/` of URL-prefix properties. Set `search_type` to `image`, `video`, `news`, `discover` or `googleNews` for those reports; the default is `web`.
+Leave `site_url` empty to list every property the identity can read, or enter one property exactly as Search Console shows it, including the trailing `/` of URL-prefix properties. Set `search_type` to `image`, `video`, `news`, `discover` or `googleNews` for those reports; the default is `web`.
 
 **Data**
 
