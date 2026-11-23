@@ -56,8 +56,16 @@ export interface DfBridge {
 
 export interface ReactAppConfig {
     paletteKey?: string;
+    /** The host's look, which the app's MUI theme and DF tokens follow. */
+    look?: import('../../look').Look;
     /** Field annotations of declared tables, keyed by table then field. */
     semantics?: Record<string, Record<string, FieldSemanticsInfo>>;
+    /** The user's saved chart themes (Flint ThemeSpecs), by id: usable wherever a preset id is. */
+    themes?: Record<string, Record<string, unknown>>;
+    /** The session's charts on the declared tables, by id, as in `session://charts/<id>`. */
+    charts?: Record<string, import('./chart').ChartSpec>;
+    /** The app's density unless it sets its own with `<AppTheme density>`: compact by default. */
+    density?: import('./density').Density;
 }
 
 export const bridge = (): DfBridge => {

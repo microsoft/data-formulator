@@ -1,0 +1,1390 @@
+{
+ "__stateVersion": 15,
+ "activeWorkspace": {
+  "id": "education-opri-o20",
+  "displayName": "India has the most children out of school, about 48 million"
+ },
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "most_out_of_school_children",
+   "displayId": "15 countries with the most children out of school",
+   "names": [
+    "country_id",
+    "country",
+    "latest_year",
+    "out_of_school"
+   ],
+   "rows": [
+    {
+     "country_id": "IND",
+     "country": "India",
+     "latest_year": 2026,
+     "out_of_school": 47605472.0
+    },
+    {
+     "country_id": "PAK",
+     "country": "Pakistan",
+     "latest_year": 2025,
+     "out_of_school": 21407076.0
+    },
+    {
+     "country_id": "ETH",
+     "country": "Ethiopia",
+     "latest_year": 2025,
+     "out_of_school": 19015149.0
+    },
+    {
+     "country_id": "BGD",
+     "country": "Bangladesh",
+     "latest_year": 2025,
+     "out_of_school": 9191309.0
+    },
+    {
+     "country_id": "TZA",
+     "country": "Tanzania",
+     "latest_year": 2024,
+     "out_of_school": 7559774.0
+    },
+    {
+     "country_id": "NER",
+     "country": "Niger",
+     "latest_year": 2025,
+     "out_of_school": 5813959.0
+    },
+    {
+     "country_id": "PHL",
+     "country": "Philippines",
+     "latest_year": 2025,
+     "out_of_school": 4169443.0
+    },
+    {
+     "country_id": "AGO",
+     "country": "Angola",
+     "latest_year": 2023,
+     "out_of_school": 4106863.0
+    },
+    {
+     "country_id": "IDN",
+     "country": "Indonesia",
+     "latest_year": 2026,
+     "out_of_school": 3997133.0
+    },
+    {
+     "country_id": "BFA",
+     "country": "Burkina Faso",
+     "latest_year": 2025,
+     "out_of_school": 3781345.0
+    },
+    {
+     "country_id": "TCD",
+     "country": "Chad",
+     "latest_year": 2025,
+     "out_of_school": 3114071.0
+    },
+    {
+     "country_id": "EGY",
+     "country": "Egypt",
+     "latest_year": 2024,
+     "out_of_school": 2991119.0
+    },
+    {
+     "country_id": "SYR",
+     "country": "Syria",
+     "latest_year": 2024,
+     "out_of_school": 2755310.0
+    },
+    {
+     "country_id": "SEN",
+     "country": "Senegal",
+     "latest_year": 2025,
+     "out_of_school": 2751489.0
+    },
+    {
+     "country_id": "MDG",
+     "country": "Madagascar",
+     "latest_year": 2024,
+     "out_of_school": 2718067.0
+    }
+   ],
+   "metadata": {
+    "country_id": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "latest_year": {
+     "type": "integer",
+     "levels": []
+    },
+    "out_of_school": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with v as (\n        select COUNTRY_ID as country_id, country, year, value\n        from read_parquet('data/opri_national.parquet')\n        where indicator_id = 'OFST.1T3.CP' and year between 2020 and 2026\n          and value is not null and coalesce(magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    ),\n    population as (\n        select COUNTRY_ID as country_id, value as thousands\n        from read_parquet('data/dem_national.parquet')\n        where indicator_id = '200101'\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    )\n    select v.country_id, v.country, v.year as latest_year, round(value, 0) as out_of_school\n    from v join population using (country_id)\n    where population.thousands >= 100\n    order by out_of_school desc, v.country\n    limit 15\n\"\"\").df()\nout['country'] = out.country.replace({'Bolivia (Plurinational State of)': 'Bolivia', 'China, Hong Kong Special Administrative Region': 'Hong Kong', 'China, Macao Special Administrative Region': 'Macao', \"Democratic People's Republic of Korea\": 'North Korea', 'Democratic Republic of the Congo': 'DR Congo', 'Iran (Islamic Republic of)': 'Iran', \"Lao People's Democratic Republic\": 'Laos', 'Micronesia (Federated States of)': 'Micronesia', 'Republic of Korea': 'South Korea', 'Republic of Moldova': 'Moldova', 'Russian Federation': 'Russia', 'Syrian Arab Republic': 'Syria', 'United Kingdom of Great Britain and Northern Ireland': 'UK', 'United Republic of Tanzania': 'Tanzania', 'United States of America': 'US', 'Venezuela (Bolivarian Republic of)': 'Venezuela', 'Viet Nam': 'Vietnam'})\n",
+    "outputVariable": "out",
+    "source": [
+     "dem_national",
+     "opri_national"
+    ],
+    "trigger": {
+     "tableId": "dem_national",
+     "resultTableId": "most_out_of_school_children",
+     "chart": {
+      "id": "chart-trigger-most_out_of_school_children",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "dem_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "most_out_of_school_children",
+    "rowCount": 15
+   },
+   "description": "Number of out-of-school children, adolescents and youth of primary and secondary school age, both sexes, the 15 highest countries' latest figure in 2020–2026 (latest_year). Source: UIS, November 2026 release; indicator OFST.1T3.CP.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794702400000_step_1",
+   "createdAt": 1794702402000
+  },
+  {
+   "kind": "table",
+   "id": "out_of_school_children",
+   "displayId": "Out-of-school children and young people by country",
+   "names": [
+    "country_id",
+    "country",
+    "latest_year",
+    "out_of_school"
+   ],
+   "rows": [
+    {
+     "country_id": "IND",
+     "country": "India",
+     "latest_year": 2026,
+     "out_of_school": 47605472.0
+    },
+    {
+     "country_id": "PAK",
+     "country": "Pakistan",
+     "latest_year": 2025,
+     "out_of_school": 21407076.0
+    },
+    {
+     "country_id": "ETH",
+     "country": "Ethiopia",
+     "latest_year": 2025,
+     "out_of_school": 19015149.0
+    },
+    {
+     "country_id": "BGD",
+     "country": "Bangladesh",
+     "latest_year": 2025,
+     "out_of_school": 9191309.0
+    },
+    {
+     "country_id": "TZA",
+     "country": "Tanzania",
+     "latest_year": 2024,
+     "out_of_school": 7559774.0
+    },
+    {
+     "country_id": "NER",
+     "country": "Niger",
+     "latest_year": 2025,
+     "out_of_school": 5813959.0
+    },
+    {
+     "country_id": "PHL",
+     "country": "Philippines",
+     "latest_year": 2025,
+     "out_of_school": 4169443.0
+    },
+    {
+     "country_id": "AGO",
+     "country": "Angola",
+     "latest_year": 2023,
+     "out_of_school": 4106863.0
+    },
+    {
+     "country_id": "IDN",
+     "country": "Indonesia",
+     "latest_year": 2026,
+     "out_of_school": 3997133.0
+    },
+    {
+     "country_id": "BFA",
+     "country": "Burkina Faso",
+     "latest_year": 2025,
+     "out_of_school": 3781345.0
+    },
+    {
+     "country_id": "TCD",
+     "country": "Chad",
+     "latest_year": 2025,
+     "out_of_school": 3114071.0
+    },
+    {
+     "country_id": "EGY",
+     "country": "Egypt",
+     "latest_year": 2024,
+     "out_of_school": 2991119.0
+    },
+    {
+     "country_id": "SYR",
+     "country": "Syria",
+     "latest_year": 2024,
+     "out_of_school": 2755310.0
+    },
+    {
+     "country_id": "SEN",
+     "country": "Senegal",
+     "latest_year": 2025,
+     "out_of_school": 2751489.0
+    },
+    {
+     "country_id": "MDG",
+     "country": "Madagascar",
+     "latest_year": 2024,
+     "out_of_school": 2718067.0
+    },
+    {
+     "country_id": "CMR",
+     "country": "Cameroon",
+     "latest_year": 2023,
+     "out_of_school": 2591108.0
+    },
+    {
+     "country_id": "MEX",
+     "country": "Mexico",
+     "latest_year": 2024,
+     "out_of_school": 2573528.0
+    },
+    {
+     "country_id": "IRQ",
+     "country": "Iraq",
+     "latest_year": 2025,
+     "out_of_school": 2433180.0
+    },
+    {
+     "country_id": "USA",
+     "country": "US",
+     "latest_year": 2024,
+     "out_of_school": 2081962.0
+    },
+    {
+     "country_id": "BDI",
+     "country": "Burundi",
+     "latest_year": 2025,
+     "out_of_school": 2064456.0
+    },
+    {
+     "country_id": "MOZ",
+     "country": "Mozambique",
+     "latest_year": 2022,
+     "out_of_school": 1813126.0
+    },
+    {
+     "country_id": "RUS",
+     "country": "Russia",
+     "latest_year": 2023,
+     "out_of_school": 1756167.0
+    },
+    {
+     "country_id": "GIN",
+     "country": "Guinea",
+     "latest_year": 2021,
+     "out_of_school": 1715837.0
+    },
+    {
+     "country_id": "GHA",
+     "country": "Ghana",
+     "latest_year": 2024,
+     "out_of_school": 1587438.0
+    },
+    {
+     "country_id": "SSD",
+     "country": "South Sudan",
+     "latest_year": 2024,
+     "out_of_school": 1493962.0
+    },
+    {
+     "country_id": "MWI",
+     "country": "Malawi",
+     "latest_year": 2023,
+     "out_of_school": 1454972.0
+    },
+    {
+     "country_id": "BRA",
+     "country": "Brazil",
+     "latest_year": 2024,
+     "out_of_school": 1417202.0
+    },
+    {
+     "country_id": "BEN",
+     "country": "Benin",
+     "latest_year": 2022,
+     "out_of_school": 1397287.0
+    },
+    {
+     "country_id": "ZWE",
+     "country": "Zimbabwe",
+     "latest_year": 2025,
+     "out_of_school": 1329585.0
+    },
+    {
+     "country_id": "COL",
+     "country": "Colombia",
+     "latest_year": 2024,
+     "out_of_school": 1305766.0
+    },
+    {
+     "country_id": "MYS",
+     "country": "Malaysia",
+     "latest_year": 2025,
+     "out_of_school": 1287506.0
+    },
+    {
+     "country_id": "CIV",
+     "country": "Côte d'Ivoire",
+     "latest_year": 2025,
+     "out_of_school": 1213382.0
+    },
+    {
+     "country_id": "ZMB",
+     "country": "Zambia",
+     "latest_year": 2024,
+     "out_of_school": 1195164.0
+    },
+    {
+     "country_id": "IRN",
+     "country": "Iran",
+     "latest_year": 2023,
+     "out_of_school": 1158077.0
+    },
+    {
+     "country_id": "ZAF",
+     "country": "South Africa",
+     "latest_year": 2024,
+     "out_of_school": 1098339.0
+    },
+    {
+     "country_id": "HND",
+     "country": "Honduras",
+     "latest_year": 2025,
+     "out_of_school": 1016322.0
+    },
+    {
+     "country_id": "VNM",
+     "country": "Vietnam",
+     "latest_year": 2022,
+     "out_of_school": 1007904.0
+    },
+    {
+     "country_id": "GTM",
+     "country": "Guatemala",
+     "latest_year": 2024,
+     "out_of_school": 991064.0
+    },
+    {
+     "country_id": "KHM",
+     "country": "Cambodia",
+     "latest_year": 2025,
+     "out_of_school": 870897.0
+    },
+    {
+     "country_id": "UKR",
+     "country": "Ukraine",
+     "latest_year": 2025,
+     "out_of_school": 748083.0
+    },
+    {
+     "country_id": "LBR",
+     "country": "Liberia",
+     "latest_year": 2022,
+     "out_of_school": 676654.0
+    },
+    {
+     "country_id": "LKA",
+     "country": "Sri Lanka",
+     "latest_year": 2025,
+     "out_of_school": 649180.0
+    },
+    {
+     "country_id": "LAO",
+     "country": "Laos",
+     "latest_year": 2026,
+     "out_of_school": 595151.0
+    },
+    {
+     "country_id": "MRT",
+     "country": "Mauritania",
+     "latest_year": 2020,
+     "out_of_school": 574574.0
+    },
+    {
+     "country_id": "TGO",
+     "country": "Togo",
+     "latest_year": 2023,
+     "out_of_school": 563706.0
+    },
+    {
+     "country_id": "ROU",
+     "country": "Romania",
+     "latest_year": 2024,
+     "out_of_school": 555625.0
+    },
+    {
+     "country_id": "THA",
+     "country": "Thailand",
+     "latest_year": 2026,
+     "out_of_school": 550192.0
+    },
+    {
+     "country_id": "HTI",
+     "country": "Haiti",
+     "latest_year": 2025,
+     "out_of_school": 542539.0
+    },
+    {
+     "country_id": "PNG",
+     "country": "Papua New Guinea",
+     "latest_year": 2024,
+     "out_of_school": 522632.0
+    },
+    {
+     "country_id": "PSE",
+     "country": "Palestine",
+     "latest_year": 2025,
+     "out_of_school": 513375.0
+    },
+    {
+     "country_id": "ECU",
+     "country": "Ecuador",
+     "latest_year": 2025,
+     "out_of_school": 460548.0
+    },
+    {
+     "country_id": "MAR",
+     "country": "Morocco",
+     "latest_year": 2024,
+     "out_of_school": 448319.0
+    },
+    {
+     "country_id": "LBN",
+     "country": "Lebanon",
+     "latest_year": 2025,
+     "out_of_school": 440685.0
+    },
+    {
+     "country_id": "DZA",
+     "country": "Algeria",
+     "latest_year": 2025,
+     "out_of_school": 433471.0
+    },
+    {
+     "country_id": "ERI",
+     "country": "Eritrea",
+     "latest_year": 2024,
+     "out_of_school": 382204.0
+    },
+    {
+     "country_id": "VEN",
+     "country": "Venezuela",
+     "latest_year": 2024,
+     "out_of_school": 372905.0
+    },
+    {
+     "country_id": "NPL",
+     "country": "Nepal",
+     "latest_year": 2025,
+     "out_of_school": 365805.0
+    },
+    {
+     "country_id": "TUR",
+     "country": "Türkiye",
+     "latest_year": 2024,
+     "out_of_school": 344186.0
+    },
+    {
+     "country_id": "DOM",
+     "country": "Dominican Republic",
+     "latest_year": 2025,
+     "out_of_school": 291862.0
+    },
+    {
+     "country_id": "DEU",
+     "country": "Germany",
+     "latest_year": 2024,
+     "out_of_school": 289713.0
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "latest_year": 2024,
+     "out_of_school": 279435.0
+    },
+    {
+     "country_id": "RWA",
+     "country": "Rwanda",
+     "latest_year": 2025,
+     "out_of_school": 276090.0
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "latest_year": 2024,
+     "out_of_school": 273242.0
+    },
+    {
+     "country_id": "PRY",
+     "country": "Paraguay",
+     "latest_year": 2025,
+     "out_of_school": 263046.0
+    },
+    {
+     "country_id": "SLV",
+     "country": "El Salvador",
+     "latest_year": 2024,
+     "out_of_school": 257785.0
+    },
+    {
+     "country_id": "KAZ",
+     "country": "Kazakhstan",
+     "latest_year": 2026,
+     "out_of_school": 246496.0
+    },
+    {
+     "country_id": "BOL",
+     "country": "Bolivia",
+     "latest_year": 2025,
+     "out_of_school": 245777.0
+    },
+    {
+     "country_id": "ITA",
+     "country": "Italy",
+     "latest_year": 2024,
+     "out_of_school": 244025.0
+    },
+    {
+     "country_id": "LSO",
+     "country": "Lesotho",
+     "latest_year": 2025,
+     "out_of_school": 242041.0
+    },
+    {
+     "country_id": "UZB",
+     "country": "Uzbekistan",
+     "latest_year": 2026,
+     "out_of_school": 216407.0
+    },
+    {
+     "country_id": "NIC",
+     "country": "Nicaragua",
+     "latest_year": 2023,
+     "out_of_school": 216372.0
+    },
+    {
+     "country_id": "GMB",
+     "country": "Gambia",
+     "latest_year": 2025,
+     "out_of_school": 182904.0
+    },
+    {
+     "country_id": "KGZ",
+     "country": "Kyrgyzstan",
+     "latest_year": 2026,
+     "out_of_school": 182326.0
+    },
+    {
+     "country_id": "CUB",
+     "country": "Cuba",
+     "latest_year": 2025,
+     "out_of_school": 175489.0
+    },
+    {
+     "country_id": "ARG",
+     "country": "Argentina",
+     "latest_year": 2024,
+     "out_of_school": 164345.0
+    },
+    {
+     "country_id": "ESP",
+     "country": "Spain",
+     "latest_year": 2024,
+     "out_of_school": 150271.0
+    },
+    {
+     "country_id": "JOR",
+     "country": "Jordan",
+     "latest_year": 2024,
+     "out_of_school": 119053.0
+    },
+    {
+     "country_id": "FRA",
+     "country": "France",
+     "latest_year": 2024,
+     "out_of_school": 115062.0
+    },
+    {
+     "country_id": "KOR",
+     "country": "South Korea",
+     "latest_year": 2024,
+     "out_of_school": 103612.0
+    },
+    {
+     "country_id": "AZE",
+     "country": "Azerbaijan",
+     "latest_year": 2025,
+     "out_of_school": 99581.0
+    },
+    {
+     "country_id": "TKM",
+     "country": "Turkmenistan",
+     "latest_year": 2025,
+     "out_of_school": 97203.0
+    },
+    {
+     "country_id": "JPN",
+     "country": "Japan",
+     "latest_year": 2024,
+     "out_of_school": 92149.0
+    },
+    {
+     "country_id": "SRB",
+     "country": "Serbia",
+     "latest_year": 2025,
+     "out_of_school": 87734.0
+    },
+    {
+     "country_id": "CHL",
+     "country": "Chile",
+     "latest_year": 2024,
+     "out_of_school": 81911.0
+    },
+    {
+     "country_id": "OMN",
+     "country": "Oman",
+     "latest_year": 2025,
+     "out_of_school": 75708.0
+    },
+    {
+     "country_id": "COM",
+     "country": "Comoros",
+     "latest_year": 2025,
+     "out_of_school": 75688.0
+    },
+    {
+     "country_id": "SLB",
+     "country": "Solomon Islands",
+     "latest_year": 2023,
+     "out_of_school": 74797.0
+    },
+    {
+     "country_id": "ISR",
+     "country": "Israel",
+     "latest_year": 2024,
+     "out_of_school": 72826.0
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "latest_year": 2024,
+     "out_of_school": 68039.0
+    },
+    {
+     "country_id": "PRI",
+     "country": "Puerto Rico",
+     "latest_year": 2024,
+     "out_of_school": 66460.0
+    },
+    {
+     "country_id": "BGR",
+     "country": "Bulgaria",
+     "latest_year": 2024,
+     "out_of_school": 65455.0
+    },
+    {
+     "country_id": "JAM",
+     "country": "Jamaica",
+     "latest_year": 2024,
+     "out_of_school": 62462.0
+    },
+    {
+     "country_id": "CRI",
+     "country": "Costa Rica",
+     "latest_year": 2024,
+     "out_of_school": 53875.0
+    },
+    {
+     "country_id": "CZE",
+     "country": "Czechia",
+     "latest_year": 2024,
+     "out_of_school": 52231.0
+    },
+    {
+     "country_id": "MNG",
+     "country": "Mongolia",
+     "latest_year": 2025,
+     "out_of_school": 48873.0
+    },
+    {
+     "country_id": "TLS",
+     "country": "Timor-Leste",
+     "latest_year": 2020,
+     "out_of_school": 47691.0
+    },
+    {
+     "country_id": "BWA",
+     "country": "Botswana",
+     "latest_year": 2022,
+     "out_of_school": 46763.0
+    },
+    {
+     "country_id": "SUR",
+     "country": "Suriname",
+     "latest_year": 2024,
+     "out_of_school": 46406.0
+    },
+    {
+     "country_id": "HUN",
+     "country": "Hungary",
+     "latest_year": 2024,
+     "out_of_school": 45125.0
+    },
+    {
+     "country_id": "GUY",
+     "country": "Guyana",
+     "latest_year": 2023,
+     "out_of_school": 40299.0
+    },
+    {
+     "country_id": "AUT",
+     "country": "Austria",
+     "latest_year": 2024,
+     "out_of_school": 37235.0
+    },
+    {
+     "country_id": "CHE",
+     "country": "Switzerland",
+     "latest_year": 2024,
+     "out_of_school": 33197.0
+    },
+    {
+     "country_id": "SAU",
+     "country": "Saudi Arabia",
+     "latest_year": 2025,
+     "out_of_school": 32541.0
+    },
+    {
+     "country_id": "BIH",
+     "country": "Bosnia and Herzegovina",
+     "latest_year": 2025,
+     "out_of_school": 31014.0
+    },
+    {
+     "country_id": "NZL",
+     "country": "New Zealand",
+     "latest_year": 2024,
+     "out_of_school": 28899.0
+    },
+    {
+     "country_id": "NAM",
+     "country": "Namibia",
+     "latest_year": 2025,
+     "out_of_school": 27922.0
+    },
+    {
+     "country_id": "BEL",
+     "country": "Belgium",
+     "latest_year": 2024,
+     "out_of_school": 26810.0
+    },
+    {
+     "country_id": "DNK",
+     "country": "Denmark",
+     "latest_year": 2024,
+     "out_of_school": 24477.0
+    },
+    {
+     "country_id": "NOR",
+     "country": "Norway",
+     "latest_year": 2024,
+     "out_of_school": 22938.0
+    },
+    {
+     "country_id": "SVK",
+     "country": "Slovakia",
+     "latest_year": 2024,
+     "out_of_school": 22548.0
+    },
+    {
+     "country_id": "ARM",
+     "country": "Armenia",
+     "latest_year": 2025,
+     "out_of_school": 21611.0
+    },
+    {
+     "country_id": "NLD",
+     "country": "Netherlands (Kingdom of the)",
+     "latest_year": 2024,
+     "out_of_school": 20993.0
+    },
+    {
+     "country_id": "BTN",
+     "country": "Bhutan",
+     "latest_year": 2024,
+     "out_of_school": 19281.0
+    },
+    {
+     "country_id": "MUS",
+     "country": "Mauritius",
+     "latest_year": 2025,
+     "out_of_school": 19147.0
+    },
+    {
+     "country_id": "TTO",
+     "country": "Trinidad and Tobago",
+     "latest_year": 2025,
+     "out_of_school": 18989.0
+    },
+    {
+     "country_id": "FIN",
+     "country": "Finland",
+     "latest_year": 2024,
+     "out_of_school": 18965.0
+    },
+    {
+     "country_id": "CPV",
+     "country": "Cabo Verde",
+     "latest_year": 2023,
+     "out_of_school": 16909.0
+    },
+    {
+     "country_id": "MDA",
+     "country": "Moldova",
+     "latest_year": 2020,
+     "out_of_school": 16812.0
+    },
+    {
+     "country_id": "SWE",
+     "country": "Sweden",
+     "latest_year": 2024,
+     "out_of_school": 16771.0
+    },
+    {
+     "country_id": "HRV",
+     "country": "Croatia",
+     "latest_year": 2024,
+     "out_of_school": 16677.0
+    },
+    {
+     "country_id": "POL",
+     "country": "Poland",
+     "latest_year": 2024,
+     "out_of_school": 14687.0
+    },
+    {
+     "country_id": "GRC",
+     "country": "Greece",
+     "latest_year": 2024,
+     "out_of_school": 13708.0
+    },
+    {
+     "country_id": "URY",
+     "country": "Uruguay",
+     "latest_year": 2023,
+     "out_of_school": 13527.0
+    },
+    {
+     "country_id": "MDV",
+     "country": "Maldives",
+     "latest_year": 2025,
+     "out_of_school": 13184.0
+    },
+    {
+     "country_id": "BHS",
+     "country": "Bahamas",
+     "latest_year": 2025,
+     "out_of_school": 13037.0
+    },
+    {
+     "country_id": "QAT",
+     "country": "Qatar",
+     "latest_year": 2025,
+     "out_of_school": 12929.0
+    },
+    {
+     "country_id": "BLZ",
+     "country": "Belize",
+     "latest_year": 2025,
+     "out_of_school": 12278.0
+    },
+    {
+     "country_id": "IRL",
+     "country": "Ireland",
+     "latest_year": 2022,
+     "out_of_school": 11300.0
+    },
+    {
+     "country_id": "FJI",
+     "country": "Fiji",
+     "latest_year": 2024,
+     "out_of_school": 11233.0
+    },
+    {
+     "country_id": "FSM",
+     "country": "Micronesia",
+     "latest_year": 2025,
+     "out_of_school": 11027.0
+    },
+    {
+     "country_id": "BRN",
+     "country": "Brunei Darussalam",
+     "latest_year": 2025,
+     "out_of_school": 10707.0
+    },
+    {
+     "country_id": "WSM",
+     "country": "Samoa",
+     "latest_year": 2025,
+     "out_of_school": 9691.0
+    },
+    {
+     "country_id": "VUT",
+     "country": "Vanuatu",
+     "latest_year": 2025,
+     "out_of_school": 9103.0
+    },
+    {
+     "country_id": "EST",
+     "country": "Estonia",
+     "latest_year": 2024,
+     "out_of_school": 8972.0
+    },
+    {
+     "country_id": "HKG",
+     "country": "Hong Kong",
+     "latest_year": 2024,
+     "out_of_school": 7211.0
+    },
+    {
+     "country_id": "BHR",
+     "country": "Bahrain",
+     "latest_year": 2025,
+     "out_of_school": 6810.0
+    },
+    {
+     "country_id": "LVA",
+     "country": "Latvia",
+     "latest_year": 2024,
+     "out_of_school": 6503.0
+    },
+    {
+     "country_id": "STP",
+     "country": "Sao Tome and Principe",
+     "latest_year": 2021,
+     "out_of_school": 6322.0
+    },
+    {
+     "country_id": "SVN",
+     "country": "Slovenia",
+     "latest_year": 2024,
+     "out_of_school": 5450.0
+    },
+    {
+     "country_id": "MAC",
+     "country": "Macao",
+     "latest_year": 2025,
+     "out_of_school": 5081.0
+    },
+    {
+     "country_id": "BRB",
+     "country": "Barbados",
+     "latest_year": 2025,
+     "out_of_school": 4523.0
+    },
+    {
+     "country_id": "MNE",
+     "country": "Montenegro",
+     "latest_year": 2023,
+     "out_of_school": 4024.0
+    },
+    {
+     "country_id": "PRT",
+     "country": "Portugal",
+     "latest_year": 2022,
+     "out_of_school": 4006.0
+    },
+    {
+     "country_id": "LUX",
+     "country": "Luxembourg",
+     "latest_year": 2024,
+     "out_of_school": 3494.0
+    },
+    {
+     "country_id": "KIR",
+     "country": "Kiribati",
+     "latest_year": 2024,
+     "out_of_school": 3452.0
+    },
+    {
+     "country_id": "LCA",
+     "country": "Saint Lucia",
+     "latest_year": 2025,
+     "out_of_school": 3325.0
+    },
+    {
+     "country_id": "MLT",
+     "country": "Malta",
+     "latest_year": 2023,
+     "out_of_school": 2832.0
+    },
+    {
+     "country_id": "LTU",
+     "country": "Lithuania",
+     "latest_year": 2024,
+     "out_of_school": 2815.0
+    },
+    {
+     "country_id": "GEO",
+     "country": "Georgia",
+     "latest_year": 2023,
+     "out_of_school": 2793.0
+    },
+    {
+     "country_id": "GRD",
+     "country": "Grenada",
+     "latest_year": 2024,
+     "out_of_school": 2733.0
+    },
+    {
+     "country_id": "TON",
+     "country": "Tonga",
+     "latest_year": 2023,
+     "out_of_school": 2592.0
+    },
+    {
+     "country_id": "ALB",
+     "country": "Albania",
+     "latest_year": 2024,
+     "out_of_school": 2185.0
+    },
+    {
+     "country_id": "SYC",
+     "country": "Seychelles",
+     "latest_year": 2025,
+     "out_of_school": 1780.0
+    },
+    {
+     "country_id": "ISL",
+     "country": "Iceland",
+     "latest_year": 2024,
+     "out_of_school": 1642.0
+    },
+    {
+     "country_id": "SGP",
+     "country": "Singapore",
+     "latest_year": 2024,
+     "out_of_school": 1489.0
+    },
+    {
+     "country_id": "ARE",
+     "country": "United Arab Emirates",
+     "latest_year": 2025,
+     "out_of_school": 1345.0
+    },
+    {
+     "country_id": "CUW",
+     "country": "Curaçao",
+     "latest_year": 2023,
+     "out_of_school": 906.0
+    },
+    {
+     "country_id": "CYP",
+     "country": "Cyprus",
+     "latest_year": 2023,
+     "out_of_school": 606.0
+    }
+   ],
+   "metadata": {
+    "country_id": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "latest_year": {
+     "type": "integer",
+     "levels": []
+    },
+    "out_of_school": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with v as (\n        select COUNTRY_ID as country_id, country, year, value\n        from read_parquet('data/opri_national.parquet')\n        where indicator_id = 'OFST.1T3.CP' and year between 2020 and 2026\n          and value is not null and coalesce(magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    ),\n    population as (\n        select COUNTRY_ID as country_id, value as thousands\n        from read_parquet('data/dem_national.parquet')\n        where indicator_id = '200101'\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    )\n    select v.country_id, v.country, v.year as latest_year, round(value, 0) as out_of_school\n    from v join population using (country_id)\n    where population.thousands >= 100\n    order by out_of_school desc, v.country\n\"\"\").df()\nout['country'] = out.country.replace({'Bolivia (Plurinational State of)': 'Bolivia', 'China, Hong Kong Special Administrative Region': 'Hong Kong', 'China, Macao Special Administrative Region': 'Macao', \"Democratic People's Republic of Korea\": 'North Korea', 'Democratic Republic of the Congo': 'DR Congo', 'Iran (Islamic Republic of)': 'Iran', \"Lao People's Democratic Republic\": 'Laos', 'Micronesia (Federated States of)': 'Micronesia', 'Republic of Korea': 'South Korea', 'Republic of Moldova': 'Moldova', 'Russian Federation': 'Russia', 'Syrian Arab Republic': 'Syria', 'United Kingdom of Great Britain and Northern Ireland': 'UK', 'United Republic of Tanzania': 'Tanzania', 'United States of America': 'US', 'Venezuela (Bolivarian Republic of)': 'Venezuela', 'Viet Nam': 'Vietnam'})\n",
+    "outputVariable": "out",
+    "source": [
+     "dem_national",
+     "opri_national"
+    ],
+    "trigger": {
+     "tableId": "dem_national",
+     "resultTableId": "out_of_school_children",
+     "chart": {
+      "id": "chart-trigger-out_of_school_children",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "dem_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "out_of_school_children",
+    "rowCount": 158
+   },
+   "description": "Number of out-of-school children, adolescents and youth of primary and secondary school age, both sexes, each country's latest figure in 2020–2026 (latest_year). Source: UIS, November 2026 release; indicator OFST.1T3.CP.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794702400000_step_2",
+   "createdAt": 1794702404000
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-09970473673b",
+   "chartType": "Bar Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-out_of_school-1026569155056-0.6899058862576811063",
+     "dtype": "quantitative"
+    },
+    "y": {
+     "fieldID": "concept-country-446991695925-0.10586933453396624817",
+     "dtype": "nominal",
+     "sortBy": "x",
+     "sortOrder": "descending"
+    },
+    "color": {
+     "channel": "color",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "most_out_of_school_children",
+   "source": "user",
+   "title": "Where the most children are out of school",
+   "subtitle": "Children and young people of primary and secondary school age out of school; latest figure, 2020–2026; UIS, November 2026 release; indicator OFST.1T3.CP",
+   "unread": false,
+   "themeId": "datawrapper",
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-out_of_school-1026569155056-0.6899058862576811063:|y:concept-country-446991695925-0.10586933453396624817:"
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-out_of_school-1026569155056-0.6899058862576811063",
+   "name": "out_of_school",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-country-446991695925-0.10586933453396624817",
+   "name": "country",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794702400000_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1794702400000_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Where do out-of-school children and young people live? Show me on a map.",
+   "parentNodeId": "conversation-root:710bf14d-628f-5114-90a6-046aef626a03",
+   "actionId": "exploreDataFromNL_1794702400000",
+   "createdAt": 1794702400000
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794702400000_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1794702400000_step_1",
+   "textKind": "explain",
+   "content": "Then the 15 countries that account for most of them.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794702400000_prompt",
+   "actionId": "exploreDataFromNL_1794702400000",
+   "createdAt": 1794702401000,
+   "startedAt": 1794702400000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794702400000-1-1",
+     "kind": "tool",
+     "label": "Querying: dem_national, opri_national",
+     "status": "completed",
+     "tool": "create_data"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794702400000_step_2",
+   "displayId": "textTurn_exploreDataFromNL_1794702400000_step_2",
+   "textKind": "explain",
+   "content": "Counting children and young people out of school in each country.",
+   "parentNodeId": "most_out_of_school_children",
+   "actionId": "exploreDataFromNL_1794702400000",
+   "createdAt": 1794702403000,
+   "startedAt": 1794702400000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794702400000-2-1",
+     "kind": "tool",
+     "label": "Querying: dem_national, opri_national",
+     "status": "completed",
+     "tool": "create_data"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794702400000-2-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "Map created: Where out-of-school children and young people live"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794702400000_closing_turn",
+   "displayId": "textTurn_exploreDataFromNL_1794702400000_closing",
+   "textKind": "explain",
+   "content": "**India, Pakistan and Ethiopia have the most out-of-school children and young people:** about **48 million**, **21 million** and **19 million**. The largest numbers:\n\n- **India:** 47.6 million (2026)\n- **Pakistan:** 21.4 million (2025)\n- **Ethiopia:** 19 million (2025)\n- **Bangladesh:** 9.2 million (2025)\n- **Tanzania:** 7.6 million (2024)\n\nThe map sizes each country's circle by its number; hover a circle for the figure. Each country's latest figure from 2020–2026; primary and secondary school age, both sexes. Source: UIS, November 2026 release; indicator OFST.1T3.CP.",
+   "parentNodeId": "file-out_of_school_children.map.json",
+   "actionId": "exploreDataFromNL_1794702400000",
+   "createdAt": 1794702406000,
+   "startedAt": 1794702400000,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "out_of_school_children",
+   "fields": {
+    "country_id": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "latest_year": {
+     "semanticType": "Year",
+     "displayName": "Latest year with data",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+     }
+    },
+    "out_of_school": {
+     "semanticType": "Count",
+     "displayName": "Out-of-school children and young people",
+     "authored": {
+      "semanticType": "Count",
+      "displayName": "Out-of-school children and young people"
+     }
+    }
+   }
+  },
+  {
+   "tableId": "most_out_of_school_children",
+   "fields": {
+    "country_id": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "latest_year": {
+     "semanticType": "Year",
+     "displayName": "Latest year with data",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+     }
+    },
+    "out_of_school": {
+     "semanticType": "Count",
+     "displayName": "Out-of-school children and young people",
+     "authored": {
+      "semanticType": "Count",
+      "displayName": "Out-of-school children and young people"
+     }
+    }
+   }
+  }
+ ],
+ "fileNodes": [
+  {
+   "kind": "file",
+   "id": "file-out_of_school_children.map.json",
+   "path": "out_of_school_children.map.json",
+   "displayName": "Where out-of-school children and young people live",
+   "contentHash": "c247a6ed44dcc0640f5401bed6290cbd8215ee698b9bb29f81c373a97198c171",
+   "parentNodeId": "out_of_school_children",
+   "createdAt": 1794702405000
+  }
+ ],
+ "focusedId": {
+  "type": "file",
+  "fileName": "out_of_school_children.map.json"
+ },
+ "canvasTabs": [
+  {
+   "key": "file:out_of_school_children.map.json",
+   "target": {
+    "type": "file",
+    "fileName": "out_of_school_children.map.json"
+   },
+   "addedAt": 1794700000000,
+   "viewedAt": 1794700000000
+  }
+ ],
+ "canvasTabActive": "file:out_of_school_children.map.json"
+}

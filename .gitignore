@@ -424,3 +424,9 @@ NUL
 
 # Package manager lock files (using yarn)
 package-lock.json
+
+# bubblewrap binary that build pipelines bundle into App Service packages; never commit it
+py-src/data_formulator/sandbox/bin/
+
+# Spaces kept only on this machine (not shipped): see py-src/data_formulator/spaces/README.md
+local-spaces/

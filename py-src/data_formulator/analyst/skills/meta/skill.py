@@ -4,6 +4,9 @@ from typing import Any, Generator
 
 from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
 
+# ask_user option icons the app can draw (see ClarificationOptionIcon in the frontend).
+OPTION_ICONS = ("search_web", "connect", "upload")
+
 
 class MetaSkill:
     def handle_tool(
@@ -69,12 +72,14 @@ class MetaSkill:
             return []
         options: list[dict[str, Any]] = []
         for raw_option in raw_options:
+            icon = ""
             if isinstance(raw_option, str):
                 label = raw_option.strip()
                 label_code = ""
             elif isinstance(raw_option, dict):
                 label = str(raw_option.get("label", "")).strip()
                 label_code = str(raw_option.get("label_code", "")).strip()
+                icon = raw_option.get("icon") if raw_option.get("icon") in OPTION_ICONS else ""
             else:
                 continue
             if not label and not label_code:
@@ -84,6 +89,8 @@ class MetaSkill:
                 option["label"] = label
             if label_code:
                 option["label_code"] = label_code
+            if icon:
+                option["icon"] = icon
             options.append(option)
         return options
 

@@ -32,19 +32,29 @@ class WorkspaceDataLoading:
         ctx: SkillContext,
     ) -> ToolResult:
         service = DataDiscoveryService(ctx.workspace)
-        if name == "summarize_data_sources":
-            result = service.summarize_data_sources(args)
-        elif name == "list_data":
-            result = service.list_data(args)
-        elif name == "find_data":
-            result = service.find_data(args)
-        elif name == "describe_data":
-            result = service.describe_data(args)
-        elif name == "probe_data":
+        if name == "probe_data":
             result = service.probe_data(args, self._probe_budget(ctx))
+        elif name == "refresh_catalog":
+            result = self._refresh_catalog(str(args.get("source_id") or "").strip(), ctx)
         else:
             result = {"error": f"workspace has no data-loading tool '{name}'."}
         return ToolResult(text=json.dumps(result, ensure_ascii=False, default=str))
+
+    @staticmethod
+    def _refresh_catalog(source_id: str, ctx: SkillContext) -> dict[str, Any]:
+        if not source_id:
+            return {"error": "source_id is required"}
+        try:
+            from data_formulator.data_connector import resolve_live_loader
+            loader = resolve_live_loader(source_id)
+        except Exception as exc:
+            return {"error": f"source '{source_id}' is not connected: {exc}"}
+        try:
+            from data_formulator.datalake.catalog_refresh import resync_catalog
+            return resync_catalog(ctx.workspace.user_home, source_id, loader)
+        except Exception as exc:
+            from data_formulator.data_loader.connector_errors import classify_connector_error
+            return {"error": f"refresh failed: {classify_connector_error(exc, operation='catalog').message}"}
 
     def handle_action(
         self,

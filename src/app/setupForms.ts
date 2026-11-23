@@ -8,6 +8,7 @@
  */
 
 import type { FormArtifact } from '../components/ComponentType';
+import type { SignInSpec } from './accounts';
 
 type FormEvent = Record<string, any>;
 
@@ -44,19 +45,6 @@ export function formArtifactFromEvent(form: FormEvent): FormArtifact {
                 connector: { sourceType, prefilled: form.connector?.prefilled || {}, status: 'pending' },
             };
         }
-        case 'schedule': {
-            const schedule = form.schedule || {};
-            return {
-                kind: 'schedule', title: title || 'Schedule a workflow',
-                schedule: {
-                    ...targetOf(schedule.target),
-                    config: schedule.config || {},
-                    workflowName: schedule.workflow_name,
-                    issues: Array.isArray(schedule.issues) ? schedule.issues.map(String) : [],
-                    status: 'pending',
-                },
-            };
-        }
         case 'sessions': {
             const sessions = form.sessions || {};
             return {
@@ -81,9 +69,87 @@ export function formArtifactFromEvent(form: FormEvent): FormArtifact {
             const workflow = form.workflow || {};
             return {
                 kind: 'workflow', title: title || String(workflow.definition?.name || 'Workflow'),
-                workflow: { content: String(workflow.content ?? ''), definition: workflow.definition, ...targetOf(workflow.target),
-                    ...(workflow.schedule ? { schedule: { config: workflow.schedule.config || {},
-                        issues: Array.isArray(workflow.schedule.issues) ? workflow.schedule.issues.map(String) : [] } } : {}) },
+                workflow: { content: String(workflow.content ?? ''), definition: workflow.definition,
+                    ...(workflow.target?.id ? { target: { ...targetOf(workflow.target).target!,
+                        ...(workflow.target.schedule ? { schedule: workflow.target.schedule } : {}) } } : {}),
+                    ...(Array.isArray(workflow.schedule_issues) && workflow.schedule_issues.length
+                        ? { scheduleIssues: workflow.schedule_issues.map(String) } : {}) },
+            };
+        }
+        case 'mcp': {
+            const mcp = form.mcp || {};
+            const modes = ['off', 'ask', 'auto'];
+            const modeOf = (value: unknown) => modes.includes(String(value)) ? value as 'off' | 'ask' | 'auto' : undefined;
+            return {
+                kind: 'mcp', title: title || 'MCP servers',
+                mcp: {
+                    add: (mcp.add || []).map((item: FormEvent) => ({
+                        name: String(item.name ?? ''), transport: item.transport === 'stdio' || item.transport === 'sse' ? item.transport : 'http',
+                        ...(item.url ? { url: String(item.url) } : {}),
+                        ...(item.auth?.type ? { auth: { type: item.auth.type,
+                            ...(item.auth.header ? { header: String(item.auth.header) } : {}),
+                            ...(item.auth.client_id ? { client_id: String(item.auth.client_id) } : {}),
+                            ...(item.auth.scope ? { scope: String(item.auth.scope) } : {}) } } : {}),
+                        ...(item.command ? { command: String(item.command), args: (item.args || []).map(String) } : {}),
+                        ...(item.cwd ? { cwd: String(item.cwd) } : {}),
+                        ...(item.env_names?.length ? { envNames: item.env_names.map(String) } : {}),
+                        ...(item.reason ? { reason: String(item.reason) } : {}),
+                    })),
+                    changes: (mcp.changes || []).map((item: FormEvent) => ({
+                        serverId: String(item.server_id), serverName: String(item.server_name ?? item.server_id),
+                        ...(typeof item.enabled === 'boolean' ? { enabled: item.enabled } : {}),
+                        ...(item.tools?.length ? { tools: item.tools.map((tool: FormEvent) => ({ name: String(tool.name), enabled: tool.enabled === true })) } : {}),
+                        ...(item.reason ? { reason: String(item.reason) } : {}),
+                    })),
+                    ...(modeOf(mcp.mode) ? { mode: modeOf(mcp.mode), currentMode: modeOf(mcp.current_mode) } : {}),
+                },
+            };
+        }
+        case 'signin': {
+            const signin = form.signin || {};
+            const reasons = ['gated', 'private', 'rate_limit', 'terms', 'rejected', 'unauthorized', 'other'];
+            const methods = ['reuse', 'device', 'token'];
+            const authTypes = ['bearer', 'header', 'query', 'basic'];
+            const providerName = String(signin.provider_name || signin.provider || '');
+            const raw = signin.spec || {};
+            const strings = (value: unknown) => Array.isArray(value) ? value.map(String) : [];
+            // Only the spec's known fields are kept, as plain strings.
+            const spec = raw.id && authTypes.includes(raw.auth?.type) ? {
+                id: String(raw.id), name: String(raw.name ?? providerName), send_to: strings(raw.send_to),
+                auth: { type: raw.auth.type,
+                    ...(raw.auth.name ? { name: String(raw.auth.name) } : {}),
+                    ...(raw.auth.username_label ? { username_label: String(raw.auth.username_label) } : {}),
+                    ...(raw.auth.secret_label ? { secret_label: String(raw.auth.secret_label) } : {}) },
+                get_token: String(raw.get_token ?? ''), instructions: String(raw.instructions ?? ''),
+                ...(raw.check ? { check: String(raw.check) } : {}),
+                ...(raw.local && typeof raw.local === 'object' ? { local: {
+                    ...(Array.isArray(raw.local.command) ? { command: strings(raw.local.command) } : {}),
+                    ...(raw.local.file ? { file: String(raw.local.file) } : {}),
+                    ...(raw.local.env ? { env: String(raw.local.env) } : {}),
+                    ...(raw.local.fields && typeof raw.local.fields === 'object' ? { fields: Object.fromEntries(
+                        Object.entries(raw.local.fields).map(([part, key]) => [part, String(key)])) } : {}),
+                } } : {}),
+                verified: raw.verified === true, methods: strings(raw.methods).filter(method => methods.includes(method)) as SignInSpec['methods'],
+                domains: strings(raw.domains),
+            } : undefined;
+            return {
+                kind: 'signin', title: title || `Sign in to ${providerName}`,
+                signin: {
+                    provider: String(signin.provider ?? ''),
+                    providerName,
+                    ...(spec ? { spec } : {}),
+                    ...(typeof signin.verified === 'boolean' ? { verified: signin.verified } : {}),
+                    ...(signin.replaces === true ? { replaces: true } : {}),
+                    reason: reasons.includes(signin.reason) ? signin.reason : 'other',
+                    explanation: String(signin.explanation ?? ''),
+                    ...(signin.unlocks ? { unlocks: String(signin.unlocks) } : {}),
+                    steps: (Array.isArray(signin.steps) ? signin.steps : []).map((step: FormEvent) => ({
+                        text: String(step.text ?? ''), ...(step.url ? { url: String(step.url) } : {}),
+                    })),
+                    ...(methods.includes(signin.prefer) ? { prefer: signin.prefer } : {}),
+                    status: 'pending',
+                    ...(signin.signed_in && signin.login ? { login: String(signin.login) } : {}),
+                },
             };
         }
         default:
@@ -100,12 +166,8 @@ export function formArtifactStatus(form: FormArtifact): string {
             return form.connector.status === 'connected'
                 ? `Connected to ${form.connector.connectionName || form.connector.sourceType}`
                 : form.title;
-        case 'schedule': {
-            const { schedule } = form;
-            if (schedule.status !== 'saved') return form.title;
-            const verb = schedule.target && schedule.savedId === schedule.target.id ? 'Updated' : 'Saved';
-            return `${verb} schedule: ${schedule.config.name || form.title}`;
-        }
+        case 'schedule':
+            return form.schedule.status === 'saved' ? `Saved schedule: ${form.schedule.config.name || form.title}` : form.title;
         case 'sessions': {
             const { items } = form.sessions;
             const deleted = items.filter(item => item.deleted).length;
@@ -113,11 +175,25 @@ export function formArtifactStatus(form: FormArtifact): string {
             const changes = [renamed && `renamed ${renamed}`, deleted && `deleted ${deleted}`].filter(Boolean);
             return changes.length ? `${form.title}: ${changes.join(', ')} of ${plural(items.length, 'session')}` : form.title;
         }
+        case 'mcp': {
+            const { mcp } = form;
+            const added = mcp.add.filter(item => item.addedId).length;
+            const parts = [added && `added ${plural(added, 'server')}`, mcp.applied && 'applied changes'].filter(Boolean);
+            return parts.length ? `${form.title}: ${parts.join(', ')}` : form.title;
+        }
         case 'workflow': {
             const { workflow } = form;
             if (!workflow.saved) return form.title;
             const verb = workflow.target && workflow.saved.path === workflow.target.id ? 'Updated' : 'Saved';
-            return `${verb}${workflow.schedule?.savedId ? ' and scheduled' : ''} workflow: ${workflow.definition.name}`;
+            return `${verb}${workflow.saved.scheduled ? ' and scheduled' : ''} workflow: ${workflow.definition.name}`;
+        }
+        case 'signin': {
+            const { signin } = form;
+            if (signin.status === 'signed_in') {
+                return signin.login ? `Signed in to ${signin.providerName} as @${signin.login}` : `Signed in to ${signin.providerName}`;
+            }
+            if (signin.status === 'declined') return `Continued without signing in to ${signin.providerName}`;
+            return signin.status === 'replied' ? `Not signed in to ${signin.providerName} (replied in chat)` : form.title;
         }
     }
 }

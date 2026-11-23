@@ -7,7 +7,7 @@ import { useTheme } from '@mui/material/styles';
 
 import { dfActions } from '../app/dfSlice';
 import { iconVar, textVar } from '../app/layout';
-import { agentResponseFill, borderColor } from '../app/tokens';
+import { agentResponseFill, borderColor, weight } from '../app/tokens';
 import { AgentToyIcon } from './AgentToyIcon';
 import { TerminalMessageContent } from '../components/TerminalApprovalDialog';
 import type { TerminalExecution } from '../components/ComponentType';
@@ -31,14 +31,14 @@ export const ExplanationCanvas: FC<ExplanationCanvasProps> = ({ content, textTur
             width: '100%', height: '100%', overflow: 'hidden', boxSizing: 'border-box',
             display: 'flex', flexDirection: 'column',
             backgroundColor: agentResponseFill(theme.palette.primary.main),
-            borderRadius: '6px',
+            borderRadius: 1.5,
         }}>
             <Box sx={{ minHeight: 40, display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 0.5, boxSizing: 'border-box', borderBottom: `1px solid ${borderColor.component}` }}>
-                <AgentToyIcon variant="explain" sx={{ fontSize: iconVar.sm, color: 'text.secondary' }} />
+                <AgentToyIcon sx={{ fontSize: iconVar.sm, color: 'text.secondary' }} />
                 <Typography component="h2" sx={{
-                    fontSize: textVar.md, fontWeight: 500, color: 'text.primary',
+                    fontSize: textVar.md, fontWeight: weight(500), color: 'text.primary',
                 }}>
-                    {t('chartRec.explanationTitle')}
+                    {t('chartRec.agentTitle', { defaultValue: 'Agent' })}
                 </Typography>
                 <Tooltip title={t('chartRec.pauseDelete')}>
                     <IconButton size="small" color="error" onClick={handleDelete} aria-label={t('chartRec.pauseDelete')}>

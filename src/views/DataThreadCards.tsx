@@ -12,6 +12,7 @@ import {
     Tooltip,
     useTheme,
     alpha,
+    type Theme,
 } from '@mui/material';
 
 import { dfActions } from '../app/dfSlice';
@@ -21,7 +22,8 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AddchartIcon from '@mui/icons-material/Addchart';
 
-import { ComponentBorderStyle, shadow, sidebarRowActionSx, sidebarRowDangerActionSx } from '../app/tokens';
+import { ComponentBorderStyle, cardRadius, shadow, sidebarRowActionSx, sidebarRowDangerActionSx, weight } from '../app/tokens';
+import { chartHoverRing, focusColor, toneFill, toneHoverLine, toneLine } from '../app/look';
 import { iconVar, textVar } from '../app/layout';
 
 
@@ -40,7 +42,8 @@ export let buildChartCard = (
             display: 'flex',
             alignItems: 'flex-start',
             width: 'fit-content',
-            mx: 1,
+            // Inset from the row's edge; the look may set it flush with the cards above and below.
+            mx: 'var(--df-thread-inset, 8px)',
             '& .data-thread-chart-delete-btn-external': { opacity: 0, transition: 'opacity 0.15s' },
             '&:hover .data-thread-chart-delete-btn-external': { opacity: 1 },
             '@keyframes unreadPulse': {
@@ -54,10 +57,12 @@ export let buildChartCard = (
                 display: 'flex',
                 position: 'relative',
                 border: 'none',
-                borderRadius: '6px',
+                borderRadius: cardRadius('6px'),
                 backgroundColor: 'transparent',
                 zIndex: 1,
                 overflow: 'hidden',
+                // A thin ring in the chart's blue (where the look draws one) says it can be opened.
+                '&:hover:not(.selected-card)': { boxShadow: (theme: Theme) => chartHoverRing(theme) },
             }}>
             {chartElement.element}
             {isUnread && (
@@ -115,7 +120,21 @@ export let buildChartCards = (
         </Box>);
 }
 
-export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, artifactType, warning = false, children }: {
+/**
+ * A card title that wraps to two lines. The full title shows above the card only when it is cut
+ * off, so the tooltip never covers the card's actions or repeats a title that is fully visible.
+ */
+const ClampedTitle: React.FC<{ title: string }> = ({ title }) => {
+    const [clamped, setClamped] = React.useState(false);
+    return <Tooltip title={clamped ? title : ''} placement="top-start" enterDelay={500} disableInteractive>
+        <Typography component="span" onMouseEnter={event => setClamped(event.currentTarget.scrollHeight > event.currentTarget.clientHeight + 1)}
+            sx={{ fontSize: textVar.sm, color: 'text.primary', fontWeight: weight(500),
+                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                overflowWrap: 'anywhere', lineHeight: 1.35 }}>{title}</Typography>
+    </Tooltip>;
+};
+
+export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, artifactType, warning = false, preview, children }: {
     title: string;
     selected: boolean;
     onClick: () => void;
@@ -123,6 +142,8 @@ export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, a
     actions?: React.ReactNode;
     artifactType: 'table' | 'file' | 'report' | 'app' | 'workflow';
     warning?: boolean;
+    /** A small picture beside the title (a report's page, an app's window). */
+    preview?: React.ReactNode;
     children?: React.ReactNode;
 }) => {
     // Reports and apps are the agent's authored outputs: both purple, told apart by their icons.
@@ -130,11 +151,22 @@ export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, a
     return <Card
     className={`data-thread-card ${selected ? 'selected-artifact-card' : ''}`} elevation={0}
     sx={{ width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', position: 'relative',
-        ...ComponentBorderStyle, borderRadius: '6px',
+        ...ComponentBorderStyle, borderRadius: cardRadius('6px'),
+        // A tinted card is outlined in the look's line for its tint.
+        ...(artifactType !== 'file' && artifactType !== 'workflow'
+            ? { borderColor: (theme: Theme) => toneLine(theme, theme.palette[tone].main) } : {}),
+        // The card's tint (none where the look keeps cards on the paper) and the paper under it, so the actions can
+        // fade into the card's exact colour.
+        '--artifact-paper': theme => theme.palette.background.paper,
+        '--artifact-tint': theme => artifactType === 'file' || artifactType === 'workflow' ? 'transparent'
+            : toneFill(theme, theme.palette[tone]),
         backgroundColor: theme => artifactType === 'file' || artifactType === 'workflow' ? theme.palette.background.paper
-            : theme.palette[tone].bgcolor || alpha(theme.palette[tone].main, 0.08),
-        '--artifact-selection-color': theme => warning ? theme.palette.warning.main : theme.palette[tone].light,
+            : toneFill(theme, theme.palette[tone], theme.palette.background.paper),
+        '--artifact-selection-color': theme => warning ? theme.palette.warning.main : focusColor(theme, theme.palette[tone]),
         ...(warning ? { borderColor: 'warning.main', boxShadow: '0 0 0 1px var(--artifact-selection-color)' } : {}),
+        // Hover may deepen the outline to the card's own colour, instead of lifting it.
+        ...(warning ? {} : { transition: 'border-color 0.15s',
+            '&:hover:not(.selected-artifact-card)': { borderColor: (theme: Theme) => toneHoverLine(theme, theme.palette[tone].main) } }),
         '& .artifact-actions': { opacity: 0, transition: 'opacity 0.15s' },
         '&:hover .artifact-actions, &:focus-within .artifact-actions': { opacity: 1 },
         '@media (hover: none)': { '& .artifact-actions': { opacity: 1 } },
@@ -143,15 +175,22 @@ export const ThreadArtifactCard = ({ title, selected, onClick, notes, actions, a
         display: 'block', textAlign: 'left', padding: '4px 8px 4px 6px',
         '&.Mui-focusVisible': { outline: '2px solid', outlineColor: `${tone}.main`, outlineOffset: -2 },
     }}>
-        {children || <Typography component="span" sx={{ fontSize: textVar.sm, color: 'text.primary', fontWeight: 500,
-            // The title wraps (to two lines) rather than cutting a name short.
-            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-            overflowWrap: 'anywhere', lineHeight: 1.35 }} title={title}>{title}</Typography>}
+        <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, ...(preview ? { py: 0.25 } : {}) }}>
+        {preview}
+        <Box component="span" sx={{ display: 'block', flex: 1, minWidth: 0 }}>
+        {children || <ClampedTitle title={title} />}
         {notes && <Typography component="span" sx={{ display: 'block', fontSize: textVar.xs,
             color: 'text.secondary', overflowWrap: 'anywhere' }}>{notes}</Typography>}
+        </Box>
+        </Box>
     </ButtonBase>
-    {actions && <Box className="artifact-actions" sx={{ display: 'flex', flexShrink: 0, pr: 0.25,
-        ...(artifactType === 'workflow' ? { position: 'absolute', top: 2, right: 2 } : {}),
+    {/* Actions float over the card's right edge, so the title keeps the full width; the title fades out under them. */}
+    {actions && <Box className="artifact-actions" sx={{ display: 'flex', alignItems: 'center', position: 'absolute', zIndex: 1,
+        top: 0, bottom: 0, right: 0, pl: 2.5, pr: 0.25, borderRadius: `0 ${cardRadius('6px')} ${cardRadius('6px')} 0`, pointerEvents: 'none',
+        background: 'linear-gradient(to right, transparent, var(--artifact-tint) 20px), linear-gradient(to right, transparent, var(--artifact-paper) 20px)',
+        '& > *': { pointerEvents: 'auto' },
+        // A workflow card holds a tall summary; its actions stay in the top corner.
+        ...(artifactType === 'workflow' ? { bottom: 'auto', pt: 0.25 } : {}),
     }}>{actions}</Box>}
 </Card>;
 };
@@ -199,6 +238,115 @@ export let buildTableRefChip = (props: {
             actions={props.onDelete && <ArtifactDeleteButton label={props.deleteLabel || 'Delete table'} onClick={props.onDelete} />} />
     </Box>
 }
+
+export interface ThreadChip {
+    /** The thread item this chip stands for (a loaded-table or file node id), so focus can find and reveal it. */
+    key: string;
+    kind: 'table' | 'file';
+    title: string;
+    note?: string;
+    /** Shown before the title; files carry their type's icon, tables none (the row's gutter says "tables"). */
+    icon?: React.ReactNode;
+    tableId?: string;
+    selected: boolean;
+    onClick: () => void;
+    onDelete?: () => void;
+    deleteLabel?: string;
+    deleteDisabled?: boolean;
+}
+
+/** Rows of chips shown before a group folds; the rest open with "Show all". */
+const CHIP_ROWS = 3;
+const CHIP_GAP = 4;
+/** Room for a selected chip's ring (`selectionRing`, at most 2px) around a folded group's clip. */
+const CHIP_RING = 2;
+
+/** Tables and documents brought in together, shown as one wrapping row of small chips instead of a card each;
+ *  past three rows they fold, and open on click (or when one of the hidden chips is selected). */
+export const ThreadChipGroup = ({ label, chips }: {
+    label?: string;
+    chips: ThreadChip[];
+}) => {
+    const rows = React.useRef<HTMLDivElement | null>(null);
+    const [expanded, setExpanded] = React.useState(false);
+    // The height of three rows, from a chip's own height; undefined until measured or when it all fits.
+    const [foldHeight, setFoldHeight] = React.useState<number>();
+    const [hiddenCount, setHiddenCount] = React.useState(0);
+    React.useLayoutEffect(() => {
+        const element = rows.current;
+        if (!element) return;
+        const measure = () => {
+            const items = Array.from(element.children) as HTMLElement[];
+            const rowHeight = items[0]?.offsetHeight ?? 0;
+            const limit = rowHeight * CHIP_ROWS + CHIP_GAP * (CHIP_ROWS - 1);
+            const hidden = items.filter(item => item.offsetTop - element.offsetTop >= limit).length;
+            setFoldHeight(hidden ? limit : undefined);
+            setHiddenCount(hidden);
+        };
+        measure();
+        if (typeof ResizeObserver === 'undefined') return;
+        const observer = new ResizeObserver(measure);
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, [chips.length]);
+    const selectedHidden = !!foldHeight && chips.some((chip, index) => chip.selected
+        && ((rows.current?.children[index] as HTMLElement | undefined)?.offsetTop ?? 0) - (rows.current?.offsetTop ?? 0) >= foldHeight);
+    React.useEffect(() => { if (selectedHidden) setExpanded(true); }, [selectedHidden]);
+    const folded = !!foldHeight && !expanded;
+    return <Box data-thread-chips sx={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}>
+    {label && <Typography sx={{ px: 0.5, fontSize: textVar.xs, color: 'text.secondary', lineHeight: 1.4 }}>{label}</Typography>}
+    {/* Folded, it clips past three rows; 2px of padding (taken back by a negative margin) keeps the selected
+        chip's ring inside the clip. */}
+    <Box ref={rows} sx={{ display: 'flex', flexWrap: 'wrap', gap: `${CHIP_GAP}px`, minWidth: 0,
+        ...(folded && { boxSizing: 'content-box', maxHeight: foldHeight, overflow: 'hidden', p: `${CHIP_RING}px`, m: `-${CHIP_RING}px` }) }}>
+        {chips.map(chip => <Box key={chip.key} data-thread-item={chip.key} data-table-id={chip.tableId} data-chip-kind={chip.kind}
+            className={`data-thread-card ${chip.selected ? 'selected-artifact-card' : ''}`}
+            sx={{
+                position: 'relative', display: 'inline-flex', alignItems: 'center', minWidth: 0, maxWidth: '100%',
+                ...ComponentBorderStyle, borderRadius: 1,
+                '--artifact-paper': theme => theme.palette.background.paper,
+                // Tables are tinted, documents plain, as their full cards are.
+                '--artifact-tint': theme => chip.kind === 'file' ? 'transparent' : toneFill(theme, theme.palette.primary),
+                '--artifact-selection-color': theme => focusColor(theme, theme.palette.primary),
+                background: 'linear-gradient(var(--artifact-tint), var(--artifact-tint)), var(--artifact-paper)',
+                '& .chip-delete': { opacity: 0, transition: 'opacity 0.15s' },
+                '&:hover .chip-delete, &:focus-within .chip-delete': { opacity: 1 },
+                '@media (hover: none)': { '& .chip-delete': { opacity: 1 } },
+            }}>
+            <ButtonBase disableRipple onClick={chip.onClick} title={chip.note ? `${chip.title} ${chip.note}` : chip.title}
+                sx={{ minWidth: 0, maxWidth: '100%', px: '6px', py: '1px', gap: '3px', borderRadius: 'inherit', justifyContent: 'flex-start',
+                    '& > svg': { flexShrink: 0 },
+                    '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}>
+                {chip.icon}
+                <Typography component="span" sx={{ minWidth: 0, fontSize: textVar.xs, fontWeight: weight(500), color: 'text.primary',
+                    lineHeight: 1.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{chip.title}</Typography>
+                {chip.note && <Typography component="span" sx={{ ml: '2px', flexShrink: 0, fontSize: textVar.xxs,
+                    color: 'text.secondary', lineHeight: 1.5 }}>{chip.note}</Typography>}
+            </ButtonBase>
+            {/* Floats over the chip's right edge on hover, so chips keep their size. */}
+            {chip.onDelete && <Tooltip title={chip.deleteLabel || ''}>
+                <span style={{ position: 'absolute', right: 1, top: '50%', transform: 'translateY(-50%)', display: 'flex' }}>
+                    <IconButton className="chip-delete" size="small" color="error" aria-label={chip.deleteLabel}
+                        disabled={chip.deleteDisabled}
+                        onClick={event => { event.stopPropagation(); chip.onDelete?.(); }}
+                        sx={{ p: '1px',
+                            background: 'linear-gradient(var(--artifact-tint), var(--artifact-tint)), var(--artifact-paper)', '&:hover': { background: theme => {
+                                const hover = alpha(theme.palette.error.main, 0.14);
+                                return `linear-gradient(${hover}, ${hover}), var(--artifact-paper)`;
+                            } } }}>
+                        <DeleteIcon sx={{ fontSize: iconVar.sm }} />
+                    </IconButton>
+                </span>
+            </Tooltip>}
+        </Box>)}
+    </Box>
+    {foldHeight !== undefined && <ButtonBase disableRipple onClick={() => setExpanded(open => !open)} aria-expanded={expanded}
+        sx={{ alignSelf: 'flex-start', px: 0.5, fontSize: textVar.xs, color: 'primary.main', borderRadius: 1,
+            '&:hover': { textDecoration: 'underline' } }}>
+        {expanded ? 'Show less' : `Show all (${hiddenCount} more)`}
+    </ButtonBase>}
+</Box>;
+};
 
 // ─── Table Card ──────────────────────────────────────────────────────────────
 

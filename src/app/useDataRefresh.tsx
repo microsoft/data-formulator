@@ -8,7 +8,8 @@ import { AppDispatch } from './store';
 import { DictTable } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
 import { fetchWithIdentity, getUrls, CONNECTOR_ACTION_URLS, computeContentHash } from './utils';
-import { apiRequest } from './apiClient';
+import { apiRequest, ApiRequestError } from './apiClient';
+import { derivedRefreshWaves } from './derivedRefresh';
 
 /** Gzip-compress a string into a Blob using the browser's CompressionStream API. */
 async function compressBlob(data: string): Promise<Blob> {
@@ -131,6 +132,7 @@ export function useDataRefresh() {
             });
             
             console.log(`[DataRefresh] Backend refreshed "${tableName}" (${refreshData.row_count} rows, data_changed=${refreshData.data_changed})`);
+            dispatch(dfActions.setTableSourceMissing({ tableId: table.id, missing: null }));
 
             // If data hasn't changed, skip resampling - no need to update frontend
             if (!refreshData.data_changed) {
@@ -160,6 +162,11 @@ export function useDataRefresh() {
                 contentHash: refreshData.content_hash
             };
         } catch (error) {
+            if (error instanceof ApiRequestError && error.apiError.code === 'TABLE_NOT_FOUND') {
+                dispatch(dfActions.setTableSourceMissing({
+                    tableId: table.id, missing: { checkedAt: Date.now(), message: error.message },
+                }));
+            }
             return {
                 tableId: table.id,
                 success: false,
@@ -285,7 +292,7 @@ export function useDataRefresh() {
         }
 
         const source = table.source;
-        if (!source?.autoRefresh || !source.refreshIntervalSeconds || source.refreshIntervalSeconds <= 0) {
+        if (!source?.autoRefresh || !source.refreshIntervalSeconds || source.refreshIntervalSeconds <= 0 || source.missing) {
             isActiveRef.current.set(tableId, false);
             return;
         }
@@ -594,34 +601,38 @@ export function useDerivedTableRefresh() {
             console.log(`[DerivedRefresh] First run, initializing content hashes for ${sourceTableCount} source tables`);
         }
 
-        // If any source tables changed, find and refresh all dependent derived tables in parallel
+        // If any source tables changed, refresh every derived table computed from them, directly or
+        // through other derived tables, one wave at a time so each runs after the tables it reads.
         if (changedTableIds.length > 0 && !refreshInProgressRef.current) {
             console.log(`[DerivedRefresh] Source tables changed: ${changedTableIds.join(', ')}`);
-            
-            const directlyDependentTables: DictTable[] = [];
-            tables.forEach(table => {
-                if (table.derive) {
-                    const dependsOnChanged = table.derive.source.some(
-                        sourceId => changedTableIds.includes(sourceId)
-                    );
-                    console.log(`[DerivedRefresh] Checking derived table "${table.id}": dependsOnChanged=${dependsOnChanged}, sources=[${table.derive.source.join(', ')}]`);
-                    if (dependsOnChanged) {
-                        directlyDependentTables.push(table);
-                    }
-                }
-            });
 
-            if (directlyDependentTables.length > 0) {
-                console.log(`[DerivedRefresh] Will refresh ${directlyDependentTables.length} directly dependent tables in parallel: ${directlyDependentTables.map(t => t.id).join(', ')}`);
-                
+            const waves = derivedRefreshWaves(tables, changedTableIds);
+
+            if (waves.length > 0) {
+                console.log(`[DerivedRefresh] Will refresh ${waves.flat().length} dependent tables in ${waves.length} wave(s): ${waves.map(wave => wave.map(t => t.id).join(', ')).join(' → ')}`);
+
                 refreshInProgressRef.current = true;
 
-                // Fire all refreshes in parallel, then batch the results into ONE dispatch
-                Promise.all(
-                    directlyDependentTables.map(dt => refreshOneDerivedTable(dt, tables))
-                ).then(results => {
-                    const successfulUpdates = results.filter((r): r is {tableId: string, rows: any[]} => r !== null);
-                    
+                // Each wave runs in parallel; all results are committed as ONE dispatch.
+                (async () => {
+                    const successfulUpdates: {tableId: string, rows: any[]}[] = [];
+                    const failed = new Set<string>();
+                    let current = tables;
+                    for (const wave of waves) {
+                        // A table whose input failed to refresh keeps its rows rather than mixing old and new.
+                        const runnable = wave.filter(table => !table.derive!.source.some(id => failed.has(id)));
+                        wave.filter(table => !runnable.includes(table)).forEach(table => failed.add(table.id));
+                        const results = await Promise.all(runnable.map(dt => refreshOneDerivedTable(dt, current)));
+                        runnable.forEach((table, index) => {
+                            const result = results[index];
+                            if (result) successfulUpdates.push(result);
+                            else failed.add(table.id);
+                        });
+                        const updated = new Map(successfulUpdates.map(update => [update.tableId, update.rows]));
+                        current = current.map(table => updated.has(table.id) ? { ...table, rows: updated.get(table.id)! } : table);
+                    }
+                    return successfulUpdates;
+                })().then(successfulUpdates => {
                     if (successfulUpdates.length > 0) {
                         // Single dispatch for ALL derived table updates
                         dispatch(dfActions.updateMultipleTableRows(successfulUpdates));

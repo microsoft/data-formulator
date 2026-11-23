@@ -10,6 +10,7 @@
  */
 
 import { transform } from 'sucrase';
+import ts from 'typescript';
 
 import type { HtmlAppManifest } from '../htmlApp/htmlAppDocument';
 
@@ -17,16 +18,29 @@ export const REACT_APP_FILE = /\.app\.jsx$/i;
 
 /** Modules the runtime provides; must match `MODULES` in runtime/index.tsx. */
 /** Modules in their own runtime bundles, injected only into apps that use them. */
-export const OPTIONAL_IMPORTS = ['d3', 'lodash', '@df/geo'] as const;
+export const OPTIONAL_IMPORTS = ['d3', 'lodash', '@df/geo', '@mui/icons-material'] as const;
 export type OptionalImport = typeof OPTIONAL_IMPORTS[number];
 
+/** `@mui/material/Box`, `@mui/icons-material/TrendingUp`: paths the runtime resolves into those packages. */
+const MUI_PATH = /^@mui\/(?:material\/[A-Za-z]+|icons-material\/[A-Za-z0-9]+)$/;
+
 export const ALLOWED_IMPORTS = [
-    'react', 'react/jsx-runtime', '@df/ui', '@df/data', '@df/chart', '@df/format', '@df/icons', '@mui/material',
+    'react', 'react/jsx-runtime', '@df/data', '@df/chart', '@df/format', '@df/icons', '@mui/material',
     ...OPTIONAL_IMPORTS,
 ];
 
+/** Bundles the host injects for what an app uses beyond its imports: chart links need Flint's link validator. */
+export type OptionalModule = OptionalImport | 'flint-links';
+
 /** A Flint map draws vendored boundaries from `@df/geo`. */
 const FLINT_MAP_CHART = /(['"])(?:Map|Choropleth)\1/;
+/** Charts the app sets a focus or updates on: Flint's chart validator checks what the app asks of them. */
+const CHART_CHECKS = new RegExp([
+    /\bfocus\s*[=:]\s*\{/.source,
+    /\bannotations\s*[=:]\s*\{?\s*\[/.source,
+    /\bhide\s*[=:]\s*\{/.source,
+    /(['"])set-(?:style|annotation|viewport|order|overlay|freeform-overlay|data)\1/.source,
+].join('|'));
 
 const MANIFEST_LINE = /^\s*\/\/\s*@df-app\s+(\{.*\})\s*$/m;
 
@@ -50,8 +64,28 @@ export function parseReactAppManifest(source: string): HtmlAppManifest {
 }
 
 export type CompileResult =
-    | { ok: true; code: string; manifest: HtmlAppManifest; optionalModules: OptionalImport[] }
+    | { ok: true; code: string; manifest: HtmlAppManifest; optionalModules: OptionalModule[] }
     | { ok: false; error: string; manifest: HtmlAppManifest };
+
+/**
+ * Where and why the app fails to parse. Sucrase often stops at a later symptom (for a missing `}` in
+ * `encodings={{ x: {...}, y: {...} }}`, the next element), so locate the cause with TypeScript's parser,
+ * and quote what follows it so the agent asked to fix it finds the spot.
+ */
+function describeSyntaxError(source: string, error: unknown): string {
+    const diagnostic = ts.transpileModule(source, {
+        reportDiagnostics: true, fileName: 'App.tsx', compilerOptions: { jsx: ts.JsxEmit.ReactJSX },
+    }).diagnostics?.find(item => item.file && item.start !== undefined);
+    if (diagnostic) {
+        const { line, character } = diagnostic.file!.getLineAndCharacterOfPosition(diagnostic.start!);
+        const after = source.split('\n')[line].slice(character, character + 24).trim();
+        return `Syntax error at line ${line + 1}, column ${character + 1}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')}`
+            + (after ? ` (just before "${after}")` : '');
+    }
+    const loc = (error as { loc?: { line: number; column: number } }).loc;
+    const message = error instanceof Error ? error.message.replace(/^Error transforming App\.tsx:\s*/, '') : String(error);
+    return `Syntax error${loc ? ` at line ${loc.line}, column ${loc.column + 1}` : ''}: ${message.replace(/\s*\(\d+:\d+\)$/, '')}`;
+}
 
 /** Compile app source to a CommonJS module body, or explain why it cannot run. */
 export function compileReactApp(source: string): CompileResult {
@@ -65,9 +99,7 @@ export function compileReactApp(source: string): CompileResult {
             filePath: 'App.tsx',
         }).code;
     } catch (error) {
-        const loc = (error as { loc?: { line: number; column: number } }).loc;
-        const message = error instanceof Error ? error.message.replace(/^Error transforming App\.tsx:\s*/, '') : String(error);
-        return { ok: false, manifest, error: `Syntax error${loc ? ` at line ${loc.line}, column ${loc.column + 1}` : ''}: ${message.replace(/\s*\(\d+:\d+\)$/, '')}` };
+        return { ok: false, manifest, error: describeSyntaxError(source, error) };
     }
     const imports = [
         ...[...code.matchAll(/\brequire\((['"])([^'"]+)\1\)/g)].map(match => match[2]),
@@ -76,15 +108,16 @@ export function compileReactApp(source: string): CompileResult {
         ...[...source.matchAll(/^\s*import\s*(['"])([^'"]+)\1/gm)].map(match => match[2]),
         ...[...source.matchAll(/\b(?:require|import)\s*\(\s*(['"])([^'"]+)\1\s*\)/g)].map(match => match[2]),
     ];
-    const disallowed = [...new Set(imports.filter(name => !ALLOWED_IMPORTS.includes(name)))];
+    const disallowed = [...new Set(imports.filter(name => !ALLOWED_IMPORTS.includes(name) && !MUI_PATH.test(name)))];
     if (disallowed.length) {
         return { ok: false, manifest, error: `Cannot import ${disallowed.map(name => `"${name}"`).join(', ')}. Apps can import only: ${ALLOWED_IMPORTS.filter(name => name !== 'react/jsx-runtime').join(', ')}.` };
     }
     if (!/\bexports\.\s*default\s*=/.test(code)) {
         return { ok: false, manifest, error: 'The app must `export default` a React component.' };
     }
-    const optionalModules = OPTIONAL_IMPORTS.filter(name => imports.includes(name)
-        || (name === '@df/geo' && FLINT_MAP_CHART.test(source)));
+    const optionalModules: OptionalModule[] = [...OPTIONAL_IMPORTS.filter(name => imports.includes(name)
+        || (name === '@df/geo' && FLINT_MAP_CHART.test(source))
+        || (name === '@mui/icons-material' && imports.some(path => path.startsWith('@mui/icons-material/')))), ...(CHART_CHECKS.test(source) ? ['flint-links' as const] : [])];
     return { ok: true, code, manifest, optionalModules };
 }
 

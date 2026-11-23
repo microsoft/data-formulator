@@ -23,7 +23,7 @@ vi.mock('../../../../src/app/stateMigrations', () => ({
 
 import { ApiRequestError } from '../../../../src/app/apiClient';
 import { workspaceDB } from '../../../../src/app/workspaceDB';
-import { listWorkspaceFiles, listWorkspaces, loadWorkspace, saveWorkspaceState, WorkspaceLoadSupersededError, isLargeConnectorTable, loadsAsConnectorReference, createExternalTableReference } from '../../../../src/app/workspaceService';
+import { importWorkspace, listWorkspaceFiles, listWorkspaces, loadWorkspace, saveWorkspaceState, SessionConflictError, WorkspaceLoadSupersededError, isLargeConnectorTable, loadsAsConnectorReference, createExternalTableReference } from '../../../../src/app/workspaceService';
 import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/app/dfSlice';
 import { getInputTablePreview } from '../../../../src/app/inputTablePreviewCache';
 
@@ -204,6 +204,29 @@ describe('local workspace parity', () => {
         expect(recoverySaveSpy).not.toHaveBeenCalled();
     });
 
+    it('saves against the revision it loaded and reports a newer saved copy as a conflict', async () => {
+        mockState.serverConfig.WORKSPACE_BACKEND = 'local';
+        mockState.activeWorkspace = { id: 'revisioned', displayName: 'Revisioned' };
+        const bodies: any[] = [];
+        vi.spyOn(await import('../../../../src/app/apiClient'), 'apiRequest').mockImplementation(async (url: string, init?: any) => {
+            if (url.endsWith('/load')) return { data: { state: { inputTables: [] }, revision: 4 } } as any;
+            const body = JSON.parse(init.body);
+            bodies.push(body);
+            if (body.base_revision === 5) {
+                throw new ApiRequestError({ code: 'SESSION_CONFLICT', message: 'saved elsewhere' }, 200);
+            }
+            return { data: { revision: body.base_revision + 1 } } as any;
+        });
+
+        await loadWorkspace('revisioned');
+        await saveWorkspaceState({ a: 1 });
+        // The next save is based on the revision the first one returned; here the server has moved on.
+        const conflict = await saveWorkspaceState({ a: 2 }).catch(error => error);
+        expect(conflict).toBeInstanceOf(SessionConflictError);
+        expect(conflict.sessionId).toBe('revisioned');
+        expect(bodies.map(body => body.base_revision)).toEqual([4, 5]);
+    });
+
     it('hydrates previews against the workspace being loaded', async () => {
         mockState.serverConfig.WORKSPACE_BACKEND = 'local';
         mockState.activeWorkspace = { id: 'workspace-a', displayName: 'Workspace A' };
@@ -232,6 +255,33 @@ describe('local workspace parity', () => {
         const sampleCall = requestSpy.mock.calls.find(([url]) => url === '/api/tables/sample-table');
         expect(new Headers(sampleCall?.[1]?.headers).get('X-Workspace-Id')).toBe('workspace-b');
         expect(getInputTablePreview(inputTable as any)?.rows).toEqual([{ amount: 42 }]);
+    });
+
+    it('hydrates previews for an imported session, as for a loaded one', async () => {
+        mockState.serverConfig.WORKSPACE_BACKEND = 'local';
+        const inputTable = {
+            kind: 'input-table',
+            id: 'heritage',
+            displayId: 'Heritage',
+            source: { kind: 'workspace', tableId: 'sdg11_sources' },
+            snapshot: { columns: [], rowCount: 1056, capturedAt: 2 },
+            description: '',
+            addedAt: 1,
+        } as const;
+        const requestSpy = vi.spyOn(await import('../../../../src/app/apiClient'), 'apiRequest')
+            .mockImplementation(async (url: string) => {
+                if (url === '/api/sessions/import') return { data: { state: { inputTables: [inputTable] } } };
+                if (url === '/api/tables/sample-table') return { data: { rows: [{ year: 2020 }] } };
+                throw new Error(`Unexpected URL: ${url}`);
+            });
+
+        const state = await importWorkspace(new File(['zip'], 'culture.zip'), 'workspace-import', 'Culture');
+
+        expect(state.inputTables).toEqual([inputTable]);
+        const sampleCall = requestSpy.mock.calls.find(([url]) => url === '/api/tables/sample-table');
+        expect(new Headers(sampleCall?.[1]?.headers).get('X-Workspace-Id')).toBe('workspace-import');
+        expect(JSON.parse(String(sampleCall?.[1]?.body)).table).toBe('sdg11_sources');
+        expect(getInputTablePreview(inputTable as any)?.rows).toEqual([{ year: 2020 }]);
     });
 
     it('rejects a load superseded by a newer workspace switch', async () => {

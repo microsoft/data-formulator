@@ -13,7 +13,7 @@ import { Box, IconButton, Tooltip, useTheme } from '@mui/material';
 import WrapTextIcon from '@mui/icons-material/WrapText';
 
 import { iconVar, textVar } from '../app/layout';
-import { codeEditorSearchPanelSx } from '../app/tokens';
+import { codeEditorSearchPanelSx, ink, paper } from '../app/tokens';
 
 interface MarkdownEditorProps {
     value: string;
@@ -29,7 +29,7 @@ const editorTheme = EditorView.theme({
     '&': {
         height: '100%',
         fontSize: textVar.md,
-        backgroundColor: '#fff',
+        backgroundColor: paper(),
     },
     '&.cm-focused': { outline: 'none' },
     '.cm-scroller': {
@@ -43,7 +43,7 @@ const editorTheme = EditorView.theme({
     },
     '.cm-line': { padding: '0 8px' },
     '.cm-gutters': {
-        backgroundColor: '#fff',
+        backgroundColor: paper(),
         color: '#8a9099',
         borderRight: 'none',
     },
@@ -108,7 +108,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ value, onChange,
                     <WrapTextIcon sx={{ fontSize: iconVar.md }} />
                 </IconButton>
             </Tooltip>}
-            <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', bgcolor: readOnly ? '#fafafa' : 'background.paper' }}>
+            <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', bgcolor: readOnly ? ink(0.02) : 'background.paper' }}>
                 <CodeMirror
                     value={value}
                     onChange={onChange}

@@ -50,6 +50,13 @@ class AzureBlobDataLoader(ExternalDataLoader):
                 "required_fields": [],
                 "kind": "ambient",
                 "default": True,
+                # Same in-app Azure CLI sign-in and status as the other Azure connectors.
+                "cli_login": {
+                    "provider": "azure",
+                    "label": "Sign in with Azure CLI",
+                    "status_url": "/api/local/azure-status",
+                    "login_url": "/api/local/azure-login",
+                },
             },
             {
                 "id": "sas_token",

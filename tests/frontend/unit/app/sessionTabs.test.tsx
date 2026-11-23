@@ -27,7 +27,7 @@ vi.mock('../../../../src/app/sessionThunks', () => ({
 }));
 
 import { claimSession, registerSessionHolder, sessionUrl, TAB_ID } from '../../../../src/app/sessionTabs';
-import { useSessionTabs } from '../../../../src/app/useSessionTabs';
+import { dropRestoredSessionOfOtherTabs, useSessionTabs } from '../../../../src/app/useSessionTabs';
 import { leaveSession, openSession } from '../../../../src/app/sessionThunks';
 import { saveWorkspaceState } from '../../../../src/app/workspaceService';
 
@@ -111,12 +111,36 @@ describe('useSessionTabs', () => {
         expect(router.state.location.search).toBe('?session=wanted');
     });
 
+    it('starts a new tab on the landing page instead of the session restored from shared storage', async () => {
+        testStore.current.dispatch(dfActions.setActiveWorkspace({ id: 'other-tab', displayName: 'Other tab' }));
+        testStore.current.dispatch(dfActions.setWorkspaceFileCount(1));
+        dropRestoredSessionOfOtherTabs('');
+        const router = renderAt('/app');
+
+        await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
+        expect(activeId()).toBeUndefined();
+        expect(openSession).not.toHaveBeenCalled();
+        expect(router.state.location.search).toBe('');
+    });
+
+    it('keeps restored state on reload only when the URL names that session', () => {
+        testStore.current.dispatch(dfActions.setActiveWorkspace({ id: 'mine', displayName: 'Mine' }));
+        testStore.current.dispatch(dfActions.setWorkspaceFileCount(1));
+        dropRestoredSessionOfOtherTabs('?session=mine');
+        expect(activeId()).toBe('mine');
+
+        dropRestoredSessionOfOtherTabs('?session=another');
+        expect(activeId()).toBeUndefined();
+    });
+
     it('names the open session in the URL and steps back when another tab claims it', async () => {
         testStore.current.dispatch(dfActions.setActiveWorkspace({ id: 'mine', displayName: 'Mine' }));
         testStore.current.dispatch(dfActions.setWorkspaceFileCount(1));
         const router = renderAt('/app');
         await waitFor(() => expect(router.state.location.search).toBe('?session=mine'));
-        expect(openSession).not.toHaveBeenCalled();
+        // Browser storage can hold an older copy than the server's, so the restored session is reopened from it.
+        expect(openSession).toHaveBeenCalledWith('mine', 'Mine', { saveCurrent: false });
+        expect(saveWorkspaceState).not.toHaveBeenCalled();
 
         const peer = otherTab();
         const replies: string[] = [];

@@ -11,13 +11,8 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
-import i18n from '../i18n';
 import {
     Box,
-    Dialog,
-    DialogContent,
-    DialogTitle,
     Typography,
     IconButton,
     Tooltip,
@@ -34,12 +29,14 @@ import {
     ListSubheader,
     ClickAwayListener,
 } from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
+import StarRoundedIcon from '@mui/icons-material/StarRounded';
+import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded';
 import DownloadIcon from '@mui/icons-material/Download';
-import PublishOutlinedIcon from '@mui/icons-material/PublishOutlined';
-import { publishExampleSession } from './ExampleSessions';
+import { requestWormholeDialog } from '../app/wormholeService';
+import { AllSessions, formatCompactTime, SessionBadges, sessionDateGroup, sessionGroupHeaderSx,
+    sessionGroupLabelsFor, sessionTimeFor, sortSessions, useSessionActions, type SessionDateGroup, type SessionSortKey } from './AllSessions';
 import { generateUUID } from '../app/identity';
-import { generateWorkspaceId, leaveSession, openSession, renameSession } from '../app/sessionThunks';
+import { generateWorkspaceId, startNewSession } from '../app/sessionThunks';
 import { defaultSessionName } from '../app/useWorkspaceAutoName';
 import { openSessionInNewTab } from '../app/sessionTabs';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
@@ -50,7 +47,8 @@ import AddIcon from '@mui/icons-material/Add';
 import AddCircleIcon from '@mui/icons-material/AddCircle';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import { InlineLoadingStatus, WorkflowGears } from '../components/FunComponents';
+import { InlineLoadingStatus, WorkflowIcon } from '../components/FunComponents';
+import { useProgressiveCount } from '../components/useProgressiveCount';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -68,20 +66,18 @@ import CheckIcon from '@mui/icons-material/Check';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 
 import { WorkflowPanel } from './WorkflowPanel';
-import { SchedulesPanel } from './WorkflowSchedules';
 
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef, translateBackend, fetchConnectorCatalog } from '../app/utils';
-import { apiRequest } from '../app/apiClient';
+import { apiRequest, ApiRequestError } from '../app/apiClient';
 import { LoadableState, errorLoadable, loadingLoadable, successLoadable } from '../app/loadableState';
-import { getConnectorIcon, connectorSortOrder, RelationalDBIcon } from '../icons';
+import { getConnectorIcon, connectorSortOrder, RelationalDBIcon, WormholeReceiveIcon, WormholeSendIcon } from '../icons';
 import { loadTable } from '../app/tableThunks';
-import { listWorkspaces, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged } from '../app/workspaceService';
+import { listWorkspaces, importWorkspace, onWorkspaceListChanged } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
-import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
-import { borderColor, sidebarEdge, sidebarMenuSx, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarToolbarSx } from '../app/tokens';
-import { ItemCard, ItemCardAction, itemCardGridSx, MetadataCard, MetadataChips, ViewAllButton } from '../components/ItemCard';
+import { borderColor, sidebarEdge, sidebarMenuSx, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarToolbarSx, ink, paper, weight } from '../app/tokens';
+import { ItemCard, ItemCardAction, MetadataCard, MetadataChips, starredColor, ViewAllButton } from '../components/ItemCard';
 
 import type { ConnectorInstance, DictTable } from '../components/ComponentType';
 import {
@@ -98,11 +94,15 @@ import { importConnectorFile, loadsAsConnectorReference, isSemanticConnectorTabl
 
 type SidebarTab = DataFormulatorState['dataSourceSidebarTab'];
 
-/** A demo front page (`serverConfig.SITE`) offers only Sessions: no data connectors, workflows or schedules. */
-const selectIsDemo = (state: DataFormulatorState) => !!state.serverConfig.SITE;
 // Older persisted state predates the tab field; 'sources' was the default.
-const selectSidebarTab = (state: DataFormulatorState): SidebarTab =>
-    selectIsDemo(state) ? 'sessions' : (state.dataSourceSidebarTab ?? 'sources');
+const selectSidebarTab = (state: DataFormulatorState): SidebarTab => {
+    // Saved state from before the Workflows tab was renamed calls it 'knowledge'.
+    const saved = (state.dataSourceSidebarTab as string | undefined) ?? 'sources';
+    // Schedules are part of workflows now (design-docs/78), so a remembered Schedules tab opens Workflows.
+    const tab: SidebarTab = saved === 'knowledge' || saved === 'schedules' ? 'workflows' : saved as SidebarTab;
+    // A workflow tab remembered from elsewhere opens sessions where workflows are unavailable.
+    return tab === 'workflows' && state.serverConfig?.WORKFLOWS_AVAILABLE !== true ? 'sessions' : tab;
+};
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -114,102 +114,41 @@ const MAX_PANEL_WIDTH = REFERENCE.sidebar.max;
 const SIDEBAR_WIDTH_KEY = 'df-sidebar-panel-width';
 const SIDEBAR_PINNED_KEY = 'df-sidebar-pinned';
 
-// Compact relative time for sidebar rows: "2m", "3h", "yesterday",
-// "May 5", "May 5, 24". Designed to stay <= ~10 chars so it fits in
-// the narrow sidebar without truncating session names.
-function formatCompactTime(iso: string | null | undefined): string {
-    if (!iso) return '';
-    const then = new Date(iso);
-    const ts = then.getTime();
-    if (Number.isNaN(ts)) return '';
-    const now = Date.now();
-    const diffSec = Math.max(0, Math.round((now - ts) / 1000));
-    if (diffSec < 60) return i18n.t('sidebar.timeJustNow');
-    const diffMin = Math.round(diffSec / 60);
-    if (diffMin < 60) return i18n.t('sidebar.timeMinutes', { count: diffMin });
-    const diffHr = Math.round(diffMin / 60);
-    if (diffHr < 24) return i18n.t('sidebar.timeHours', { count: diffHr });
-    const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
-    const diffDays = Math.floor((startOfToday.getTime() - then.getTime()) / 86400000) + 1;
-    if (diffDays === 1) return i18n.t('sidebar.timeYesterday');
-    if (diffDays < 7) return i18n.t('sidebar.timeDays', { count: diffDays });
-    const sameYear = then.getFullYear() === new Date().getFullYear();
-    return then.toLocaleDateString(undefined, sameYear
-        ? { month: 'short', day: 'numeric' }
-        : { month: 'short', day: 'numeric', year: '2-digit' });
-}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type SessionDateGroup = 'today' | 'yesterday' | 'week' | 'month' | 'older';
 
-function sessionDateGroup(iso: string | null | undefined): SessionDateGroup {
-    const ts = iso ? new Date(iso).getTime() : NaN;
-    if (Number.isNaN(ts)) return 'older';
-    const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
-    const days = Math.floor((startOfToday.getTime() - ts) / 86400000) + 1;
-    return days <= 0 ? 'today' : days === 1 ? 'yesterday' : days < 7 ? 'week' : days < 30 ? 'month' : 'older';
-}
-
-const sessionGroupLabelsFor = (t: TFunction): Record<SessionDateGroup, string> => ({
-    today: t('sidebar.groupToday', { defaultValue: 'Today' }),
-    yesterday: t('sidebar.groupYesterday', { defaultValue: 'Yesterday' }),
-    week: t('sidebar.groupWeek', { defaultValue: 'Previous 7 days' }),
-    month: t('sidebar.groupMonth', { defaultValue: 'Previous 30 days' }),
-    older: t('sidebar.groupOlder', { defaultValue: 'Older' }),
-});
-
-const sessionGroupHeaderSx = { m: 0, pb: 0.5, fontSize: textVar.xxs, fontWeight: 600, letterSpacing: '0.04em',
-    textTransform: 'uppercase', color: 'text.disabled' } as const;
-
-/**
- * All sessions in a searchable dialog. With `groupTime`, sessions (already sorted by that time)
- * fall under day ranges; without it (name order) they render as one grid.
- */
-export const SessionsDialog: React.FC<{ open: boolean; onClose: () => void; title: string; sessions: WorkspaceSummary[];
-    groupTime?: (session: WorkspaceSummary) => string | null | undefined; renderCard: (session: WorkspaceSummary) => React.ReactNode }>
-    = ({ open, onClose, title, sessions, groupTime, renderCard }) => {
+/** Quiet placeholder while a panel's list loads for the first time. */
+const PanelLoadingSpinner: React.FC = () => {
     const { t } = useTranslation();
-    const [query, setQuery] = useState('');
-    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const matches = sessions.filter(s => terms.every(term => `${s.display_name} ${s.scheduled_run?.scheduleName ?? ''}`.toLowerCase().includes(term)));
-    const labels = sessionGroupLabelsFor(t);
-    const groups = matches.reduce<{ group: SessionDateGroup | null; sessions: WorkspaceSummary[] }[]>((all, s) => {
-        const group = groupTime ? sessionDateGroup(groupTime(s)) : null;
-        const last = all[all.length - 1];
-        if (last && last.group === group) last.sessions.push(s);
-        else all.push({ group, sessions: [s] });
-        return all;
-    }, []);
-    return <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth aria-labelledby="all-sessions-title"
-        slotProps={{ paper: { sx: { height: 'min(720px, 85vh)' } }, transition: { onExited: () => setQuery('') } }}>
-        <DialogTitle id="all-sessions-title" sx={{ display: 'flex', alignItems: 'center', gap: 1.5, fontSize: textVar.lg, fontWeight: 600 }}>
-            <Box component="span" sx={{ flex: 1 }}>{title}</Box>
-            <TextField size="small" value={query} onChange={event => setQuery(event.target.value)}
-                placeholder={t('sidebar.searchSessions', { defaultValue: 'Search sessions' })}
-                slotProps={{ htmlInput: { 'aria-label': t('sidebar.searchSessions', { defaultValue: 'Search sessions' }) },
-                    input: { startAdornment: <InputAdornment position="start"><SearchIcon sx={{ fontSize: iconVar.md, color: 'text.disabled' }} /></InputAdornment> } }}
-                sx={{ width: 260, '& .MuiInputBase-root': { fontSize: textVar.sm } }} />
-            <IconButton size="small" aria-label={t('common.close', { defaultValue: 'Close' })} onClick={onClose}>
-                <CloseIcon sx={{ fontSize: iconVar.md }} />
-            </IconButton>
-        </DialogTitle>
-        <DialogContent dividers>
-            {matches.length === 0
-                ? <Typography sx={{ py: 4, textAlign: 'center', fontSize: textVar.sm, color: 'text.disabled' }}>
-                    {t('sidebar.noMatchingSessions', { defaultValue: 'No matching sessions' })}</Typography>
-                : groups.map(({ group, sessions: groupSessions }, groupIndex) => <Box component="section" key={group ?? 'all'}
-                    aria-label={group ? labels[group] : undefined} sx={{ mt: groupIndex === 0 ? 0 : 2.5 }}>
-                    {group && <Typography component="h3" sx={sessionGroupHeaderSx}>{labels[group]}</Typography>}
-                    <Box sx={itemCardGridSx}>{groupSessions.map(renderCard)}</Box>
-                </Box>)}
-        </DialogContent>
-    </Dialog>;
+    return <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+        <CircularProgress size={16} thickness={4} aria-label={t('app.loading', { defaultValue: 'Loading...' })} sx={{ color: 'text.disabled' }} />
+    </Box>;
 };
+
 
 interface CatalogCache {
     tree: CatalogTreeNode[];
     fetchedAt: number;
+}
+
+// The panel unmounts when closed. Its last session and connector lists let it reopen
+// showing them at once while they refresh, instead of waiting on the server again.
+let panelLists: { identity: string; sessions?: WorkspaceSummary[]; connectors?: ConnectorInstance[] } | null = null;
+
+/** Forgets the remembered lists (e.g. between tests). */
+export function clearSidebarPanelLists() {
+    panelLists = null;
+}
+
+function cachedPanelList<K extends 'sessions' | 'connectors'>(identity: string, kind: K) {
+    return panelLists?.identity === identity ? panelLists[kind] : undefined;
+}
+
+function cachePanelList<K extends 'sessions' | 'connectors'>(identity: string, kind: K,
+    list: NonNullable<NonNullable<typeof panelLists>[K]>) {
+    if (panelLists?.identity !== identity) panelLists = { identity };
+    panelLists[kind] = list;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -250,25 +189,12 @@ export const DataSourceSidebar: React.FC<{
     // appears when they try to add a new connector or link a folder.
     // Stored in Redux so the active tab survives a session refresh.
     // Fall back to 'sources' for older persisted state that predates this field.
-    const isDemo = useSelector(selectIsDemo);
+    const workflowsAvailable = useSelector((state: DataFormulatorState) => state.serverConfig?.WORKFLOWS_AVAILABLE === true);
     const initialTab = useSelector(selectSidebarTab);
     const setInitialTab = useCallback(
         (tab: SidebarTab) => dispatch(dfActions.setDataSourceSidebarTab(tab)),
         [dispatch],
     );
-
-    // External callers (e.g. workflow distill on success) can ask the
-    // sidebar to open and switch to a specific tab.
-    useEffect(() => {
-        const handler = (e: Event) => {
-            const detail = (e as CustomEvent).detail || {};
-            const tab = detail.tab as SidebarTab | undefined;
-            setInitialTab(tab ?? 'knowledge');
-            dispatch(dfActions.setDataSourceSidebarOpen(true));
-        };
-        window.addEventListener('open-knowledge-panel', handler);
-        return () => window.removeEventListener('open-knowledge-panel', handler);
-    }, [dispatch]);
 
     // Resizable panel width, persisted in localStorage
     const [panelWidth, setPanelWidth] = useState<number>(() => {
@@ -370,11 +296,15 @@ export const DataSourceSidebar: React.FC<{
                 pt: 1,
                 gap: 0.5,
             }}>
-                <Tooltip title={t('sidebar.openUpload', { defaultValue: 'Upload data' })} placement="right">
+                <Tooltip title={t('sidebar.newSession', { defaultValue: 'New session' })} placement="right">
                     <IconButton
                         size="small"
-                        onClick={() => onOpenUploadDialog?.('menu')}
-                        aria-label={t('sidebar.openUpload', { defaultValue: 'Upload data' })}
+                        // As the panel's New: save the open session and start a blank one.
+                        onClick={() => {
+                            if (isOpen && !isPinned) dispatch(dfActions.setDataSourceSidebarOpen(false));
+                            void dispatch(startNewSession());
+                        }}
+                        aria-label={t('sidebar.newSession', { defaultValue: 'New session' })}
                         sx={{
                         color: 'primary.main',
                         borderRadius: 1,
@@ -392,7 +322,7 @@ export const DataSourceSidebar: React.FC<{
                         <FolderOutlinedIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
-                {!isDemo && <>
+                <>
                     <Tooltip title={t('sidebar.openDataConnectors', { defaultValue: 'Data connectors' })} placement="right">
                         <IconButton size="small" onClick={() => { setInitialTab('sources'); if (!isOpen) toggle(); else if (initialTab !== 'sources') setInitialTab('sources'); else toggle(); }} sx={{
                             color: isOpen && initialTab === 'sources' ? 'primary.main' : 'text.secondary',
@@ -402,26 +332,16 @@ export const DataSourceSidebar: React.FC<{
                             <RelationalDBIcon fontSize="small" />
                         </IconButton>
                     </Tooltip>
-                    <Tooltip title={t('knowledge.workflows')} placement="right">
-                        <IconButton size="small" onClick={() => { setInitialTab('knowledge'); if (!isOpen) toggle(); else if (initialTab !== 'knowledge') setInitialTab('knowledge'); else toggle(); }} sx={{
-                            color: isOpen && initialTab === 'knowledge' ? 'primary.main' : 'text.secondary',
-                            bgcolor: isOpen && initialTab === 'knowledge' ? 'action.selected' : 'transparent',
+                    {workflowsAvailable && <Tooltip title={t('workflow.title')} placement="right">
+                        <IconButton size="small" onClick={() => { setInitialTab('workflows'); if (!isOpen) toggle(); else if (initialTab !== 'workflows') setInitialTab('workflows'); else toggle(); }} sx={{
+                            color: isOpen && initialTab === 'workflows' ? 'primary.main' : 'text.secondary',
+                            bgcolor: isOpen && initialTab === 'workflows' ? 'action.selected' : 'transparent',
                             borderRadius: 1,
                         }}>
-                            <WorkflowGears running={false} size={20} showTooltip={false} />
+                            <WorkflowIcon running={false} size={20} showTooltip={false} />
                         </IconButton>
-                    </Tooltip>
-                    <Tooltip title={t('sidebar.schedules', { defaultValue: 'Schedules' })} placement="right">
-                        <IconButton size="small" aria-label={t('sidebar.schedules', { defaultValue: 'Schedules' })}
-                            onClick={() => { setInitialTab('schedules'); if (!isOpen) toggle(); else if (initialTab !== 'schedules') setInitialTab('schedules'); else toggle(); }} sx={{
-                            color: isOpen && initialTab === 'schedules' ? 'primary.main' : 'text.secondary',
-                            bgcolor: isOpen && initialTab === 'schedules' ? 'action.selected' : 'transparent',
-                            borderRadius: 1,
-                        }}>
-                            <ScheduleOutlinedIcon fontSize="small" />
-                        </IconButton>
-                    </Tooltip>
-                </>}
+                    </Tooltip>}
+                </>
             </Box>
 
             {/* The expanded panel overlays the workspace instead of changing
@@ -484,6 +404,7 @@ const DataSourceSidebarPanel: React.FC<{
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const inSession = useSelector(dfSelectors.selectInSession);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+    const wormholeAvailable = serverConfig?.SESSION_WORMHOLE_AVAILABLE === true;
     const identityKey = useSelector(
         (state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`,
     );
@@ -506,8 +427,12 @@ const DataSourceSidebarPanel: React.FC<{
     );
 
     // Connector instances fetched from backend
-    const [connectors, setConnectors] = useState<ConnectorInstance[]>([]);
-    const [loadingConnectors, setLoadingConnectors] = useState(false);
+    const [connectors, setConnectors] = useState<ConnectorInstance[]>(() => cachedPanelList(identityKey, 'connectors') ?? []);
+    const [loadingConnectors, setLoadingConnectors] = useState(() => !cachedPanelList(identityKey, 'connectors'));
+    useEffect(() => {
+        if (!loadingConnectors && connectors.length > 0) cachePanelList(identityKey, 'connectors', connectors);
+    }, [identityKey, connectors, loadingConnectors]);
+    const prevConnectorRefreshKeyRef = useRef(connectorRefreshKey);
 
     // Catalog tree state per connector ID. Keep loading/error explicit instead
     // of inferring it from whether a cache object exists.
@@ -557,7 +482,7 @@ const DataSourceSidebarPanel: React.FC<{
     const [searchCatalogCache, setSearchCatalogCache] = useState<Record<string, CatalogCache>>({});
     const [searchingCatalog, setSearchingCatalog] = useState<Record<string, boolean>>({});
 
-    // Sidebar tab: 'sources' or 'sessions' or 'knowledge'.
+    // Sidebar tab: 'sources', 'sessions' or 'workflows'.
     // Stored in Redux so the active tab survives a session refresh; the
     // `initialTab` prop is derived from the same Redux value upstream.
     // Fall back to 'sources' for older persisted state that predates this field.
@@ -569,59 +494,29 @@ const DataSourceSidebarPanel: React.FC<{
 
     // ── Sessions ─────────────────────────────────────────────────────────────
 
-    const [sessions, setSessions] = useState<WorkspaceSummary[]>([]);
+    const [sessions, setSessions] = useState<WorkspaceSummary[]>(() => cachedPanelList(identityKey, 'sessions') ?? []);
+    // Until the first list arrives an empty list means "loading", not "no sessions".
+    const [sessionsLoaded, setSessionsLoaded] = useState(() => !!cachedPanelList(identityKey, 'sessions'));
+    useEffect(() => {
+        if (sessionsLoaded) cachePanelList(identityKey, 'sessions', sessions);
+    }, [identityKey, sessions, sessionsLoaded]);
 
-    // Default to creation chronology so auto-saves do not unexpectedly move
-    // older sessions. Modified time remains available as an explicit sort.
-    type SessionSortKey = 'created_desc' | 'created_asc' | 'updated_desc' | 'name_asc';
     const [sessionSort, setSessionSort] = useState<SessionSortKey>('created_desc');
     const [sessionSortAnchor, setSessionSortAnchor] = useState<HTMLElement | null>(null);
     const [sessionMenu, setSessionMenu] = useState<{ anchor: HTMLElement; session: WorkspaceSummary } | null>(null);
-    const handlePublishExample = async (id: string, title: string) => {
-        try {
-            await publishExampleSession(id, title);
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), type: 'success', component: 'workspace',
-                value: t('workspace.publishedExample', { defaultValue: 'Published "{{title}}" as an example session.', title }) }));
-        } catch (error) {
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), type: 'error', component: 'workspace',
-                value: error instanceof Error ? error.message : t('workspace.publishExampleFailed') }));
-        }
-    };
     const sessionMenuAction = useRef<(() => void) | null>(null);
-    const [sessionsDialogOpen, setSessionsDialogOpen] = useState(false);
 
-    const sortedSessions = useMemo(() => {
-        const cmpDate = (a: string | null | undefined, b: string | null | undefined): number => {
-            if (!a && !b) return 0;
-            if (!a) return 1;
-            if (!b) return -1;
-            return a.localeCompare(b);
-        };
-        const copy = [...sessions];
-        switch (sessionSort) {
-            case 'created_desc':
-                return copy.sort((a, b) => cmpDate(b.created_at, a.created_at));
-            case 'created_asc':
-                return copy.sort((a, b) => cmpDate(a.created_at, b.created_at));
-            case 'updated_desc':
-                return copy.sort((a, b) =>
-                    cmpDate(b.saved_at || b.created_at, a.saved_at || a.created_at)
-                    || cmpDate(b.created_at, a.created_at),
-                );
-            case 'name_asc':
-                return copy.sort((a, b) =>
-                    (a.display_name || '').localeCompare(b.display_name || ''),
-                );
-            default:
-                return copy;
-        }
-    }, [sessions, sessionSort]);
+    const sortedSessions = useMemo(() => sortSessions(sessions, sessionSort), [sessions, sessionSort]);
 
     const refreshSessions = useCallback(() => {
         listWorkspaces()
-            .then(list => setSessions(list))
-            .catch(() => { /* session list is best-effort */ });
+            // An unchanged list keeps its identity so the rows don't all re-render.
+            .then(list => setSessions(previous => JSON.stringify(previous) === JSON.stringify(list) ? previous : list))
+            .catch(() => { /* session list is best-effort */ })
+            .finally(() => setSessionsLoaded(true));
     }, []);
+    const { open: handleOpenSession, rename: renameSessionTo, toggleStar: toggleStarSession, exportSession: handleExportSession,
+        remove: handleDeleteSession } = useSessionActions(setSessions, refreshSessions);
 
     // Inline rename state for sidebar session rows.
     const [renamingSession, setRenamingSession] = useState<string | null>(null);
@@ -642,42 +537,11 @@ const DataSourceSidebarPanel: React.FC<{
         if (!id) return;
         const next = renameSessionDraft.trim();
         const current = sessions.find(s => s.id === id);
-        if (!current || !next || next === current.display_name) {
-            cancelRenameSession();
-            return;
-        }
-        setSessions(prev =>
-            prev.map(s => (s.id === id ? { ...s, display_name: next } : s)),
-        );
         cancelRenameSession();
-        try {
-            await dispatch(renameSession(id, next));
-        } catch {
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(), type: 'error',
-                component: 'data-source-sidebar',
-                value: t('sidebar.failedRenameSession'),
-            }));
-            refreshSessions();
-        }
-    }, [renamingSession, renameSessionDraft, sessions, activeWorkspace, cancelRenameSession, dispatch, refreshSessions]);
+        if (current && next && next !== current.display_name) await renameSessionTo(id, next);
+    }, [renamingSession, renameSessionDraft, sessions, cancelRenameSession, renameSessionTo]);
 
-    const handleExportSession = useCallback(async (id: string, displayName: string) => {
-        try {
-            const blob = await exportWorkspace(id);
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `${displayName || id}.zip`;
-            a.click();
-            URL.revokeObjectURL(a.href);
-        } catch (e) {
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(), type: 'error',
-                component: 'data-source-sidebar',
-                value: t('sidebar.exportFailed'),
-            }));
-        }
-    }, [dispatch, t]);
+
 
     const importRef = useRef<HTMLInputElement>(null);
     // Scroll container element for the connectors list. Held in state (via a
@@ -736,43 +600,7 @@ const DataSourceSidebarPanel: React.FC<{
         return <MetadataCard title={s.display_name} summary={counts || undefined} description={details || undefined} />;
     }, [t]);
 
-    const handleOpenSession = useCallback(async (sessionId: string, metaDisplayName?: string) => {
-        await dispatch(openSession(sessionId, metaDisplayName));
-    }, [dispatch]);
 
-    const handleDeleteSession = useCallback(async (sessionId: string) => {
-        try {
-            await deleteWorkspace(sessionId);
-            setSessions(prev => {
-                const updated = prev.filter(s => s.id !== sessionId);
-                // If we deleted the active session, switch to the next one up the list
-                if (activeWorkspace?.id === sessionId) {
-                    const deletedIndex = prev.findIndex(s => s.id === sessionId);
-                    const nextSession = updated[Math.min(deletedIndex, updated.length - 1)];
-                    if (nextSession) {
-                        handleOpenSession(nextSession.id, nextSession.display_name);
-                    } else {
-                        // No sessions left — back to the landing page.
-                        dispatch(dfActions.resetState());
-                    }
-                }
-                return updated;
-            });
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                type: 'success',
-                component: 'data source sidebar',
-                value: t('sidebar.sessionDeleted'),
-            }));
-        } catch {
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                type: 'error',
-                component: 'data source sidebar',
-                value: t('sidebar.failedDeleteSession'),
-            }));
-        }
-    }, [dispatch, activeWorkspace, handleOpenSession]);
 
     // ── Connector list ───────────────────────────────────────────────────────
 
@@ -803,9 +631,12 @@ const DataSourceSidebarPanel: React.FC<{
         const identityChanged = prevIdentityKeyRef.current !== identityKey;
         prevIdentityKeyRef.current = identityKey;
         const preserveView = !identityChanged && !!selectionRef.current;
+        const refreshed = prevConnectorRefreshKeyRef.current !== connectorRefreshKey;
+        prevConnectorRefreshKeyRef.current = connectorRefreshKey;
 
         if (!preserveView) {
-            setConnectors([]);
+            // On mount the view is already fresh; keep the remembered connectors visible while they refresh.
+            if (identityChanged || refreshed) setConnectors([]);
             setCatalogByConnector({});
             setSearchCatalogCache({});
             setServerSearchActive(false);
@@ -1282,6 +1113,7 @@ const DataSourceSidebarPanel: React.FC<{
         let ok = 0;
         let truncated = 0;
         const failed: string[] = [];
+        let anyMissing = false;
         try {
             for (const [index, node] of tables.entries()) {
                 dispatch(dfActions.startTableLoad({ id: loadId, names: [],
@@ -1290,13 +1122,16 @@ const DataSourceSidebarPanel: React.FC<{
                     const result = await loadTableNode(connectorId, node);
                     ok++;
                     if (result?.truncated) truncated++;
-                } catch {
-                    failed.push(node.name);
+                } catch (e: any) {
+                    anyMissing ||= e?.code === 'TABLE_NOT_FOUND';
+                    failed.push(e?.message ? `${node.name} (${e.message})` : node.name);
                 }
             }
         } finally {
             dispatch(dfActions.finishTableLoad(loadId));
         }
+        // The backend dropped tables the source reports as gone; show the catalog without them.
+        if (anyMissing) fetchCatalogTree(connectorId);
 
         if (ok > 0) {
             dispatch(dfActions.addMessages({
@@ -1317,12 +1152,12 @@ const DataSourceSidebarPanel: React.FC<{
                 component: 'data source sidebar',
                 value: t('sidebar.failedLoadTablesBatch', {
                     count: failed.length,
-                    names: failed.slice(0, 5).join(', '),
-                    defaultValue: `Failed to load ${failed.length} table(s): ${failed.slice(0, 5).join(', ')}`,
+                    names: failed.slice(0, 5).join('; '),
+                    defaultValue: `Failed to load ${failed.length} table(s): ${failed.slice(0, 5).join('; ')}`,
                 }),
             }));
         }
-    }, [activeWorkspace, createNewSession, loadTableNode, dispatch, clearSelection, importing, isPinned, t]);
+    }, [activeWorkspace, createNewSession, loadTableNode, dispatch, clearSelection, importing, isPinned, t, fetchCatalogTree]);
 
     // ── Refresh table data ───────────────────────────────────────────────────
 
@@ -1350,6 +1185,7 @@ const DataSourceSidebarPanel: React.FC<{
             }),
         })
             .then(() => {
+                dispatch(dfActions.setTableSourceMissing({ tableId: loaded.id, missing: null }));
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(),
                     type: 'success',
@@ -1357,13 +1193,18 @@ const DataSourceSidebarPanel: React.FC<{
                     value: t('sidebar.refreshedTable', { name: ref.name }),
                 }));
             })
-            .catch(() => {
+            .catch((error: unknown) => {
+                const message = error instanceof Error && error.message ? error.message : 'Failed to refresh table data';
+                if (error instanceof ApiRequestError && error.apiError.code === 'TABLE_NOT_FOUND') {
+                    dispatch(dfActions.setTableSourceMissing({ tableId: loaded.id, missing: { checkedAt: Date.now(), message } }));
+                    fetchCatalogTree(connectorId);
+                }
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(), type: 'error',
-                    component: 'data source sidebar', value: 'Failed to refresh table data',
+                    component: 'data source sidebar', value: message,
                 }));
             });
-    }, [tableIdentities, dispatch, buildSourceTableRef]);
+    }, [tableIdentities, dispatch, buildSourceTableRef, fetchCatalogTree, t]);
 
     const clearConnectorUiState = useCallback((connectorId: string) => {
         setCatalogByConnector(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
@@ -1447,8 +1288,8 @@ const DataSourceSidebarPanel: React.FC<{
         minHeight: 40,
         px: 1.5,
         py: 0,
-        borderBottom: '1px solid rgba(0, 0, 0, 0.16)',
-        backgroundColor: 'rgba(255, 255, 255, 0.76)',
+        borderBottom: `1px solid ${ink(0.16)}`,
+        backgroundColor: paper(0.76),
         flexShrink: 0,
         boxSizing: 'border-box',
     } as const;
@@ -1459,19 +1300,6 @@ const DataSourceSidebarPanel: React.FC<{
         p: 0,
         color: 'text.secondary',
         '&:hover': { color: 'text.primary', bgcolor: 'action.hover' },
-    } as const;
-
-    const panelSubActionSx = {
-        minWidth: 0,
-        p: 0,
-        color: 'text.secondary',
-        fontSize: textVar.xs,
-        fontWeight: 400,
-        lineHeight: 1.2,
-        textTransform: 'none',
-        '& .MuiButton-startIcon': { mr: 0.25 },
-        '& .MuiButton-startIcon .MuiSvgIcon-root': { fontSize: iconVar.xs },
-        '&:hover': { color: 'primary.main', bgcolor: 'transparent' },
     } as const;
 
     const pinAction = (
@@ -1510,16 +1338,7 @@ const DataSourceSidebarPanel: React.FC<{
             </IconButton>
         </Tooltip>
     </>;
-    const openRunSession = async (id: string) => {
-        await handleOpenSession(id);
-        dispatch(dfActions.setDataSourceSidebarOpen(false));
-    };
-    const sessionBadges = (s: WorkspaceSummary) => <>
-        {s.scheduled_run && !s.scheduled_run.forked && <Box component="span" role="img" aria-label="Scheduled"
-            sx={{ display: 'inline-flex', verticalAlign: 'middle', color: 'text.disabled', flexShrink: 0, ml: 0.5 }}>
-            <ScheduleOutlinedIcon sx={{ fontSize: 13 }} />
-        </Box>}
-    </>;
+    const sessionBadges = (s: WorkspaceSummary) => <SessionBadges session={s} />;
     const sessionActions = (s: WorkspaceSummary, isCurrent: boolean) => (!s.read_only || !isCurrent) ? <>
         {!isCurrent && <ItemCardAction label={t('sidebar.openInNewTab', { defaultValue: 'Open in new tab' })}
             icon={<OpenInNewIcon />} onClick={() => openSessionInNewTab(s.id)} />}
@@ -1529,13 +1348,11 @@ const DataSourceSidebarPanel: React.FC<{
     </> : undefined;
     // Time sorts group sessions under day ranges; name order keeps a per-row stamp instead.
     const sessionsGrouped = sessionSort !== 'name_asc';
-    const sessionTime = (s: WorkspaceSummary) =>
-        sessionSort === 'created_desc' || sessionSort === 'created_asc' ? s.created_at : (s.saved_at || s.created_at);
+    const sessionTime = sessionTimeFor(sessionSort);
     const sessionGroupLabels = sessionGroupLabelsFor(t);
-    const sessionCounts = (s: WorkspaceSummary) => [
-        s.table_count != null ? t('sidebar.tableCount', { count: s.table_count }) : '',
-        s.chart_count ? t('sidebar.chartCount', { count: s.chart_count }) : '',
-    ].filter(Boolean).join(' · ');
+    // Rows render as the list scrolls, so opening and closing the panel stays fast with hundreds of sessions.
+    const { count: sessionRowCount, sentinel: sessionRowSentinel } = useProgressiveCount(sessions.length,
+        { initial: 40, step: 40, resetKey: sessionSort });
 
     return (
         <Box sx={{
@@ -1546,7 +1363,7 @@ const DataSourceSidebarPanel: React.FC<{
             flexDirection: 'column',
             maxHeight: '100%',
             borderLeft: `1px solid ${borderColor.view}`,
-            backgroundColor: 'rgba(0, 0, 0, 0.018)',
+            backgroundColor: ink(0.018),
             overflow: 'hidden',
         }}>
 
@@ -1555,7 +1372,7 @@ const DataSourceSidebarPanel: React.FC<{
                 <Box
                     sx={panelHeaderSx}
                 >
-                    <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary' }}>
+                    <Typography sx={{ fontSize: textVar.md, fontWeight: weight(600), color: 'text.primary' }}>
                         {t('sidebar.dataConnectorsTitle', { defaultValue: 'Data Connectors' })}
                     </Typography>
                     {onOpenUploadDialog && <ViewAllButton label={t('sidebar.browseInDataView', { defaultValue: 'Browse in data view' })}
@@ -1629,9 +1446,7 @@ const DataSourceSidebarPanel: React.FC<{
                 </Box>
             <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }} ref={setConnectorScrollEl}>
 
-                {loadingConnectors && connectors.length === 0 && (
-                    <InlineLoadingStatus label={t('sidebar.loadingSources', { defaultValue: 'Loading sources...' })} sx={{ px: 1.5, py: 3 }} />
-                )}
+                {loadingConnectors && connectors.length === 0 && <PanelLoadingSpinner />}
 
                 {sortedConnectors
                     .filter((connector) => {
@@ -1738,7 +1553,7 @@ const DataSourceSidebarPanel: React.FC<{
                                         ? 'success.main'
                                         : 'warning.main',
                                 }} />
-                                <Typography noWrap sx={{ fontSize: textVar.sm, flex: 1, minWidth: 0, fontWeight: 500, color: connector.connected ? 'text.primary' : 'text.secondary' }}>
+                                <Typography noWrap sx={{ fontSize: textVar.sm, flex: 1, minWidth: 0, fontWeight: weight(500), color: connector.connected ? 'text.primary' : 'text.secondary' }}>
                                     {connector.display_name}
                                 </Typography>
                                 <Box className="connector-row-actions" sx={{
@@ -1925,8 +1740,8 @@ const DataSourceSidebarPanel: React.FC<{
                         <Button fullWidth size="small" startIcon={<AddIcon sx={{ fontSize: iconVar.sm }} />}
                             onClick={() => onOpenUploadDialog('add-connection')}
                             sx={{
-                                justifyContent: 'flex-start', textTransform: 'none', fontSize: textVar.xs, fontWeight: 500,
-                                py: 0.5, borderRadius: '6px', border: '1px dashed', borderColor: 'rgba(0,0,0,0.15)',
+                                justifyContent: 'flex-start', textTransform: 'none', fontSize: textVar.xs, fontWeight: weight(500),
+                                py: 0.5, borderRadius: 1.5, border: '1px dashed', borderColor: ink(0.15),
                                 color: 'text.secondary', '& .MuiButton-startIcon': { mr: 0.5 },
                                 '&:hover': { borderColor: 'primary.main', color: 'primary.main', bgcolor: 'transparent' },
                             }}>
@@ -1942,7 +1757,7 @@ const DataSourceSidebarPanel: React.FC<{
             {selection && Object.keys(selection.nodes).length > 0 && (
                 <Box sx={{ flexShrink: 0, borderTop: `1px solid ${borderColor.view}`, boxShadow: '0 -2px 8px -6px rgba(0,0,0,0.12)', px: 1.5, py: 1.25, display: 'flex', flexDirection: 'column', gap: 1, backgroundColor: 'background.paper' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <Typography sx={{ fontSize: textVar.sm, color: 'text.primary', fontWeight: 600 }}>
+                                <Typography sx={{ fontSize: textVar.sm, color: 'text.primary', fontWeight: weight(600) }}>
                                     {t('sidebar.selectedCount', {
                                         count: Object.keys(selection.nodes).length,
                                         defaultValue: `${Object.keys(selection.nodes).length} table${Object.keys(selection.nodes).length === 1 ? '' : 's'} selected`,
@@ -1965,7 +1780,7 @@ const DataSourceSidebarPanel: React.FC<{
                                 fullWidth
                                 disabled={importing}
                                 onClick={() => handleImportTables(selection.connectorId, Object.values(selection.nodes))}
-                                sx={{ fontSize: textVar.md, fontWeight: 600, textTransform: 'none', py: 0.75, borderRadius: 1.5 }}
+                                sx={{ fontSize: textVar.md, fontWeight: weight(600), textTransform: 'none', py: 0.75, borderRadius: 1.5 }}
                             >
                                 {t('sidebar.loadNTables', {
                                     count: Object.keys(selection.nodes).length,
@@ -1995,11 +1810,12 @@ const DataSourceSidebarPanel: React.FC<{
                 <Box
                     sx={{ ...panelHeaderSx, borderBottomColor: sidebarEdge.border }}
                 >
-                    <Typography sx={{ fontSize: textVar.md, fontWeight: 600, color: 'text.primary' }}>
+                    <Typography sx={{ fontSize: textVar.md, fontWeight: weight(600), color: 'text.primary' }}>
                         {t('sidebar.sessions', { defaultValue: 'Sessions' })}
                     </Typography>
-                    <ViewAllButton label={t('sidebar.viewAllSessions', { defaultValue: 'View all sessions' })}
-                        onClick={() => { cancelRenameSession(); setSessionsDialogOpen(true); }} />
+                    <AllSessions sort={sessionSort} trigger={open => <ViewAllButton
+                        label={t('sidebar.viewAllSessions', { defaultValue: 'View all sessions' })}
+                        onClick={() => { cancelRenameSession(); open(); }} />} />
                     <Box sx={{ flex: 1 }} />
                     {pinAction}
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
@@ -2015,7 +1831,7 @@ const DataSourceSidebarPanel: React.FC<{
                             aria-label={t('sidebar.newSession', { defaultValue: 'New session' })}
                             onClick={() => {
                                 if (!isPinned) dispatch(dfActions.setDataSourceSidebarOpen(false));
-                                void dispatch(leaveSession());
+                                void dispatch(startNewSession());
                             }}
                             sx={sidebarPrimaryActionSx}>
                             {t('sidebar.new', { defaultValue: 'New' })}
@@ -2033,22 +1849,37 @@ const DataSourceSidebarPanel: React.FC<{
                         </Button>
                         </Tooltip>
                         <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
+                        {wormholeAvailable && (
+                            <Tooltip title={t('wormhole.receiveTooltip')}>
+                            <Button
+                                variant="outlined" size="small"
+                                startIcon={<WormholeReceiveIcon />}
+                                aria-label={t('wormhole.receiveTooltip')}
+                                onClick={() => requestWormholeDialog({ kind: 'receive' })}
+                                sx={{ ...sidebarPrimaryActionSx, color: 'text.secondary' }}
+                            >
+                                {t('wormhole.receive')}
+                            </Button>
+                            </Tooltip>
+                        )}
                         <Box sx={{ flex: 1 }} />
-                        <Button
-                            startIcon={<SortIcon />}
+                        <Tooltip title={`${t('sidebar.sortSessionList', { defaultValue: 'Sort sessions' })}: ${({
+                            created_desc: t('sidebar.sortNewest'),
+                            created_asc: t('sidebar.sortOldest'),
+                            updated_desc: t('sidebar.sortRecentlyModified'),
+                            name_asc: t('sidebar.sortName'),
+                        } as Record<SessionSortKey, string>)[sessionSort]}`}>
+                        <IconButton
+                            size="small"
                             aria-label={t('sidebar.sortSessionList', { defaultValue: 'Sort sessions' })}
                             aria-haspopup="menu"
                             aria-expanded={sessionSortAnchor ? 'true' : undefined}
                             onClick={(event) => setSessionSortAnchor(event.currentTarget)}
-                            sx={panelSubActionSx}
+                            sx={panelHeaderActionSx}
                         >
-                            {({
-                                created_desc: t('sidebar.sortNewest'),
-                                created_asc: t('sidebar.sortOldest'),
-                                updated_desc: t('sidebar.sortRecentlyModified'),
-                                name_asc: t('sidebar.sortName'),
-                            } as Record<SessionSortKey, string>)[sessionSort]}
-                        </Button>
+                            <SortIcon sx={{ fontSize: iconVar.md }} />
+                        </IconButton>
+                        </Tooltip>
                     </Box>
                     <Menu
                         anchorEl={sessionSortAnchor}
@@ -2084,37 +1915,44 @@ const DataSourceSidebarPanel: React.FC<{
                     </Menu>
                 </Box>
             <ScrollFadeContainer sx={{ overflowX: 'hidden', overscrollBehavior: 'contain', pt: 0.5 }} resetKey={sessions.length}>
-                {sessions.length === 0 ? (
+                {sessions.length === 0 ? (sessionsLoaded ? (
                     <Box sx={{ px: 2, py: 3, textAlign: 'center' }}>
                         <Typography sx={{ fontSize: textVar.sm, color: 'text.disabled', fontStyle: 'italic' }}>
                             {t('sidebar.noSessions', { defaultValue: 'No saved sessions' })}
                         </Typography>
                     </Box>
-                ) : (
+                ) : <PanelLoadingSpinner />) : (
                     (() => {
-                    let previousGroup: SessionDateGroup | null = null;
-                    return sortedSessions.map((s, index) => {
+                    // Starred sessions sit in their own group above the dated list (and aren't repeated in it).
+                    const starredSessions = sortedSessions.filter(s => s.starred);
+                    const ordered = [...starredSessions, ...sortedSessions.filter(s => !s.starred)];
+                    let previousGroup: SessionDateGroup | 'starred' | null = null;
+                    return ordered.slice(0, sessionRowCount).map((s, index) => {
                         const isRenaming = renamingSession === s.id;
                         const isCurrent = activeWorkspace?.id === s.id;
-                        const date = s.saved_at ? new Date(s.saved_at).toLocaleDateString() : '';
                         const time = sessionTime(s);
-                        const group = sessionsGrouped ? sessionDateGroup(time) : null;
-                        const header = group && group !== previousGroup ? group : null;
+                        const group = s.starred ? 'starred' : sessionsGrouped ? sessionDateGroup(time) : null;
+                        // An ungrouped list still gets a rule between the starred group and the rest.
+                        const header = group !== previousGroup ? group : null;
+                        const divider = !header && index > 0 && previousGroup === 'starred' && !s.starred;
                         previousGroup = group;
-                        const stamp = sessionsGrouped ? '' : formatCompactTime(time);
+                        const stamp = sessionsGrouped && !s.starred ? '' : formatCompactTime(time);
                         return (
                         <React.Fragment key={s.id}>
                         {header && <Typography component="h3" sx={{ ...sessionGroupHeaderSx, px: 1.25, pt: index === 0 ? 0.75 : 1.5,
-                            mt: index === 0 ? 0 : 0.5, borderTop: index === 0 ? 0 : 1, borderColor: 'divider' }}>{sessionGroupLabels[header]}</Typography>}
+                            mt: index === 0 ? 0 : 0.5, borderTop: index === 0 ? 0 : 1, borderColor: 'divider' }}>
+                            {header === 'starred' ? t('workspace.starred') : sessionGroupLabels[header]}</Typography>}
+                        {divider && <Box role="separator" sx={{ borderTop: 1, borderColor: 'divider', mt: 0.5, mb: 0.5 }} />}
                         <ItemCard
                             mini
+                            starred={s.starred}
                             active={sessionMenu?.session.id === s.id}
                             title={s.display_name}
                             current={isCurrent}
                             tooltip={buildSessionTooltip(s, isCurrent)}
                             onOpen={() => handleOpenSession(s.id, s.display_name)}
                             onOpenInNewTab={() => openSessionInNewTab(s.id)}
-                            rename={isRenaming && !sessionsDialogOpen ? { value: renameSessionDraft, label: t('sidebar.rename', { defaultValue: 'Rename' }),
+                            rename={isRenaming ? { value: renameSessionDraft, label: t('sidebar.rename', { defaultValue: 'Rename' }),
                                 onChange: setRenameSessionDraft, onCommit: commitRenameSession, onCancel: cancelRenameSession } : undefined}
                             badges={sessionBadges(s)}
                             captions={[stamp]}
@@ -2125,6 +1963,7 @@ const DataSourceSidebarPanel: React.FC<{
                     });
                     })()
                 )}
+                {sessionRowSentinel}
             </ScrollFadeContainer>
             <Menu anchorEl={sessionMenu?.anchor} open={!!sessionMenu} onClose={() => setSessionMenu(null)} disableRestoreFocus
                 transitionDuration={{ enter: 120, exit: 0 }}
@@ -2139,15 +1978,18 @@ const DataSourceSidebarPanel: React.FC<{
                         if (!afterClose) action();
                     };
                     return [
+                        <MenuItem key="star" onClick={run(() => void toggleStarSession(s))}>
+                            <ListItemIcon>{s.starred ? <StarRoundedIcon sx={{ color: starredColor }} /> : <StarBorderRoundedIcon />}</ListItemIcon>
+                            <ListItemText primary={s.starred ? t('workspace.unstar') : t('workspace.star')} />
+                        </MenuItem>,
                         <MenuItem key="rename" onClick={run(() => startRenameSession(s.id, s.display_name), true)}>
                             <ListItemIcon><EditIcon /></ListItemIcon><ListItemText primary={t('sidebar.rename', { defaultValue: 'Rename' })} />
                         </MenuItem>,
                         <MenuItem key="export" onClick={run(() => handleExportSession(s.id, s.display_name))}>
                             <ListItemIcon><DownloadIcon /></ListItemIcon><ListItemText primary={t('sidebar.exportSession', { defaultValue: 'Export' })} />
                         </MenuItem>,
-                        ...(serverConfig?.CAN_CONFIGURE ? [<MenuItem key="publish" onClick={run(() => void handlePublishExample(s.id, s.display_name))}>
-                            <ListItemIcon><PublishOutlinedIcon /></ListItemIcon>
-                            <ListItemText primary={t('workspace.publishExample', { defaultValue: 'Publish as example' })} />
+                        ...(wormholeAvailable ? [<MenuItem key="wormhole" onClick={run(() => requestWormholeDialog({ kind: 'send', workspaceId: s.id, displayName: s.display_name }))}>
+                            <ListItemIcon><WormholeSendIcon /></ListItemIcon><ListItemText primary={t('wormhole.send')} />
                         </MenuItem>] : []),
                         <MenuItem key="delete" onClick={run(() => handleDeleteSession(s.id))} sx={{ color: 'error.main' }}>
                             <ListItemIcon sx={{ color: 'inherit' }}><DeleteIcon /></ListItemIcon><ListItemText primary={t('workspace.deleteSession')} />
@@ -2155,47 +1997,16 @@ const DataSourceSidebarPanel: React.FC<{
                     ];
                 })()}
             </Menu>
-            <SessionsDialog open={sessionsDialogOpen} onClose={() => { cancelRenameSession(); setSessionsDialogOpen(false); }}
-                title={t('sidebar.sessions', { defaultValue: 'Sessions' })} sessions={sortedSessions}
-                groupTime={sessionsGrouped ? sessionTime : undefined}
-                renderCard={s => {
-                                const isCurrent = activeWorkspace?.id === s.id;
-                                return <ItemCard key={s.id}
-                                    title={s.display_name}
-                                    current={isCurrent}
-                                    onOpen={() => { setSessionsDialogOpen(false); void handleOpenSession(s.id, s.display_name); }}
-                                    onOpenInNewTab={() => openSessionInNewTab(s.id)}
-                                    rename={renamingSession === s.id ? { value: renameSessionDraft, label: t('sidebar.rename', { defaultValue: 'Rename' }),
-                                        onChange: setRenameSessionDraft, onCommit: commitRenameSession, onCancel: cancelRenameSession } : undefined}
-                                    badges={sessionBadges(s)}
-                                    captions={[isCurrent ? t('sidebar.currentSession') : '', sessionCounts(s),
-                                        sessionsGrouped ? '' : formatCompactTime(sessionTime(s))]}
-                                    actions={(!s.read_only || !isCurrent) ? <>
-                                        {!isCurrent && <ItemCardAction label={t('sidebar.openInNewTab', { defaultValue: 'Open in new tab' })}
-                                            icon={<OpenInNewIcon />} onClick={() => openSessionInNewTab(s.id)} />}
-                                        {!s.read_only && <>
-                                            <ItemCardAction label={t('sidebar.rename', { defaultValue: 'Rename' })} icon={<EditIcon />}
-                                                onClick={() => startRenameSession(s.id, s.display_name)} />
-                                            <ItemCardAction label={t('sidebar.exportSession', { defaultValue: 'Export' })} icon={<DownloadIcon />}
-                                                onClick={() => handleExportSession(s.id, s.display_name)} />
-                                            <ItemCardAction danger label={t('workspace.deleteSession')} icon={<DeleteIcon />}
-                                                onClick={() => handleDeleteSession(s.id)} />
-                                        </>}
-                                    </> : undefined} />;
-                            }} />
             </Box>
             )}
 
-            {/* ── Knowledge tab ── */}
-            {activeTab === 'knowledge' && (
+            {/* ── Workflows tab ── */}
+            {activeTab === 'workflows' && (
             <Box sx={{ flex: '0 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <WorkflowPanel onCreateSession={createNewSession} onOpenSession={handleOpenSession} headerActions={panelHeaderActions} />
             </Box>
             )}
 
-            {activeTab === 'schedules' && (
-                <SchedulesPanel onOpenSession={openRunSession} headerActions={panelHeaderActions} />
-            )}
 
         </Box>
     );

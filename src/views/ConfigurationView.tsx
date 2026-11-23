@@ -19,6 +19,7 @@ import { iconVar, textVar } from '../app/layout';
 import { getConnectorIcon } from '../icons';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { PublishedExamplesPanel } from './ExampleSessions';
+import { ink, paper, weight } from '../app/tokens';
 
 type Entry = { enabled?: boolean; display_name?: string; description?: string; content?: string; file?: string; reasoning_effort?: string };
 type ConnectionSettings = { credential_ref: string; endpoint?: string; model?: string; api_base?: string; api_version?: string;
@@ -28,6 +29,7 @@ type Overrides = { models?: Record<string, Entry>; connectors?: Record<string, E
     terminal_mode?: 'off' | 'ask' | 'auto';
     disable_user_connectors?: boolean;
     disable_user_models?: boolean;
+    share_links?: boolean;
     default_model?: string; limits?: Record<string, number>; allowed_api_bases?: string[];
     connections?: Partial<Record<'models' | 'connectors', Record<string, string | ConnectionSettings>>> };
 type CatalogItem = { id: string; model?: string; endpoint?: string; display_name?: string; description?: string; name?: string; content?: string; source?: string; type?: string;
@@ -36,6 +38,7 @@ type Snapshot = { version?: number; revision: number; overrides: Overrides; cata
     terminal?: { available: boolean; mode: 'off' | 'ask' | 'auto'; locked: boolean };
     user_connectors?: { disabled: boolean; locked: boolean };
     user_models?: { disabled: boolean; locked: boolean };
+    share_links?: { enabled: boolean; locked: boolean };
     loader_types?: React.ComponentProps<typeof ConnectorSetupForm>['loaderTypes'];
     allowed_api_bases?: { locked: boolean; value: string[] | null };
     limits: Record<string, { value: number; default: number; locked: boolean; source: string }> };
@@ -181,7 +184,7 @@ export const ConfigurationView = () => {
         '& .MuiButton-root': { textTransform: 'none', fontSize: textVar.md } }}>
         <Box sx={{ width: '100%', maxWidth: 720, mx: 'auto', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 1, flexShrink: 0 }}>
-                <Typography component="h1" sx={{ fontSize: textVar.xl, fontWeight: 600, flex: 1, minWidth: 0 }}>{t('administration.title')}</Typography>
+                <Typography component="h1" sx={{ fontSize: textVar.xl, fontWeight: weight(600), flex: 1, minWidth: 0 }}>{t('administration.title')}</Typography>
                 <Tooltip title={t('administration.reload')}><span><IconButton size="small" aria-label={t('administration.reload')} disabled={busy || dirty} onClick={load}><RefreshIcon sx={{ fontSize: iconVar.md }} /></IconButton></span></Tooltip>
             </Box>
             <Typography variant="body2" color="text.secondary" sx={{ px: 2, pb: 1.5 }}>
@@ -204,7 +207,7 @@ export const ConfigurationView = () => {
                     <Tab id="configuration-json-tab" aria-controls="configuration-json-panel" value="json" label="JSON" />
                 </Tabs>
                 {view === 'json' && <Box role="tabpanel" id="configuration-json-panel" aria-labelledby="configuration-json-tab" sx={{ px: 2, py: 1.5 }}>
-                    <Typography component="h2" sx={{ fontSize: textVar.md, fontWeight: 600 }}>{t('administration.jsonTitle')}</Typography>
+                    <Typography component="h2" sx={{ fontSize: textVar.md, fontWeight: weight(600) }}>{t('administration.jsonTitle')}</Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, mb: 1.5 }}>
                         {t('administration.jsonSecrets')}
                     </Typography>
@@ -222,7 +225,7 @@ export const ConfigurationView = () => {
                 <Dialog open={adding} onClose={() => { if (!testing) setAdding(false); }} fullWidth maxWidth={tab === 'models' ? 'sm' : 'md'}
                     slotProps={{ paper: { sx: tab === 'connectors' ? { maxWidth: editing ? 900 : 1120, height: 680 } : {} } }}
                     aria-labelledby="configuration-add-title">
-                <DialogTitle id="configuration-add-title" sx={{ fontSize: textVar.xl, fontWeight: 600 }}>{t(`administration.${editing ? 'edit' : 'add'}${tab === 'models' ? 'Model' : tab === 'connectors' ? 'Connection' : 'Workflow'}`)}</DialogTitle>
+                <DialogTitle id="configuration-add-title" sx={{ fontSize: textVar.xl, fontWeight: weight(600) }}>{t(`administration.${editing ? 'edit' : 'add'}${tab === 'models' ? 'Model' : tab === 'connectors' ? 'Connection' : 'Workflow'}`)}</DialogTitle>
                 <DialogContent sx={tab === 'connectors' ? { p: 0, display: 'flex', flexDirection: 'column' } : {}}>
                 {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
                 <Box component="fieldset" disabled={busy || testing} sx={{ border: 0, p: 0, pt: 1, m: 0, minWidth: 0,
@@ -230,8 +233,9 @@ export const ConfigurationView = () => {
                 {environmentManaged && <Alert severity="info" sx={{ mb: 2 }}>{t('administration.environmentManaged')}</Alert>}
                 {editing && tab === 'models' && <Box sx={{ display: 'grid', gap: 1.5, mb: 1.5 }}>
                     <TextField size="small" label={t('administration.displayName')} value={propertyName} onChange={event => setPropertyName(event.target.value)} />
-                    <TextField size="small" select label={t('model.thinking')} value={propertyReasoning || 'low'} helperText={t('model.thinkingHint')}
-                        onChange={event => setPropertyReasoning(event.target.value === 'low' ? '' : event.target.value)}>
+                    <TextField size="small" select label={t('model.thinking')} value={propertyReasoning || 'default'} helperText={t('model.thinkingHint')}
+                        onChange={event => setPropertyReasoning(event.target.value === 'default' ? '' : event.target.value)}>
+                        <MenuItem value="default">{t('model.thinkingDefault')}</MenuItem>
                         <MenuItem value="low">{t('model.thinkingLow')}</MenuItem>
                         <MenuItem value="medium">{t('model.thinkingMedium')}</MenuItem>
                         <MenuItem value="high">{t('model.thinkingHigh')}</MenuItem>
@@ -285,7 +289,7 @@ export const ConfigurationView = () => {
                 </Dialog>
                 <Box component="fieldset" disabled={busy || testing} sx={{ border: 0, m: 0, px: 2, py: 0, minWidth: 0 }}>
                 <Box sx={{ py: 2, borderBottom: 1, borderColor: 'divider', display: 'grid', gap: 1.5 }}>
-                    <Typography component="h2" sx={{ fontSize: textVar.lg, fontWeight: 600 }}>{t('administration.appearance')}</Typography>
+                    <Typography component="h2" sx={{ fontSize: textVar.lg, fontWeight: weight(600) }}>{t('administration.appearance')}</Typography>
                     <Typography id="appearance-description" variant="body2" color="text.secondary">
                         {t('administration.appearanceDescription')}
                     </Typography>
@@ -301,8 +305,8 @@ export const ConfigurationView = () => {
                         <Box component="figure" aria-label={t('administration.appearancePreview')} sx={{ m: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
                             <Typography component="figcaption" variant="caption" color="text.secondary" sx={{ lineHeight: '16px', mb: '4px' }}>{t('administration.preview')}</Typography>
                             <Box sx={{ height: 112, flex: 1, overflow: 'auto', px: 1.5, py: 1, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'safe center', textAlign: 'center',
-                                border: 1, borderColor: 'divider', borderRadius: 1, backgroundColor: '#ffffff', color: '#202020',
-                                backgroundImage: 'linear-gradient(90deg, rgba(0, 0, 0, 0.018) 1px, transparent 1px), linear-gradient(0deg, rgba(0, 0, 0, 0.018) 1px, transparent 1px)',
+                                border: 1, borderColor: 'divider', borderRadius: 1, backgroundColor: paper(), color: '#202020',
+                                backgroundImage: `linear-gradient(90deg, ${ink(0.018)} 1px, transparent 1px), linear-gradient(0deg, ${ink(0.018)} 1px, transparent 1px)`,
                                 backgroundSize: '12px 12px' }}>
                                 <Typography sx={{ fontSize: 18, lineHeight: 1.2, letterSpacing: 0, overflowWrap: 'anywhere' }}>
                                     {draft.app_name?.trim() || 'Data Formulator'}
@@ -336,14 +340,14 @@ export const ConfigurationView = () => {
                     }}>{t(`administration.add${tab === 'models' ? 'Model' : tab === 'connectors' ? 'Connection' : 'Workflow'}`)}</Button>;
                     return <Box component="section" key={tab} aria-labelledby={`configuration-${tab}-heading`} aria-describedby={`configuration-${tab}-description`} sx={{ mt: 2, mb: 3 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, pb: 0.75, mb: 1.5, borderBottom: 1, borderColor: theme => alpha(theme.palette.text.primary, 0.24) }}>
-                    <Typography id={`configuration-${tab}-heading`} component="h2" sx={{ fontSize: textVar.lg, fontWeight: 600, color: 'text.primary', flex: 1 }}>{t(`administration.${tab}Heading`)}</Typography>
+                    <Typography id={`configuration-${tab}-heading`} component="h2" sx={{ fontSize: textVar.lg, fontWeight: weight(600), color: 'text.primary', flex: 1 }}>{t(`administration.${tab}Heading`)}</Typography>
                     </Box>
                     <Box sx={{ pl: { xs: 1, sm: 2 }, minWidth: 0 }}>
                     <Typography id={`configuration-${tab}-description`} variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, lineHeight: 1.5 }}>
                         {sectionDescription}
                     </Typography>
                 {tab === 'connectors' && <Box sx={{ mb: 1.5 }}>
-                    <Typography component="h3" sx={{ fontSize: textVar.md, fontWeight: 600, mb: 0.75 }}>{t('administration.userConnections')}</Typography>
+                    <Typography component="h3" sx={{ fontSize: textVar.md, fontWeight: weight(600), mb: 0.75 }}>{t('administration.userConnections')}</Typography>
                     <Box sx={{ pl: 2, '& .MuiCheckbox-root': { p: 0.5 }, '& .MuiFormControlLabel-root': { gap: 1 } }}>
                     <FormControlLabel sx={{ mx: 0, gap: 0.5 }} label={t('administration.disableUserConnections')} control={<Checkbox size="small"
                         disabled={saved.user_connectors?.locked} checked={saved.user_connectors?.locked ? saved.user_connectors.disabled : draft.disable_user_connectors ?? saved.user_connectors?.disabled ?? false}
@@ -355,7 +359,7 @@ export const ConfigurationView = () => {
                     </Box>
                 </Box>}
                 {tab === 'connectors' && rows.some(item => item.id === 'sample_datasets') && <Box sx={{ mb: 1.5 }}>
-                    <Typography component="h3" sx={{ fontSize: textVar.md, fontWeight: 600, mb: 0.75 }}>{t('administration.exampleDatasets')}</Typography>
+                    <Typography component="h3" sx={{ fontSize: textVar.md, fontWeight: weight(600), mb: 0.75 }}>{t('administration.exampleDatasets')}</Typography>
                     <Box sx={{ pl: 2 }}>
                     <FormControlLabel sx={{ mx: 0, gap: 1 }} label={t('administration.showExampleDatasets')}
                     control={<Switch size="small" checked={draft.connectors?.sample_datasets?.enabled ?? true}
@@ -376,7 +380,7 @@ export const ConfigurationView = () => {
                             }))} />} />
                 </Box>}
                 {tab === 'models' && <Box sx={{ mb: 1.5 }}>
-                    <Typography id="configuration-user-models-label" component="h3" sx={{ fontSize: textVar.md, fontWeight: 600, mb: 0.75 }}>{t('administration.userModels')}</Typography>
+                    <Typography id="configuration-user-models-label" component="h3" sx={{ fontSize: textVar.md, fontWeight: weight(600), mb: 0.75 }}>{t('administration.userModels')}</Typography>
                     <Box sx={{ pl: 2, '& .MuiRadio-root': { p: 0.5 }, '& .MuiFormControlLabel-root': { gap: 1 } }}>
                     <RadioGroup row aria-labelledby="configuration-user-models-label" aria-describedby="configuration-user-models-description" value={modelPolicy} sx={{ columnGap: 1.5, rowGap: 0.5 }}
                         onChange={(_, value) => setDraft(previous => {
@@ -414,7 +418,7 @@ export const ConfigurationView = () => {
                     </Box>
                 </Box>}
                 {(tab === 'models' || tab === 'connectors') && <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 1 }}>
-                    <Typography component="h3" sx={{ fontSize: textVar.md, fontWeight: 600, flex: 1 }}>
+                    <Typography component="h3" sx={{ fontSize: textVar.md, fontWeight: weight(600), flex: 1 }}>
                         {tab === 'models' ? t('administration.sharedModels') : t('administration.sharedConnections')}
                     </Typography>
                 </Box>}
@@ -434,7 +438,7 @@ export const ConfigurationView = () => {
                     const contentSx = { display: 'flex', flex: 1, minWidth: 0, alignItems: 'flex-start', justifyContent: 'flex-start', gap: 0.75, pl: 1, pr: 7, py: 1 };
                     const content = <>
                         {section === 'connectors' && getConnectorIcon(item.type || item.id, { sx: { fontSize: iconVar.lg, color: 'text.secondary', mt: 0.25 } })}
-                        <Box sx={{ flex: 1, minWidth: 0 }}><Typography sx={{ overflowWrap: 'anywhere', fontWeight: 500 }}>{name}</Typography>
+                        <Box sx={{ flex: 1, minWidth: 0 }}><Typography sx={{ overflowWrap: 'anywhere', fontWeight: weight(500) }}>{name}</Typography>
                             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25, overflowWrap: 'anywhere' }}>{item.endpoint || saved.loader_types?.find(loader => loader.type === item.type)?.name || item.source || t('administration.environment')}</Typography>
                             {section === 'models' && item.definition?.api_base && <Tooltip title={item.definition.api_base}>
                                 <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', mt: 0.25 }}>{item.definition.api_base}</Typography>
@@ -477,13 +481,27 @@ export const ConfigurationView = () => {
                 {addAction}
                 </Box>
                 {tab === 'workflows' && <Box component="section" aria-labelledby="configuration-examples-heading" sx={{ mt: 2.5 }}>
-                    <Typography id="configuration-examples-heading" component="h3" sx={{ fontSize: textVar.md, fontWeight: 600, mb: 0.5 }}>{t('administration.exampleSessions')}</Typography>
+                    <Typography id="configuration-examples-heading" component="h3" sx={{ fontSize: textVar.md, fontWeight: weight(600), mb: 0.5 }}>{t('administration.exampleSessions')}</Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.25, lineHeight: 1.5 }}>
                         {t('administration.exampleSessionsHint')}
                     </Typography>
                     <PublishedExamplesPanel />
                 </Box>}
                 {tab === 'connectors' && !cardRows.length && <Typography variant="body2" color="text.secondary">{t('administration.noDataSources')}</Typography>}
+                {tab === 'limits' && saved.share_links && <Box sx={{ mb: 1.5 }}>
+                    <Typography component="h3" sx={{ fontSize: textVar.md, fontWeight: weight(600), mb: 0.75 }}>{t('administration.sharing')}</Typography>
+                    <Box sx={{ pl: 2 }}>
+                    <FormControlLabel sx={{ mx: 0, gap: 1 }} label={t('administration.shareLinks')}
+                        control={<Switch size="small" disabled={saved.share_links.locked}
+                            checked={saved.share_links.locked ? saved.share_links.enabled : draft.share_links ?? saved.share_links.enabled}
+                            slotProps={{ input: { role: 'switch', 'aria-describedby': 'configuration-share-links-description' } }}
+                            onChange={(_, enabled) => setDraft(previous => ({ ...previous, share_links: enabled }))} />} />
+                    <Typography id="configuration-share-links-description" variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, lineHeight: 1.5 }}>
+                        {t('administration.shareLinksHint')}
+                        {saved.share_links.locked && ` ${t('administration.setByServer')}`}
+                    </Typography>
+                    </Box>
+                </Box>}
                 {tab === 'limits' && Object.entries(saved.limits).map(([name, setting]) => {
                     const divisor = name.endsWith('_bytes') ? 1048576 : 1;
                     const label = t(`administration.limits.${name}.label`, { defaultValue: name });

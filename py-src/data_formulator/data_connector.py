@@ -106,6 +106,49 @@ def classify_and_raise_connector_error(error: Exception, *, operation: str = "")
     raise_connector_error(error, operation=operation)
 
 
+def _record_table_read(
+    source: "DataConnector",
+    identifier: str,
+    error: Exception | None = None,
+    *,
+    operation: str = "",
+    kept_copy: str = "",
+) -> None:
+    """Keep the catalog cache in step with a table read; on failure raise the classified error.
+
+    A table the source confirms is gone leaves the catalog; one it lists but cannot read is
+    flagged; a successful read clears that flag. ``kept_copy`` describes a loaded copy that the
+    failure leaves in place (refreshes).
+    """
+    from data_formulator.data_loader.connector_errors import classify_connector_error
+    from data_formulator.datalake.catalog_cache import note_table_outcome
+
+    info = classify_connector_error(error, operation=operation) if error is not None else None
+    changed = 0
+    if identifier and (info is None or info.table_state):
+        try:
+            from data_formulator.datalake.workspace import get_user_home
+            changed = note_table_outcome(
+                get_user_home(source._get_identity()), source._source_id, identifier,
+                table_state=info.table_state if info else "", reason=info.reason if info else "",
+            )
+        except Exception:
+            logger.debug("Could not record the read of %s in %s", identifier, source._source_id, exc_info=True)
+    if info is None:
+        return
+    logger.error("DataConnector error operation=%s", operation or "unknown", exc_info=error)
+    notes = []
+    if changed and info.table_state == "missing":
+        notes.append("It was removed from the catalog.")
+    if kept_copy and info.table_state == "missing":
+        notes.append(kept_copy)
+    if not notes:
+        raise info.to_app_error() from error
+    reason = " ".join([info.reason or info.message, *notes])
+    message = reason if info.message == info.reason else f"{info.message}: {reason}"
+    raise AppError(info.code, message, detail=info.detail or None, retry=info.retry, reason=reason) from error
+
+
 def _sanitize_error(error: Exception) -> tuple[str, int]:
     """Legacy wrapper — prefer ``classify_and_raise_connector_error``."""
     from data_formulator.errors import AppError
@@ -225,9 +268,17 @@ def _catalog_tree_payload(
     return _lightweight_tree_for_response(tree)
 
 
+def _scope_key() -> str:
+    """The current scope's part of a user connector's registry key: empty in the standard app, ``site:<id>::`` (named before spaces were) in a
+    space, whose user connectors are stored apart (``get_user_home``) and must not be mixed up in memory either."""
+    from data_formulator.spaces import current_space
+    space = current_space()
+    return f"site:{space}::" if space else ""
+
+
 def _user_connector_key(identity: str, source_id: str) -> str:
-    """Return the internal registry key for a user-owned connector."""
-    return f"{_USER_CONNECTOR_PREFIX}{identity}::{source_id}"
+    """Return the internal registry key for a user-owned connector in the current scope."""
+    return f"{_USER_CONNECTOR_PREFIX}{_scope_key()}{identity}::{source_id}"
 
 
 def _is_user_connector_key(key: str) -> bool:
@@ -284,6 +335,23 @@ def _loader_auth_mode(loader_class: type[ExternalDataLoader]) -> str:
     return config.get("mode") if config else loader_class.auth_mode()
 
 
+def _admin_connector_visible(key: str) -> bool:
+    """Whether the current request may use the admin connector ``key``: in the standard app, all but the spaces'
+    data folders; in a space, those it shows (``spaces.current_space_connector_ids``)."""
+    from data_formulator.spaces import current_space, current_space_connector_ids
+
+    if key in _SPACE_FOLDER_CONNECTORS:
+        return current_space() == _SPACE_FOLDER_CONNECTORS[key]
+    allowed = current_space_connector_ids()
+    return allowed is None or key in allowed
+
+
+def visible_admin_connector_ids() -> set[str]:
+    """The admin connector ids the current request may use (see ``_admin_connector_visible``)."""
+    _sync_space_folder_connectors()
+    return {key for key in _ADMIN_CONNECTOR_IDS if _admin_connector_visible(key)}
+
+
 def _visible_connector_items(identity: str | None) -> list[tuple[str, "DataConnector", bool]]:
     """Return registry entries visible to the current identity.
 
@@ -304,13 +372,14 @@ def _visible_connector_items(identity: str | None) -> list[tuple[str, "DataConne
         load_connectors(identity)
 
     result = []
-    user_prefix = f"{_USER_CONNECTOR_PREFIX}{identity}::" if identity else None
+    user_prefix = f"{_USER_CONNECTOR_PREFIX}{_scope_key()}{identity}::" if identity else None
     from data_formulator.configuration import read_configuration
     _sync_installation_connectors()
+    _sync_space_folder_connectors()
     configured_connectors = read_configuration()['overrides'].get('connectors', {})
     for key, connector in DATA_CONNECTORS.items():
         if key in _ADMIN_CONNECTOR_IDS:
-            if not configured_connectors.get(key, {}).get('enabled', True):
+            if not configured_connectors.get(key, {}).get('enabled', True) or not _admin_connector_visible(key):
                 continue
             result.append((key, connector, True))
         elif disabled:
@@ -347,10 +416,13 @@ def _resolve_connector_with_key(data: dict[str, Any]) -> tuple[str, "DataConnect
 
     # Admin/global connector IDs are public registry keys.
     _sync_installation_connectors()
+    _sync_space_folder_connectors()
     if connector_id in _ADMIN_CONNECTOR_IDS and connector_id in DATA_CONNECTORS:
         from data_formulator.configuration import resource_enabled
         if not resource_enabled('connectors', connector_id):
             raise AppError(ErrorCode.ACCESS_DENIED, 'This connector is disabled by the administrator.')
+        if not _admin_connector_visible(connector_id):
+            raise AppError(ErrorCode.ACCESS_DENIED, 'This space does not offer this connector.')
         return connector_id, DATA_CONNECTORS[connector_id]
 
     if user_connectors_disabled():
@@ -367,6 +439,23 @@ def _resolve_connector_with_key(data: dict[str, Any]) -> tuple[str, "DataConnect
         return connector_id, legacy
 
     raise AppError(ErrorCode.CONNECTOR_ERROR, "Connector not found")
+
+
+# Connector parameters that name a network host or URL.
+_HOST_PARAMS = ("host", "server", "endpoint", "url", "api_url")
+
+
+def _reject_metadata_hosts(user_params: dict[str, Any]) -> None:
+    """Refuse user-supplied hosts that reach cloud instance metadata (SSRF)."""
+    from data_formulator.security.url_allowlist import reject_cloud_metadata_host
+
+    for key in _HOST_PARAMS:
+        value = user_params.get(key)
+        if isinstance(value, str) and value.strip():
+            try:
+                reject_cloud_metadata_host(value)
+            except ValueError as e:
+                raise AppError(ErrorCode.ACCESS_DENIED, str(e)) from e
 
 
 # ---------------------------------------------------------------------------
@@ -402,6 +491,9 @@ class DataConnector:
         # In-process cache; cleared on disconnect.
         self._loaders: dict[str, ExternalDataLoader] = {}
         self._loaders_configured_only = False
+        # Admin connectors marked auto_connect connect with their configured (host) credentials when listed.
+        self._auto_connect = False
+        self._auto_connect_failed: dict[str, float] = {}
 
     # -- Factory -----------------------------------------------------------
 
@@ -447,7 +539,7 @@ class DataConnector:
 
     def _uses_configured_params(self) -> bool:
         from data_formulator.configuration import user_connectors_disabled
-        return bool(getattr(self, '_installation_reference', None) or (
+        return bool(getattr(self, '_installation_reference', None) or getattr(self, '_space_id', None) or (
             self._source_id in _ADMIN_CONNECTOR_IDS and user_connectors_disabled()))
 
     def get_frontend_config(self, include_pinned_in_form: bool = False) -> dict[str, Any]:
@@ -542,13 +634,19 @@ class DataConnector:
         from data_formulator.auth.vault import get_credential_vault
         return get_credential_vault()
 
+    def _vault_owner(self, identity: str) -> str:
+        """Whose credentials these are: a space's own (user) connection keeps them apart from the standard app's;
+        an admin connection's sign-in is the user's in every scope."""
+        space = getattr(self, "_owner_space", None)
+        return f"{identity}@site:{space}" if space else identity
+
     def _vault_store(self, identity: str, user_params: dict[str, Any]) -> bool:
         """Encrypt and persist user_params for this source. Returns True on success."""
         vault = self._get_vault()
         if vault is None:
             return False
         try:
-            vault.store(identity, self._source_id, {
+            vault.store(self._vault_owner(identity), self._source_id, {
                 "user_params": user_params,
                 "source_id": self._source_id,
             })
@@ -564,7 +662,7 @@ class DataConnector:
         if vault is None:
             return None
         try:
-            data = vault.retrieve(identity, self._source_id)
+            data = vault.retrieve(self._vault_owner(identity), self._source_id)
             if data and "user_params" in data:
                 return data["user_params"]
             return None
@@ -579,7 +677,7 @@ class DataConnector:
         if vault is None:
             return
         try:
-            vault.delete(identity, self._source_id)
+            vault.delete(self._vault_owner(identity), self._source_id)
         except Exception as exc:
             logger.warning("Failed to delete credentials for %s/%s: %s",
                            identity[:16], self._source_id, exc)
@@ -590,7 +688,7 @@ class DataConnector:
         if vault is None:
             return False
         try:
-            return self._source_id in vault.list_sources(identity)
+            return self._source_id in vault.list_sources(self._vault_owner(identity))
         except Exception as e:
             logger.debug("Could not check stored credentials for %s", self._source_id, exc_info=e)
             return False
@@ -612,7 +710,10 @@ class DataConnector:
         """
         identity = self._get_identity()
         self._get_loader(identity)
-        merged = dict(self._default_params) if self._uses_configured_params() else {**self._default_params, **user_params}
+        configured_only = self._uses_configured_params()
+        if not configured_only:
+            _reject_metadata_hosts(user_params)
+        merged = dict(self._default_params) if configured_only else {**self._default_params, **user_params}
         self._inject_credentials(merged)
 
         # Pre-validate: skip auth-tier params when tokens are present (SSO flow)
@@ -883,6 +984,8 @@ def resolve_catalog_refresh_target(
         from data_formulator.errors import AppError, ErrorCode
         if not resource_enabled('connectors', source_id):
             raise AppError(ErrorCode.ACCESS_DENIED, 'This connector is disabled by the administrator.')
+        if not _admin_connector_visible(source_id):
+            raise AppError(ErrorCode.ACCESS_DENIED, 'This space does not offer this connector.')
         connector = DATA_CONNECTORS[source_id]
     else:
         _, connector = _resolve_connector_with_key({"connector_id": source_id})
@@ -904,6 +1007,22 @@ def resolve_catalog_refresh_target(
         if hasattr(connector, "_loaders") and 'identity' in locals():
             connector._loaders[identity] = loader
     return loader_class, loader
+
+
+_AUTO_CONNECT_RETRY_SECONDS = 60
+
+
+def _auto_connect_now(connector: DataConnector, identity: str) -> bool:
+    """Connect an auto_connect admin connector with its configured credentials; after a failure, wait a minute
+    before trying again so listing connectors stays fast."""
+    if time.time() - connector._auto_connect_failed.get(identity, 0) < _AUTO_CONNECT_RETRY_SECONDS:
+        return False
+    if connector._try_ambient_reconnect(identity) is not None:
+        connector._auto_connect_failed.pop(identity, None)
+        return True
+    connector._auto_connect_failed[identity] = time.time()
+    logger.info("Auto-connect failed for '%s'; retrying in %ds", connector._source_id, _AUTO_CONNECT_RETRY_SECONDS)
+    return False
 
 
 def _connector_connection_status(
@@ -932,6 +1051,8 @@ def _connector_connection_status(
     connected = connector._get_loader(identity) is not None or has_stored
     if connected:
         return True, has_stored, False
+    if getattr(connector, "_auto_connect", False) is True and _auto_connect_now(connector, identity):
+        return True, False, False
 
     sso_auto = False
     if sso_token is not None and auth_mode in ("token", "sso_exchange", "delegated"):
@@ -1145,6 +1266,7 @@ def discover_data_loader_options():
 
     params = dict(data.get("params") or {})
     connector_id = data.get("connector_id")
+    configured_only = False
     if connector_id:
         source = _resolve_connector({"connector_id": connector_id})
         if source._loader_class is not loader_class:
@@ -1152,7 +1274,10 @@ def discover_data_loader_options():
         identity = source._get_identity()
         stored = source._vault_retrieve(identity) or {}
         supplied = {k: v for k, v in params.items() if v not in (None, "")}
-        params = dict(source._default_params) if source._uses_configured_params() else {**source._default_params, **stored, **supplied}
+        configured_only = source._uses_configured_params()
+        params = dict(source._default_params) if configured_only else {**source._default_params, **stored, **supplied}
+    if not configured_only:
+        _reject_metadata_hosts(dict(data.get("params") or {}))
 
     try:
         options = loader_class.discover_param_options(param_name, params)
@@ -1524,6 +1649,8 @@ def create_connector():
         default_params=default_params,
         icon=icon,
     )
+    from data_formulator.spaces import current_space
+    connector._owner_space = current_space()
     registry_key = _user_connector_key(identity, instance_id)
     DATA_CONNECTORS[registry_key] = connector
 
@@ -1720,8 +1847,9 @@ def delete_connector(connector_id: str):
         from data_formulator.auth.identity import get_identity_id
         from data_formulator.datalake.workspace import get_user_home
         user_home = get_user_home(get_identity_id())
-        cancel_catalog_discovery(user_home, connector_id)
-        delete_catalog(user_home, connector_id)
+        # The registered connector's id, not the URL's: the same key catalog discovery used.
+        cancel_catalog_discovery(user_home, connector._source_id)
+        delete_catalog(user_home, connector._source_id)
     except Exception:
         logger.debug("Failed to delete catalog cache for '%s'", connector_id, exc_info=True)
 
@@ -1795,6 +1923,11 @@ def connector_connect():
             }
         else:
             user_params = data.get("params", {})
+            # An explicit connect is a fresh intent: lift any block left by a
+            # previous disconnect so SSO exchange can run again.
+            if not user_params.get("access_token") and not user_params.get("sso_access_token"):
+                from data_formulator.auth.token_store import TokenStore
+                TokenStore().allow_sso_reconnect(source._source_id)
 
         loader = source._connect(user_params)
 
@@ -2353,6 +2486,7 @@ def connector_import_file():
 def connector_import_data():
     data = request.get_json() or {}
     source = _resolve_connector(data)
+    source_id = ""
 
     try:
         loader = source._require_loader()
@@ -2401,6 +2535,7 @@ def connector_import_data():
             import_options=import_options or None,
             source_metadata=_cached_source_metadata(source, source_id),
         )
+        _record_table_read(source, source_id)
         return json_ok({
             "table_name": meta.name,
             "row_count": meta.row_count,
@@ -2409,13 +2544,14 @@ def connector_import_data():
     except AppError:
         raise
     except Exception as e:
-        classify_and_raise_connector_error(e, operation="import")
+        _record_table_read(source, source_id, e, operation="import")
 
 
 @connectors_bp.route("/api/connectors/refresh-data", methods=["POST"])
 def connector_refresh_data():
     data = request.get_json() or {}
     source = _resolve_connector(data)
+    meta = None
 
     try:
         loader = source._require_loader()
@@ -2454,6 +2590,7 @@ def connector_refresh_data():
                 workspace.add_table_metadata(new_meta)
         except Exception:
             pass  # keep existing descriptions if refresh fails
+        _record_table_read(source, meta.source_table)
 
         return json_ok({
             "table_name": table_name,
@@ -2463,7 +2600,11 @@ def connector_refresh_data():
     except AppError:
         raise
     except Exception as e:
-        classify_and_raise_connector_error(e, operation="refresh")
+        synced = getattr(meta, "last_synced", None)
+        _record_table_read(
+            source, getattr(meta, "source_table", "") or "", e, operation="refresh",
+            kept_copy="The loaded copy is kept" + (f" as of {synced:%Y-%m-%d %H:%M} UTC." if synced else "."),
+        )
 
 
 @connectors_bp.route("/api/connectors/preview-data", methods=["POST"])
@@ -2471,6 +2612,7 @@ def connector_preview_data():
     request_id = getattr(g, "request_id", None) or str(uuid4())
     started_at = time.monotonic()
     logger.info("[ConnectorPreview] start request_id=%s", request_id)
+    source = None
     try:
         data = request.get_json() or {}
         source = _resolve_connector(data)
@@ -2539,7 +2681,10 @@ def connector_preview_data():
             "[ConnectorPreview] failure request_id=%s duration_s=%.3f error_type=%s",
             request_id, time.monotonic() - started_at, type(e).__name__,
         )
-        classify_and_raise_connector_error(e, operation="preview")
+        raw_source = (request.get_json(silent=True) or {}).get("source_table")
+        if source is None:
+            classify_and_raise_connector_error(e, operation="preview")
+        _record_table_read(source, _parse_source_table(raw_source)[0] if raw_source else "", e, operation="preview")
 
 
 @connectors_bp.route("/api/connectors/column-values", methods=["POST"])
@@ -2737,6 +2882,7 @@ def _load_admin_specs() -> list[SourceSpec]:
             continue
         name = fields.pop("name", loader_type.replace("_", " ").title())
         icon = fields.pop("icon", "")
+        auto_connect = fields.pop("auto_connect", "").strip().lower() in ("1", "true", "yes", "on")
         params: dict[str, str] = {}
         other: dict[str, str] = {}
         for k, v in fields.items():
@@ -2751,6 +2897,7 @@ def _load_admin_specs() -> list[SourceSpec]:
             display_name=name,
             default_params=params,
             icon=icon,
+            auto_connect=auto_connect,
             source="admin",
         ))
 
@@ -2850,8 +2997,35 @@ def _sync_installation_connectors():
         DATA_CONNECTORS[identifier] = connector
         _ADMIN_CONNECTOR_IDS.add(identifier)
 
+# Spaces' data folders (spaces.space_folder_sources), by connector id: the space each belongs to.
+_SPACE_FOLDER_CONNECTORS: dict[str, str] = {}
+
+
+def _sync_space_folder_connectors() -> None:
+    """Register the current request's space data folders as admin connectors: read-only local folders the server
+    chose, so not subject to the local-folder loader's local-mode limit, and offered only in that space."""
+    from data_formulator.spaces import current_space, space_folder_sources
+
+    space = current_space()
+    if space is None:
+        return
+    from data_formulator.data_loader.local_folder_data_loader import LocalFolderDataLoader
+
+    for identifier, label, path in space_folder_sources(space):
+        existing = DATA_CONNECTORS.get(identifier)
+        if existing is not None and existing._default_params.get("root_dir") == str(path):
+            continue
+        connector = DataConnector.from_loader(LocalFolderDataLoader, identifier, display_name=label,
+                                              default_params={"root_dir": str(path), "recursive": True}, icon="local_folder")
+        connector._auto_connect = True
+        connector._space_id = space
+        DATA_CONNECTORS[identifier] = connector
+        _ADMIN_CONNECTOR_IDS.add(identifier)
+        _SPACE_FOLDER_CONNECTORS[identifier] = space
+
+
 # Track identities whose user connectors have been loaded.
-_LOADED_USER_IDENTITIES: set[str] = set()
+_LOADED_USER_IDENTITIES: set[tuple[str | None, str]] = set()
 
 
 def load_connectors(identity: str | None = None) -> None:
@@ -2862,11 +3036,14 @@ def load_connectors(identity: str | None = None) -> None:
     request.  Subsequent calls for the same identity are no-ops.
     """
     from data_formulator.data_loader import DATA_LOADERS
+    from data_formulator.spaces import current_space
 
-    if not identity or identity in _LOADED_USER_IDENTITIES:
+    # Each scope (the standard app, each space) has its own user connectors on disk (get_user_home).
+    loaded = (current_space(), identity)
+    if not identity or loaded in _LOADED_USER_IDENTITIES:
         return
 
-    _LOADED_USER_IDENTITIES.add(identity)
+    _LOADED_USER_IDENTITIES.add(loaded)
 
     user_specs = _load_user_specs(identity)
     for spec in user_specs:
@@ -2885,6 +3062,7 @@ def load_connectors(identity: str | None = None) -> None:
             default_params=spec.default_params,
             icon=spec.icon or spec.loader_type,
         )
+        source._owner_space = current_space()
         DATA_CONNECTORS[registry_key] = source
         logger.info("Loaded user connector '%s' (type=%s)", spec.source_id, spec.loader_type)
 
@@ -2893,24 +3071,17 @@ def load_connectors(identity: str | None = None) -> None:
 # Registration
 # ---------------------------------------------------------------------------
 
-def register_data_connectors(app: Flask) -> None:
-    """Register the global connectors blueprint + admin-provisioned connectors.
+def register_admin_connectors() -> None:
+    """Register the admin connectors (``connectors.yaml`` and ``DF_SOURCES__*``) not registered yet.
 
-    Called from ``app.py`` during startup.
-
-    - Registers ``connectors_bp`` with all shared routes.
-    - Loads admin connectors from ``DATA_FORMULATOR_HOME/connectors.yaml``
-      and ``DF_SOURCES__*`` env vars.
-    - User connectors are loaded lazily on first request (need identity).
+    Run again after plugins load, so an admin connector whose loader is a plugin is registered too: the
+    first run, at import, comes before the CLI knows it is in single-user mode and may load plugins.
     """
     from data_formulator.data_loader import DATA_LOADERS, DISABLED_LOADERS
 
-    # 1. Register the global management blueprint
-    app.register_blueprint(connectors_bp)
-
-    admin_specs = _load_admin_specs()
-
-    for spec in admin_specs:
+    for spec in _load_admin_specs():
+        if spec.source_id in DATA_CONNECTORS:
+            continue
         loader_class = DATA_LOADERS.get(spec.loader_type)
         if not loader_class:
             if spec.loader_type in DISABLED_LOADERS:
@@ -2929,6 +3100,7 @@ def register_data_connectors(app: Flask) -> None:
             default_params=spec.default_params,
             icon=spec.icon or spec.loader_type,
         )
+        source._auto_connect = bool(getattr(spec, "auto_connect", False))
         DATA_CONNECTORS[spec.source_id] = source
         _ADMIN_CONNECTOR_IDS.add(spec.source_id)
         logger.info(
@@ -2937,6 +3109,24 @@ def register_data_connectors(app: Flask) -> None:
             spec.loader_type,
             f", pinned={list(spec.default_params.keys())}" if spec.default_params else "",
         )
+
+
+def register_data_connectors(app: Flask) -> None:
+    """Register the global connectors blueprint + admin-provisioned connectors.
+
+    Called from ``app.py`` during startup.
+
+    - Registers ``connectors_bp`` with all shared routes.
+    - Loads admin connectors from ``DATA_FORMULATOR_HOME/connectors.yaml``
+      and ``DF_SOURCES__*`` env vars.
+    - User connectors are loaded lazily on first request (need identity).
+    """
+    from data_formulator.data_loader import DATA_LOADERS, DISABLED_LOADERS
+
+    # 1. Register the global management blueprint
+    app.register_blueprint(connectors_bp)
+
+    register_admin_connectors()
 
     for key, reason in DISABLED_LOADERS.items():
         if key not in DATA_CONNECTORS:

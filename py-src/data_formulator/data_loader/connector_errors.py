@@ -1,12 +1,28 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import html
 import re
 from typing import Any
 
-from data_formulator.data_loader.external_data_loader import ConnectorParamError
+from data_formulator.data_loader.external_data_loader import ConnectorParamError, SourceTableMissing
 from data_formulator.errors import AppError, ErrorCode
 from data_formulator.security.sanitize import sanitize_error_message
+
+# The source still lists the table but cannot read it (dropped or renamed underneath).
+_UNREADABLE_TABLE = re.compile(
+    r"no such table|invalid object name|unknown table"
+    r"|\b(?:relation|table|view|object)\b[^\n]{0,120}?(?:does not exist|doesn't exist|not found)",
+    re.IGNORECASE,
+)
+# Codes whose fixed message is too general to act on; the source's own reason is appended.
+_REASON_CODES = {
+    ErrorCode.ACCESS_DENIED,
+    ErrorCode.DB_CONNECTION_FAILED,
+    ErrorCode.DB_QUERY_ERROR,
+    ErrorCode.DATA_LOAD_ERROR,
+    ErrorCode.CONNECTOR_ERROR,
+}
 
 
 @dataclass(frozen=True)
@@ -15,6 +31,10 @@ class ConnectorErrorInfo:
     message: str
     retry: bool = False
     detail: str = ""
+    # The source's own explanation, sanitized; safe to show users and agents.
+    reason: str = ""
+    # "missing": the source confirmed the table is gone. "unreadable": it is listed but cannot be read.
+    table_state: str = ""
 
     def to_app_error(self) -> AppError:
         return AppError(
@@ -22,6 +42,7 @@ class ConnectorErrorInfo:
             self.message,
             detail=self.detail or None,
             retry=self.retry,
+            reason=self.reason or None,
         )
 
     def to_error_dict(self, *, include_detail: bool = False) -> dict[str, Any]:
@@ -30,18 +51,51 @@ class ConnectorErrorInfo:
             "message": self.message,
             "retry": self.retry,
         }
+        if self.reason:
+            payload["reason"] = self.reason
         if include_detail and self.detail:
             payload["detail"] = self.detail
         return payload
 
 
 def classify_connector_error(error: Exception, *, operation: str = "") -> ConnectorErrorInfo:
-    """Map loader/connector failures to a small set of stable error codes."""
+    """Map loader/connector failures to a small set of stable error codes, keeping the source's reason."""
+    info = _classify(error, operation)
+    if info.code not in _REASON_CODES:
+        return info
+    reason = source_reason(error)
+    if not reason or reason == info.message:
+        return info
+    return ConnectorErrorInfo(info.code, f"{info.message}: {reason}", info.retry, info.detail, reason, info.table_state)
+
+
+def source_reason(error: BaseException) -> str:
+    """The first line of the error as the source worded it, sanitized for users and agents."""
+    lines = str(error).strip().splitlines()
+    if not lines:
+        return ""
+    # sanitize_error_message escapes HTML; the reason is shown as text, so undo the escaping.
+    reason = html.unescape(sanitize_error_message(lines[0].strip()))
+    return reason if len(reason) <= 300 else reason[:300] + "…"
+
+
+def _classify(error: Exception, operation: str) -> ConnectorErrorInfo:
     chain = _exception_chain(error)
     raw_detail = "\n".join(str(exc) for exc in chain if str(exc))
     safe_detail = sanitize_error_message(raw_detail)
     text = raw_detail.lower()
     http_status = _http_status(chain)
+
+    missing = next((exc for exc in chain if isinstance(exc, SourceTableMissing)), None)
+    if missing is not None:
+        reason = source_reason(missing) or "The table no longer exists in the data source."
+        return ConnectorErrorInfo(
+            ErrorCode.TABLE_NOT_FOUND,
+            reason,
+            detail=safe_detail,
+            reason=reason,
+            table_state="missing",
+        )
 
     firewall_match = re.search(
         r"client with ip address ['\"]?([0-9a-f:.]+)['\"]? is not allowed to access the server",
@@ -126,6 +180,14 @@ def classify_connector_error(error: Exception, *, operation: str = "") -> Connec
             "Data source connection failed",
             retry=True,
             detail=safe_detail,
+        )
+
+    if _UNREADABLE_TABLE.search(raw_detail):
+        return ConnectorErrorInfo(
+            ErrorCode.DB_QUERY_ERROR,
+            "The data source could not read this table",
+            detail=safe_detail,
+            table_state="unreadable",
         )
 
     if _has_any(text, "required", "must be provided", "missing", "invalid identifier", "invalid request"):

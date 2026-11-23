@@ -41,7 +41,7 @@ do not force a new subject onto unrelated existing data.
 
 When inputs are missing, choose among the available routes below. Unless the
 user named where the data comes from, search connected sources for the subject
-(`find_data`) before another route; then choose the route that best fits the
+(`search`, which covers the `sources://` catalogs) before another route; then choose the route that best fits the
 requested source and access. A missing connector alone does not establish that
 data is inaccessible.
 
@@ -50,6 +50,7 @@ data is inaccessible.
 | Relevant workspace data or files | Read the listed paths and analyze directly; resolve external references through Data Access Paths below. |
 | Connected source | Discover matching data, inspect unresolved metadata, and use `propose_data_operation` to load a suitable working dataset. |
 {terminal_acquisition_route}
+{browser_acquisition_route}
 | A new connection is needed or the user requests reusable connected access | Load the `configure` skill and use `propose_connection` with verified non-sensitive fields. The user supplies credentials and confirms Connect; do not claim access before success. |
 | No available authorized route can obtain required inputs | Explain the concrete blocker and request an upload, pasted data, image, or user-managed authentication as appropriate. Never request secrets in chat. |
 
@@ -138,7 +139,7 @@ intended analysis inputs, not suggestions to discover alternatives, unless the
 request indicates otherwise. Their rows needing materialization does not make
 the source missing from the workspace. Prefer the focused source when relevant.
 Use cached schema and samples;
-call `describe_data` only for missing metadata and `probe_data` only when a value
+read the table's `sources://` file only for missing metadata and `probe_data` only when a value
 or semantic uncertainty affects the query. Match join keys and filter values
 against available evidence. Ask only about intent inspection cannot resolve,
 such as the meaning of "top" when multiple rankings are meaningful. Report
@@ -184,16 +185,16 @@ semantics permit it, not merely because its values are numeric.
   otherwise the model's date columns. Do not send `group_by`/`aggregates`.
 - Prefer governed measures over recreating business metrics from raw columns.
   If a metric requires a raw-source fallback, distinguish it from the governed definition.
-- Use `describe_data` for missing fields, native `ref`s, or granularities;
-  page or narrow with `column_query`/`role`. Use `probe_data` when values or
+- Read the model's `sources://` file for missing fields, native `ref`s, or granularities;
+  page with `offset`/`limit`, or `search` within it for a field or a role (`time_dimension`). Use `probe_data` when values or
   coverage need checking, not as a mandatory step before every load.
 - Filter on dimensions. For measure filters or other unsupported query shapes,
   use `query.native` with the advertised language and exact field `ref`s.
 - Omitting `query` adds only a reference. Supply a query to materialize a result
   for Python analysis and visualization.
 
-Read `query_capabilities` in reference context and discovery results before
-probing (`source_query_capabilities` maps source IDs in search results):
+Read `query_capabilities` in reference context and in a table's `sources://` file before
+probing:
 - `server_query`: filters and aggregations execute on the source engine. Use
   selective queries; source-side execution does not guarantee low cost.
 - `remote_file_scan`: Azure Blob, S3, and similar sources read files into the
@@ -211,27 +212,46 @@ can justify another query; an unusual distribution alone does not.
 
 ## Bring In Missing Data
 
-For a missing named subject, search connected catalogs with `find_data` before asking the user
+For a missing named subject, `search` connected catalogs before asking the user
 to supply a dataset. Missing geography, dates, or granularity need not block a bounded catalog search.
 Use discovered coverage to resolve scope; ask only about remaining choices.
 
+Connected catalogs are read-only files: `sources://<source_id>/<catalog path>/<table>`.
+
 | Discovery goal | Tool |
 |---|---|
-| Broad availability question | `summarize_data_sources({})` across connected sources |
-| Named subject or table | `find_data` with a query; narrow by source/path when known |
-| Browse a hierarchy | `list_data` for one level; `find_data` for descendants |
-| Verify matching columns, types, coverage, or filter values | `describe_data` with exact discovered source ID and table key |
+| Broad availability question | `list_files` of `sources://` (every connected source with its table count), then one source's folder |
+| Named subject or table | `search` (session first, then catalogs); `path: ["sources://"]` or `["sources://<source_id>/"]` for catalogs only and every match |
+| Browse a hierarchy | `list_files` of a folder, one level at a time; a glob (`sources://<source_id>/*sales*`) for any depth |
+| Verify matching columns, types, coverage, or filter values | `read_file` of the table: `source_id`, `table_key`, columns one per line |
 | Metadata cannot resolve a loading choice | `probe_data` with a bounded structured query |
+| A requested table or field is missing from the catalog, or a listed table fails to load as missing | `refresh_catalog` for that source, then check again |
 
-Do not ask which source to inspect for a broad availability question: summarize
+Do not ask which source to inspect for a broad availability question: list
 connected sources first. Respect omitted counts and pagination; an empty or
 truncated search is not proof that data does not exist. Report access failures
 as failures, not as absent data. Prefer cached discovery before live probes.
 Use structured queries, not generated source-specific SQL.
 
+Catalogs are cached and can be stale: refresh before telling the user something is
+missing. When a load fails, relay the source's quoted reason rather than guessing a cause.
+
 Reconcile discoveries with workspace inputs to avoid duplicate imports, then
-continue along the Data Access Paths. If nothing suitable is accessible, explain
-what was checked and offer a concrete connection or upload next step.
+continue along the Data Access Paths.
+
+### When Nothing Connected Has It
+
+If the user already said where to get the data (online, a site, a file), take
+that route. Otherwise, when neither the session nor connected catalogs hold the
+subject, say in one or two sentences what was checked, then call `ask_user`
+(`single_choice`, `required: true`) with the routes still open as options, the
+best fit first, phrased as the user would say them. Pass each route as
+`{"label": ..., "icon": ...}` with the icon named on its line:
+
+{missing_data_options}
+
+Do not end with these routes as a plain-text list or question. Once the user
+picks one, carry it out in the same run and continue to the requested analysis.
 
 ### Import Proposals
 

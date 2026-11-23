@@ -14,7 +14,7 @@ import {
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { alpha } from '@mui/material/styles';
-import { borderColor, shadow, transition, radius } from '../app/tokens';
+import { borderColor, shadow, transition, radius, weight } from '../app/tokens';
 import { textVar } from '../app/layout';
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex';
@@ -142,7 +142,7 @@ const renderTextWithBold = (text: string, key: React.Key) => {
     return (
         <span key={key}>
             {segments.map((segment, i) => (i % 2 === 1
-                ? <Box component="strong" key={i} sx={{ fontWeight: 600 }}>{segment}</Box>
+                ? <Box component="strong" key={i} sx={{ fontWeight: weight(600) }}>{segment}</Box>
                 : segment))}
         </span>
     );
@@ -173,7 +173,7 @@ const renderWithMath = (text: string) => {
                         fontSize: '0.92em',
                         px: 0.5,
                         py: '1px',
-                        borderRadius: '3px',
+                        borderRadius: 0.75,
                         backgroundColor: (theme) => alpha(theme.palette.text.primary, 0.045),
                         color: 'text.primary',
                         // Allow long code spans (e.g. summed field lists) to wrap
@@ -317,7 +317,7 @@ const ConceptName = styled(Typography, {
     shouldForwardProp: (prop) => prop !== 'secondary',
 })<{ secondary: boolean }>(({ theme, secondary }) => ({
     fontSize: textVar.xs,
-    fontWeight: 600,
+    fontWeight: weight(600),
     color: secondary ? theme.palette.secondary.main : theme.palette.primary.main,
     marginBottom: '2px',
     display: 'flex',
@@ -433,7 +433,7 @@ export const ConceptExplCards: FC<ConceptExplCardsProps> = ({
                                         )}
                                         {parsed.statements.map((statement, i) => (
                                             <React.Fragment key={i}>
-                                                <Box component="span" sx={{ ...formulaMonoSx, fontWeight: 600, color: 'primary.main' }}>
+                                                <Box component="span" sx={{ ...formulaMonoSx, fontWeight: weight(600), color: 'primary.main' }}>
                                                     {statement.lhs}
                                                 </Box>
                                                 <Box component="span" sx={{ ...formulaMonoSx, color: 'text.disabled' }}>=</Box>
@@ -554,7 +554,7 @@ export const CodeExplanationCard: FC<{
                 sx={{ 
                     fontSize: textVar.lg, 
                     margin: 1.5,
-                    fontWeight: 500,
+                    fontWeight: weight(500),
                     color: 'text.primary',
                     display: 'flex',
                     alignItems: 'center',

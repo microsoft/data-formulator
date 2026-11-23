@@ -69,6 +69,9 @@ def test_repeated_tool_progress_events_preserve_call_identity(monkeypatch):
         ("tool_start", "python-first"), ("tool_result", "python-first"),
         ("tool_start", "python-second"), ("tool_result", "python-second"),
     ]
+    record = next(event for event in events if event["type"] == "tool_result")["record"]
+    assert record["id"] == "python-first" and record["tool"] == "execute_python_script"
+    assert record["args"] == {"code": "print(1)"} and record["output"] == "done" and record["status"] == "completed"
 
 
 def test_empty_stream_is_retried_before_final_text():

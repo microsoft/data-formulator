@@ -76,12 +76,14 @@ def _semantic_column_descriptions(fields: list[dict], output_names: list[str]) -
     return described
 
 
-def _load_failure_message(display_name: str, exc: Exception) -> str:
-    """Why a step failed, when the reason tells the agent how to retry; otherwise a generic message."""
+def _load_failure_message(display_name: str, exc: Exception, info=None) -> str:
+    """Why a step failed, in the source's words when it gave them, so the agent and user can act on it."""
     if "out of memory" in str(exc).lower():
         return (f"{display_name} could not be loaded: the source query ran out of memory. "
                 "Load fewer rows or columns, or aggregate in the query.")
-    return f"{display_name} could not be loaded."
+    if info is None:
+        return f"{display_name} could not be loaded."
+    return f"{display_name} could not be loaded: {info.reason if info.reason and not info.table_state else info.message}"
 
 
 @dataclass(frozen=True)
@@ -130,9 +132,9 @@ class DataOperationExecutor:
             check_cancelled()
             table_name = self._allocate_table_name(self._requested_table_name(step), used_names)
             used_names.add(table_name)
+            source_key = (step.source_id, step.table_key)
             try:
                 concrete_query = bool(step.materialize or step.query.to_dict())
-                source_key = (step.source_id, step.table_key)
                 reference = None if concrete_query and source_key in known_sources else self._virtual_reference(step)
                 if reference is not None:
                     if source_key not in known_sources:
@@ -153,6 +155,7 @@ class DataOperationExecutor:
                     plan_hash=plan.plan_hash,
                     step_index=step_index,
                 ))
+                self._note_table_outcome(step)
             except Exception as exc:
                 logger.exception(
                     "Data operation %s failed to load step %d (%s)",
@@ -160,13 +163,26 @@ class DataOperationExecutor:
                     step_index,
                     step.display_name,
                 )
+                if isinstance(exc, (ValueError, NotImplementedError)):
+                    message = str(exc)
+                else:
+                    from data_formulator.data_loader.connector_errors import classify_connector_error
+                    info = classify_connector_error(exc, operation="import")
+                    message = _load_failure_message(step.display_name, exc, info)
+                    if info.table_state:
+                        removed = self._note_table_outcome(step, info.table_state, info.reason)
+                        if info.table_state == "missing":
+                            if removed:
+                                message += " It was removed from the catalog."
+                            # A reference to a table that no longer exists cannot open.
+                            result_references = [item for item in result_references
+                                                 if (item.get("connectorId"), item.get("tableKey")) != source_key]
                 failed_steps.append(FailedOperationStep(
                     step_index=step_index,
                     display_name=step.display_name,
                     error=OperationError(
                         code="connector_error",
-                        message=(str(exc) if isinstance(exc, (ValueError, NotImplementedError))
-                                 else _load_failure_message(step.display_name, exc)),
+                        message=message,
                     ),
                 ))
         for reference in result_references:
@@ -181,6 +197,13 @@ class DataOperationExecutor:
             tuple(failed_steps),
             tuple(result_references),
         )
+
+    def _note_table_outcome(self, step: ConnectorQueryStep, table_state: str = "", reason: str = "") -> int:
+        user_home = getattr(self._workspace, "user_home", None)
+        if not user_home:
+            return 0
+        from data_formulator.datalake.catalog_cache import note_table_outcome
+        return note_table_outcome(user_home, step.source_id, step.table_key, table_state=table_state, reason=reason)
 
     def _virtual_reference(self, step: ConnectorQueryStep) -> dict | None:
         concrete_query = bool(step.materialize or step.query.to_dict())

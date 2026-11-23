@@ -6,7 +6,7 @@ import uuid
 from flask import Blueprint, current_app, request
 
 from data_formulator.auth.identity import get_auth_result, get_identity_id, is_local_mode
-from data_formulator.configuration import ConfigurationConflict, LIMITS, connection_definitions, effective_limit, inline_connection_settings, is_managed_mode, public_connection_definition, read_configuration, save_configuration, terminal_available, terminal_mode, user_connectors_disabled, user_connectors_locked, user_models_disabled, user_models_locked
+from data_formulator.configuration import ConfigurationConflict, LIMITS, connection_definitions, effective_limit, inline_connection_settings, is_managed_mode, public_connection_definition, read_configuration, save_configuration, terminal_available, terminal_enabled, terminal_mode, tools_mode, user_connectors_disabled, user_connectors_locked, user_models_disabled, user_models_locked
 from data_formulator.error_handler import json_ok
 from data_formulator.errors import AppError, ErrorCode
 
@@ -56,6 +56,7 @@ def can_configure() -> bool:
 
 
 def snapshot() -> dict:
+    from data_formulator.shares import share_links_locked, shares_available
     from pathlib import Path
     from data_formulator.model_registry import model_registry
     from data_formulator.data_connector import DATA_CONNECTORS, _ADMIN_CONNECTOR_IDS
@@ -101,6 +102,7 @@ def snapshot() -> dict:
             'user_connectors': {'disabled': user_connectors_disabled(),
                                 'locked': user_connectors_locked()},
             'user_models': {'disabled': user_models_disabled(), 'locked': user_models_locked()},
+            'share_links': {'enabled': shares_available(), 'locked': share_links_locked()},
             'loader_types': [{'type': key, 'name': loader.DISPLAY_NAME or key, 'params': loader.list_params(), 'auth_mode': loader.auth_mode()}
                              for key, loader in DATA_LOADERS.items() if key != 'sample_datasets'
                              and (key != 'local_folder' or is_local_mode()) and loader.auth_mode() in ('credentials', 'connection')],
@@ -114,7 +116,7 @@ def snapshot() -> dict:
 
 @configuration_bp.route('/terminal', methods=['GET', 'PUT'])
 def terminal_settings():
-    from data_formulator.analyst.skills.terminal.skill import sandbox_filesystem_policy
+    from data_formulator.analyst.skills.terminal.skill import sandbox_filesystem_policy, sandbox_install_hint, terminal_sandbox
 
     try:
         if request.method == 'PUT':
@@ -124,25 +126,29 @@ def terminal_settings():
             if (not get_identity_id().startswith('local:') or not request.is_json
                     or request.headers.get('X-DF-Configuration') != '1'):
                 raise AppError(ErrorCode.ACCESS_DENIED, 'Use the local application to change terminal access.')
-            if 'DF_TERMINAL_MODE' in os.environ:
-                raise ValueError('Terminal mode is controlled by the environment.')
             body = request.get_json()
-            if (not isinstance(body, dict) or not {'mode', 'revision'} <= set(body)
-                    or set(body) - {'mode', 'revision', 'sandbox'} or body['mode'] not in ('off', 'ask', 'auto')):
-                raise ValueError('Provide revision and terminal mode: off, ask, or auto.')
-            if (body['mode'] != 'off' or 'sandbox' in body) and not terminal_available():
+            if (not isinstance(body, dict) or 'revision' not in body or not {'mode', 'enabled', 'sandbox'} & set(body)
+                    or set(body) - {'mode', 'enabled', 'revision', 'sandbox'}
+                    or body.get('mode', 'off') not in ('off', 'ask', 'auto') or not isinstance(body.get('enabled', True), bool)):
+                raise ValueError('Provide revision and the tools mode (off, ask, or auto), the terminal switch, or its sandbox.')
+            if 'mode' in body and 'DF_TERMINAL_MODE' in os.environ:
+                raise ValueError('The tools mode is controlled by the environment.')
+            if (body.get('mode', 'off') != 'off' or body.get('enabled') or 'sandbox' in body) and not terminal_available():
                 raise ValueError('Terminal access is unavailable under the current deployment policy.')
             current = read_configuration()
-            overrides = {**current['overrides'], 'terminal_mode': body['mode']}
+            overrides = {**current['overrides'], **({'terminal_mode': body['mode']} if 'mode' in body else {}),
+                         **({'terminal_enabled': body['enabled']} if 'enabled' in body else {})}
             if 'sandbox' in body:
                 if body['sandbox'] is None:
                     overrides.pop('sandbox', None)
                 else:
                     overrides['sandbox'] = body['sandbox']
             save_configuration(overrides, body['revision'])
-        return json_ok({'revision': read_configuration()['revision'], 'mode': terminal_mode(),
+        return json_ok({'revision': read_configuration()['revision'], 'mode': tools_mode(), 'enabled': terminal_enabled(),
                         'available': terminal_available(), 'locked': 'DF_TERMINAL_MODE' in os.environ,
-                        'sandboxFilesystem': sandbox_filesystem_policy() if is_local_mode() else None})
+                        'sandboxFilesystem': sandbox_filesystem_policy() if is_local_mode() else None,
+                        'sandboxed': terminal_sandbox() is not None if terminal_available() else None,
+                        'sandboxInstallHint': sandbox_install_hint() if terminal_available() else None})
     except ConfigurationConflict as exc:
         return {'status': 'error', 'error': {'code': 'INVALID_REQUEST', 'message': str(exc), 'retry': False}}, 409
     except (ValueError, OSError) as exc:

@@ -1,5 +1,35 @@
 {
   "upload": {
+    "livePick": {
+      "umbrella": "Perlu payung minggu ini?",
+      "umbrellaBusy": "Mengecek langit…",
+      "umbrellaHint": "Prakiraan minggu ini untuk kota di dekat Anda, dimuat langsung dan dipetakan",
+      "warmer": "Apakah minggu ini lebih hangat dari biasanya?",
+      "warmerBusy": "Menggali cuaca lama…",
+      "warmerHint": "Prakiraan minggu ini di samping minggu yang sama selama sepuluh tahun terakhir, untuk kota di dekat Anda",
+      "daylightShorter": "Seberapa cepat hari makin pendek?",
+      "daylightLonger": "Seberapa cepat hari makin panjang?",
+      "daylightBusy": "Mengamati matahari…",
+      "daylightHint": "Jam siang selama empat bulan ke depan, dari utara ke selatan",
+      "wiki": "Apa yang dibaca dunia hari ini?",
+      "wikiBusy": "Membaca dari balik bahu dunia…",
+      "wikiHint": "Artikel Wikipedia paling banyak dibaca kemarin, dan trennya minggu ini",
+      "countries": "Apa yang dibaca setiap negara hari ini?",
+      "countriesBusy": "Mengintip bacaan dunia…",
+      "countriesHint": "Artikel Wikipedia paling banyak dibaca kemarin di seluruh dunia, di peta",
+      "failed": "Tidak berhasil. Coba lagi sebentar lagi.",
+      "failedDetail": "Tidak dapat memuat data langsung untuk \"{{question}}\": {{reason}}",
+      "moon": "Kapan bulan purnama berikutnya?",
+      "moonBusy": "Mengecek bulan…",
+      "moonHint": "Fase bulan selama dua bulan ke depan"
+    },
+    "sessionStart": {
+      "list": "Tunjukkan isi sumber yang terhubung",
+      "scheduledWorkflow": "Saya ingin membuat alur kerja berulang untuk membuat laporan",
+      "workflow": "Saya ingin membuat alur kerja yang bisa dipakai ulang untuk membuat laporan",
+      "connect": "Pandu saya menghubungkan sumber data baru",
+      "discover": "Bantu saya menyiapkan alat untuk menemukan data online"
+    },
     "title": "Muat Data",
     "sampleDatasets": "Kumpulan Data Contoh",
     "sampleDatasetsDesc": "Kumpulan data contoh pilihan",
@@ -154,6 +184,7 @@
       "cosmosdb": "Kueri kontainer Cosmos DB",
       "mongodb": "Kueri koleksi MongoDB",
       "bigquery": "Kueri kumpulan data BigQuery",
+      "snowflake": "Kueri tabel Snowflake",
       "athena": "Kueri Amazon Athena",
       "kusto": "Kueri Azure Data Explorer",
       "superset": "Jelajahi kumpulan data Superset",

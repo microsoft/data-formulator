@@ -162,3 +162,20 @@ def test_socket_creation_failure_releases_ownership(monkeypatch):
         desktop._claim_single_instance()
     with FileLock(desktop._instance_directory() / "instance.lock", timeout=0):
         pass
+
+def test_app_port_is_reused_across_launches():
+    port = desktop._app_port()
+    assert desktop._app_port() == port
+
+
+def test_app_port_moves_when_another_process_holds_it():
+    port = desktop._app_port()
+    occupant = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    occupant.bind(("127.0.0.1", port))
+    occupant.listen(1)
+    try:
+        moved = desktop._app_port()
+        assert moved != port
+    finally:
+        occupant.close()
+    assert desktop._app_port() == moved

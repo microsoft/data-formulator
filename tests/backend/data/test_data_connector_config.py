@@ -41,6 +41,7 @@ from data_formulator.data_connector import (
     _visible_connector_items,
     connectors_bp,
     load_connectors,
+    register_admin_connectors,
     register_data_connectors,
 )
 from data_formulator.data_loader.external_data_loader import (
@@ -266,6 +267,43 @@ class TestEnvVarParsing:
 
         assert specs[0].display_name == "Postgresql"
 
+    def test_parse_env_sources_auto_connect(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("DF_SOURCES__pg__type", "postgresql")
+        monkeypatch.setenv("DF_SOURCES__pg__auto_connect", "true")
+        monkeypatch.setenv("DF_SOURCES__pg__params__host", "pg.local")
+
+        with patch("data_formulator.data_connector._get_df_home", return_value=tmp_path):
+            specs = _load_admin_specs()
+
+        assert specs[0].auto_connect is True
+        assert specs[0].default_params == {"host": "pg.local"}
+
+
+class TestAutoConnect:
+
+    def _status(self, connector):
+        from data_formulator.data_connector import _connector_connection_status
+        with patch("data_formulator.datalake.connector_preferences.connector_is_enabled", return_value=True), \
+                patch("data_formulator.datalake.workspace.get_user_home", return_value=Path("/nonexistent")), \
+                patch.object(connector, "has_stored_credentials", return_value=False):
+            return _connector_connection_status(connector, "user:alice")
+
+    def test_auto_connect_connector_connects_with_its_configured_credentials(self):
+        connector = DataConnector.from_loader(_StubLoader, "stub", default_params={"host": "h"})
+        assert self._status(connector) == (False, False, False)
+        connector._auto_connect = True
+        assert self._status(connector) == (True, False, False)
+        assert connector._loaders["user:alice"].params["host"] == "h"
+
+    def test_failed_auto_connect_waits_before_trying_again(self, monkeypatch):
+        monkeypatch.setattr("data_formulator.data_connector._RECONNECT_BACKOFF_BASE", 0)
+        connector = DataConnector.from_loader(_StubLoader, "stub", default_params={"host": "h"})
+        connector._auto_connect = True
+        with patch.object(_StubLoader, "test_connection", return_value=False) as test_connection:
+            assert self._status(connector)[0] is False
+            attempts = test_connection.call_count
+            assert self._status(connector)[0] is False
+            assert test_connection.call_count == attempts
 
 # ==================================================================
 # Tests: _load_admin_specs (YAML + env priority)
@@ -461,8 +499,30 @@ class TestLoadConnectors:
         with patch("data_formulator.datalake.workspace.get_user_home", return_value=user_dir), \
              patch("data_formulator.data_loader.DATA_LOADERS", mock_loaders):
             load_connectors("alice")
-            assert "alice" in _LOADED_USER_IDENTITIES
+            assert (None, "alice") in _LOADED_USER_IDENTITIES
             load_connectors("alice")
+
+    def test_user_connectors_and_their_credentials_are_scoped_by_demo(self, tmp_path):
+        """The standard app and a demo each have their own user connectors, in memory as on disk, and vault entries."""
+        scope = {"site": None}
+        homes = {None: tmp_path / "users" / "alice", "demo": tmp_path / "sites" / "demo" / "users" / "alice"}
+        user_home = lambda identity: homes[scope["site"]]
+        mock_loaders = {"stub": _StubLoader}
+        with patch("data_formulator.spaces.current_space", side_effect=lambda: scope["site"]), \
+             patch("data_formulator.datalake.workspace.get_user_home", side_effect=user_home), \
+             patch("data_formulator.data_loader.DATA_LOADERS", mock_loaders):
+            for site, name in ((None, "Main PG"), ("demo", "Demo PG")):
+                scope["site"] = site
+                _persist_user_connector("user:alice", SourceSpec(
+                    source_id="postgresql:local", loader_type="stub", display_name=name, source="user"))
+                load_connectors("user:alice")
+            scope["site"] = None
+            main = DATA_CONNECTORS[_user_connector_key("user:alice", "postgresql:local")]
+            scope["site"] = "demo"
+            demo = DATA_CONNECTORS[_user_connector_key("user:alice", "postgresql:local")]
+        assert (main._display_name, demo._display_name) == ("Main PG", "Demo PG")
+        assert main._vault_owner("user:alice") == "user:alice"
+        assert demo._vault_owner("user:alice") == "user:alice@site:demo"
 
     def test_user_connectors_are_scoped_by_identity(self, tmp_path):
         """Anonymous and authenticated users may have same public connector ID."""
@@ -600,6 +660,26 @@ class TestRegisterConnectedSources:
             register_data_connectors(app)
 
         assert len(DATA_CONNECTORS) == 0
+
+    def test_registers_admin_connector_whose_plugin_loads_later(self, app, tmp_path, monkeypatch):
+        # The CLI loads plugins after import has registered the admin connectors.
+        for key in list(os.environ):
+            if key.startswith("DF_SOURCES__"):
+                monkeypatch.delenv(key)
+        (tmp_path / "connectors.yaml").write_text("connectors:\n  - type: stub\n    name: Plugin source\n")
+
+        with patch("data_formulator.data_connector._get_df_home", return_value=tmp_path), \
+             patch("data_formulator.data_loader.DISABLED_LOADERS", {}):
+            with patch("data_formulator.data_loader.DATA_LOADERS", {}):
+                register_data_connectors(app)
+            assert "stub" not in DATA_CONNECTORS
+            with patch("data_formulator.data_loader.DATA_LOADERS", {"stub": _StubLoader}):
+                register_admin_connectors()
+                first = DATA_CONNECTORS["stub"]
+                register_admin_connectors()
+
+        assert DATA_CONNECTORS["stub"] is first
+        assert "stub" in _ADMIN_CONNECTOR_IDS
 
     def test_logs_disabled_loaders(self, app, tmp_path, monkeypatch):
         for key in list(os.environ):

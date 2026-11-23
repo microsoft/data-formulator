@@ -81,6 +81,38 @@ class TestWorkspaceSearch:
         assert len(results) <= 1
 
 
+# ── get_field_summary values ─────────────────────────────────────────
+
+class TestFieldSummaryValues:
+    """The distinct values shown for a column: sorted, without missing ones."""
+
+    @staticmethod
+    def _values(df, column, sample=7):
+        from data_formulator.agents.agent_utils import get_field_summary
+        return get_field_summary(column, df, sample).split("values: ", 1)[1]
+
+    def test_missing_values_are_left_out_and_do_not_break_the_order(self):
+        import numpy as np
+        import pandas as pd
+        df = pd.DataFrame({
+            "year": [np.nan, 1990.0, np.nan, 2024.0, 1970.0, np.nan, 2001.0, 1985.0, np.nan, 2010.0],
+            "when": pd.to_datetime(["2024-01-02", None, "2021-01-01", None, "2024-01-02", None, None, None, None, None]),
+            "count": pd.array([5, None, 1, 9, None, 3, 3, None, 1, 5], dtype="Int64"),
+            "kind": pd.Categorical(["x", "z", None, "y", "x", None, "y", "z", "x", None]),
+        })
+        assert self._values(df, "year") == "1970.0, 1985.0, 1990.0, 2001.0, 2010.0, 2024.0"
+        assert self._values(df, "year", sample=4) == "1970.0, 1985.0, ..., 2010.0, 2024.0"
+        assert self._values(df, "when") == "2021-01-01T00:00:00.000000000, 2024-01-02T00:00:00.000000000"
+        assert self._values(df, "count") == "1, 3, 5, 9"
+        assert self._values(df, "kind") == "x, y, z"
+
+    def test_unhashable_and_unsortable_cells_still_summarize(self):
+        import pandas as pd
+        df = pd.DataFrame({"json": [{"a": 1}, [1, 2], {"a": 1}, None, "x"], "mixed": [1, "a", 2.5, None, 1]})
+        assert sorted(self._values(df, "json").split(", ")) == sorted(['"[1', '2]"', "x", "{'a': 1}"])
+        assert sorted(self._values(df, "mixed").split(", ")) == ["1", "2.5", "a"]
+
+
 # ── get_field_summary with column_description ────────────────────────
 
 class TestFieldSummaryWithDescription:
@@ -287,22 +319,3 @@ class TestMergeSourceMetadataEmptyClear:
         assert meta.columns[0].description == "Keep me too"
 
 
-# ── Progressive context — inspect_source_data level adjustment ────────
-
-class TestProgressiveContext:
-    """Verify inspect_source_data keeps bounded samples for each table."""
-
-    def test_many_tables_include_bounded_samples(self):
-        """>3 tables still include per-table bounded sample rows."""
-        from data_formulator.agents.context import handle_inspect_source_data
-        import pandas as pd
-
-        workspace = MagicMock()
-        workspace.read_data_as_df.return_value = pd.DataFrame({"a": [1, 2, 3]})
-        workspace.get_relative_data_file_path.return_value = "data/t.parquet"
-        workspace.get_metadata.return_value = None
-
-        tables = [{"name": f"t{i}"} for i in range(5)]
-        names = [f"t{i}" for i in range(5)]
-        result = handle_inspect_source_data(names, tables, workspace)
-        assert "Sample" in result

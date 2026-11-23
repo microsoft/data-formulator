@@ -33,6 +33,7 @@ import { DataLoaderForm } from '../views/DBTableManager';
 import { LocalFolderPanel } from '../views/UnifiedDataUploadDialog';
 import { ConnectedSourceOverview } from './ConnectedSourceOverview';
 import type { ConnectorFormPrompt, ConnectorInstance, ConnectorAuthPath } from './ComponentType';
+import { weight } from '../app/tokens';
 
 interface LoaderMeta {
     type: string;
@@ -360,7 +361,7 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
                             borderRight: { sm: index % 2 === 0 ? `1px solid ${theme.palette.divider}` : 0 },
                             color: 'text.primary',
                             fontSize: textVar.sm,
-                            fontWeight: 500,
+                            fontWeight: weight(500),
                             textTransform: 'none',
                             overflowWrap: 'anywhere',
                             '&:hover': { bgcolor: 'action.hover' },
@@ -376,7 +377,7 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
     const sourceSelector = <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, flex: 1 }}>
         {getConnectorIcon(sourceType, { sx: { fontSize: iconVar.lg, color: 'text.secondary', flexShrink: 0 } })}
         <Typography component="div" sx={{ minWidth: 0,
-            fontSize: isBare ? textVar.lg : textVar.md, fontWeight: 600, lineHeight: 1.35 }}>
+            fontSize: isBare ? textVar.lg : textVar.md, fontWeight: weight(600), lineHeight: 1.35 }}>
             <Trans i18nKey="chatConnector.connectionHeading"
                 defaults="Connect to <connector>{{name}}</connector>"
                 values={{ name: meta?.name || sourceType || t('chatConnector.chooseSource', { defaultValue: 'a data source' }) }}
@@ -420,7 +421,7 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
                 <Box sx={{ pb: 1, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
                         {getConnectorIcon(sourceType, { sx: { fontSize: 16, color: 'text.secondary', flexShrink: 0 } })}
-                        <Typography component="h1" sx={{ minWidth: 0, m: 0, fontSize: 12, lineHeight: 1.5, fontWeight: 400, color: 'text.secondary', overflowWrap: 'anywhere' }}>{name}</Typography>
+                        <Typography component="h1" sx={{ minWidth: 0, m: 0, fontSize: 12, lineHeight: 1.5, fontWeight: weight(400), color: 'text.secondary', overflowWrap: 'anywhere' }}>{name}</Typography>
                         <Tooltip title={t('chatConnector.connected', { defaultValue: 'Connected' })}>
                             <CheckIcon aria-label={t('chatConnector.connected', { defaultValue: 'Connected' })} sx={{ fontSize: 14, color: 'success.main', flexShrink: 0 }} />
                         </Tooltip>
@@ -459,7 +460,7 @@ export const ConnectorFormCard: React.FC<ConnectorFormCardProps> = ({ messageId,
                 >
                     {getConnectorIcon(sourceType, { sx: { fontSize: iconVar.md, opacity: 0.8 } })}
                     <CheckIcon sx={{ fontSize: iconVar.sm }} />
-                    <Typography sx={{ fontSize: textVar.sm, fontWeight: 600 }}>
+                    <Typography sx={{ fontSize: textVar.sm, fontWeight: weight(600) }}>
                         {t('chatConnector.connectedChip', {
                             name,
                             defaultValue: 'Connected to {{name}}',

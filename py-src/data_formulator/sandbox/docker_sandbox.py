@@ -6,9 +6,9 @@ Docker-based sandbox for executing Python code in an isolated container.
 
 The workspace directory is mounted **read-only** as the container's working
 directory so user scripts can read data files via e.g.
-``pd.read_csv("file.csv")`` but cannot tamper with the host filesystem. The
-container also has no network, a read-only root filesystem, and no
-capabilities (see :func:`docker_run_command`).
+``pd.read_csv("file.csv")`` but cannot tamper with the host filesystem; only
+its ``scratch/`` folder is writable. The container also has no network, a
+read-only root filesystem, and no capabilities (see :func:`docker_run_command`).
 The output DataFrame is serialised to Parquet and read back via a
 bind-mounted output directory.
 """
@@ -72,6 +72,10 @@ def docker_run_command(
         except OSError:
             pass  # Fall back to the image's non-root default user
     command += ["-v", f"{os.path.abspath(workspace_path)}:/sandbox/workdir:ro"]
+    # scratch/ is the one folder code writes to (design-docs/73), over the read-only workspace.
+    scratch = os.path.join(os.path.abspath(workspace_path), "scratch")
+    if os.path.isdir(scratch) and not os.path.islink(scratch):
+        command += ["-v", f"{scratch}:/sandbox/workdir/scratch:rw"]
     command += ["-v", f"{output_dir}:/sandbox/outputs:rw"]
     command += ["-v", f"{script_path}:/sandbox/run.py:ro"]
     command += ["-w", "/sandbox/workdir", image, "python", "/sandbox/run.py"]

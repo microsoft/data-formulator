@@ -4,11 +4,10 @@ import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ModelSelectionButton, parseAzureTargetUri } from '../../../../src/views/ModelSelectionDialog';
-import { dataFormulatorReducer, dfActions, dfSelectors, ModelConfig } from '../../../../src/app/dfSlice';
+import { dataFormulatorReducer, dfActions, dfSelectors, fetchGlobalModelList, ModelConfig } from '../../../../src/app/dfSlice';
 import { apiRequest, ApiRequestError } from '../../../../src/app/apiClient';
 import modelStrings from '../../../../src/i18n/locales/en/model.json';
 import commonStrings from '../../../../src/i18n/locales/en/common.json';
-import { buildDistillModelConfig } from '../../../../src/views/workflowContext';
 
 vi.mock('react-i18next', async importOriginal => ({
     ...await importOriginal<object>(),
@@ -44,13 +43,13 @@ describe('Model connection form', () => {
         }) as any);
     });
 
-    const openForm = (model?: ModelConfig, managed = false) => {
+    const openForm = (model?: ModelConfig, managed = false, local = true) => {
         const initial = dataFormulatorReducer(undefined, { type: 'test/init' });
         const store = configureStore({
             reducer: dataFormulatorReducer,
             preloadedState: { ...initial, models: model && !model.is_global ? [model] : [],
                 globalModels: model?.is_global ? [model] : [], selectedModelId: model?.id,
-                serverConfig: { ...initial.serverConfig, IS_LOCAL_MODE: true, DISABLE_CUSTOM_MODELS: managed } },
+                serverConfig: { ...initial.serverConfig, IS_LOCAL_MODE: local, DISABLE_CUSTOM_MODELS: managed } },
         });
         render(<Provider store={store}><ModelSelectionButton /></Provider>);
         fireEvent.click(screen.getByRole('button', { name: 'Select a model' }));
@@ -232,7 +231,7 @@ describe('Model connection form', () => {
         await waitFor(() => expect(store.getState().models).toHaveLength(1));
         const saved = store.getState().models[0];
         expect(saved).toMatchObject({ endpoint: provider, connection_id: provider, auth_mode: 'account', model: 'gpt-4.1' });
-        const payload = JSON.parse(JSON.stringify(buildDistillModelConfig(saved)));
+        const payload = JSON.parse(JSON.stringify(saved));
         expect(payload.connection_id).toBe(provider);
         expect(payload).not.toHaveProperty('api_key');
         expect(payload).not.toHaveProperty('api_base');
@@ -327,7 +326,7 @@ describe('Model connection form', () => {
         await waitFor(() => expect(store.getState().models).toHaveLength(1));
         const saved = store.getState().models[0];
         expect(saved).toMatchObject({ endpoint: 'openrouter', model: 'openai/test-model', connection_id: 'openrouter', auth_mode: 'account' });
-        const payload = JSON.parse(JSON.stringify(buildDistillModelConfig(saved)));
+        const payload = JSON.parse(JSON.stringify(saved));
         expect(payload.connection_id).toBe('openrouter');
         expect(payload).not.toHaveProperty('api_key');
         expect(payload).not.toHaveProperty('api_base');
@@ -573,7 +572,7 @@ describe('Model connection form', () => {
         });
         const saved = store.getState().models[0];
         expect(saved.small_model).toBe(smallModel || undefined);
-        expect(buildDistillModelConfig(saved).small_model).toBe(smallModel || undefined);
+        expect(saved.small_model).toBe(smallModel || undefined);
         expect(screen.getByText('Main').parentElement).toHaveTextContent('main-model');
         if (smallModel && smallModel !== 'main-model') {
             expect(screen.getByText('Small')).toBeVisible();
@@ -758,6 +757,17 @@ describe('Model connection form', () => {
         expect(screen.getByRole('button', { name: 'Test and save' })).toBeDisabled();
     });
 
+    it('offers only API-key sign-in for Azure models added on a hosted server', async () => {
+        openForm(undefined, false, false);
+        await chooseProvider('Azure');
+        expect(screen.queryByRole('button', { name: 'Azure CLI' })).not.toBeInTheDocument();
+        fireEvent.change(screen.getByRole('textbox', { name: /Model deployment/ }), { target: { value: 'deployment' } });
+        fireEvent.change(screen.getByRole('textbox', { name: /Endpoint URL/ }), { target: { value: 'https://resource.example' } });
+        expect(screen.getByRole('button', { name: 'Test and save' })).toBeDisabled();
+        fireEvent.change(screen.getByLabelText('API Key', { selector: 'input' }), { target: { value: 'test-secret' } });
+        expect(screen.getByRole('button', { name: 'Test and save' })).toBeEnabled();
+    });
+
     it('allows Ollama with only a model and keeps its optional key under Advanced', async () => {
         const store = openForm();
         await chooseProvider('Ollama');
@@ -820,5 +830,40 @@ describe('Model connection Target URI', () => {
         'not a URL',
     ])('leaves other inputs untouched: %s', value => {
         expect(parseAzureTargetUri(value)).toBeNull();
+    });
+});
+
+describe('Model selection button', () => {
+    const azure = (model: string): ModelConfig => ({ id: `global-azure-${model}`, endpoint: 'azure', model, is_global: true });
+    const loadGlobals = (preloaded: Partial<ReturnType<typeof dataFormulatorReducer>>, globals: ModelConfig[]) => {
+        const initial = dataFormulatorReducer(undefined, { type: 'test/init' });
+        const store = configureStore({ reducer: dataFormulatorReducer, preloadedState: { ...initial, ...preloaded } });
+        store.dispatch(fetchGlobalModelList.fulfilled(globals, 'request'));
+        return store;
+    };
+
+    it('replaces a remembered selection that is no longer configured', () => {
+        const store = loadGlobals({ selectedModelId: 'global-azure-retired' }, [azure('current'), azure('other')]);
+        expect(store.getState().selectedModelId).toBe('global-azure-current');
+        render(<Provider store={store}><ModelSelectionButton /></Provider>);
+        expect(screen.getByRole('button', { name: 'Select a model' }).textContent).toBe('current');
+    });
+
+    it('keeps a selection that is still available, including a personal model', () => {
+        const personal: ModelConfig = { id: 'personal', endpoint: 'openai', model: 'mine', api_key: 'test-key' };
+        expect(loadGlobals({ selectedModelId: 'global-azure-other' }, [azure('current'), azure('other')])
+            .getState().selectedModelId).toBe('global-azure-other');
+        expect(loadGlobals({ models: [personal], selectedModelId: 'personal' }, [azure('current')])
+            .getState().selectedModelId).toBe('personal');
+    });
+
+    it('shows the selected model name when its test failed, and asks to select only without a model', () => {
+        const store = loadGlobals({}, [azure('current')]);
+        store.dispatch(dfActions.updateModelStatus({ id: 'global-azure-current', status: 'error', message: 'unreachable' }));
+        render(<Provider store={store}><ModelSelectionButton /></Provider>);
+        expect(screen.getByRole('button', { name: 'Select a model' }).textContent).toBe('current');
+        cleanup();
+        render(<Provider store={loadGlobals({}, [])}><ModelSelectionButton /></Provider>);
+        expect(screen.getByRole('button', { name: 'Select a model' }).textContent).toBe(modelStrings.model.selectModels);
     });
 });

@@ -60,12 +60,13 @@ export const ERROR_CODE_I18N_MAP: Record<string, string> = {
  * Get the best user-facing message for an API error.
  *
  * Tries the i18n translation first; falls back to the backend message.
+ * A backend `reason` (the source's own words) is kept after a translation.
  */
 export function getErrorMessage(apiError: ApiError): string {
     const i18nKey = ERROR_CODE_I18N_MAP[apiError.code];
     if (i18nKey) {
         const translated = i18n.t(i18nKey);
-        if (translated !== i18nKey) return translated;
+        if (translated !== i18nKey) return apiError.reason ? `${translated}: ${apiError.reason}` : translated;
     }
     return apiError.message;
 }

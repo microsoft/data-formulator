@@ -18,6 +18,7 @@
     "chatHintExample": "ここにはどんなデータがありますか？",
     "placeholder": "抽出・アップロード・生成するデータを説明します...",
     "attachTooltip": "ファイルまたは画像を添付します",
+    "dropToAttach": "ドロップしてファイルを添付",
     "stopTooltip": "生成を停止します",
     "sendTooltip": "送信します (Enter)",
     "shiftEnterHint": "Shift+Enterで改行します",

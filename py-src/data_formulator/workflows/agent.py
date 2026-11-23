@@ -33,12 +33,11 @@ def tool(name: str, description: str, properties: dict, required: list[str]) -> 
 
 
 TEXT = {"type": "string"}
-PLAN_REVIEW_TOOLS = {"adapt_plan", "review_plan", "load_skill", "list_workspace_items", "read_workspace_item",
-                     "list_files", "read_file", "search_files",
-                     "find_data", "list_data", "describe_data", "probe_data", "summarize_data_sources",
+PLAN_REVIEW_TOOLS = {"adapt_plan", "review_plan", "load_skill", "list_files", "read_file", "search",
+                     "probe_data",
                      "list_connectors", "ask_user", "request_help"}
 TOOLS = [
-    tool("execute_python_script", "Inspect, analyze, or independently verify workspace data using the analyst Python sandbox. Print evidence. Return files via outputs = {'comparison.csv': dataframe, 'notes.md': text}; the host saves them. Scripts cannot write files.",
+    tool("execute_python_script", "Inspect, analyze, or independently verify workspace data using the analyst Python sandbox. Print evidence. Return files via outputs = {'comparison.csv': dataframe, 'notes.md': text}; the host saves them to the run. Scripts write only to scratch/.",
          {"code": TEXT, "purpose": TEXT}, ["code", "purpose"]),
     tool("record_check", "Record an agent-evaluated check against observed tool evidence. Never invent evidence IDs.",
          {"check_id": TEXT, "status": {"type": "string", "enum": ["passed", "failed", "inconclusive"]},
@@ -69,13 +68,15 @@ TOOLS = [
              "required": ["text", "responseType"], "additionalProperties": False}}}, ["questions"]),
 ]
 
-WORKSPACE_TOOLS = {"create_data", "update_data", "create_file", "edit_file", "move_file", "delete_items",
-                   "list_workspace_items", "read_workspace_item"}
+WORKSPACE_TOOLS = {"create_data", "update_data", "create_file", "edit_file", "move_file", "delete_items"}
 # Results the application applies to the session it shows (files, tables, chart and report edits, moves, deletions).
 PUBLISHED_TOOLS = {"create_data", "update_data", "create_file", "edit_file", "move_file", "delete_items"}
 # Runs may open a connection form for missing access, but never author workflows or manage app setup.
 RUN_EXCLUDED_TOOLS = {"long_response", "propose_workflow", "read_connector_form", "update_connector_form",
-                      "list_workflows", "list_sessions", "propose_schedule", "propose_session_changes"}
+                      "list_sessions", "propose_session_changes",
+                      "list_mcp_servers", "propose_mcp_changes",
+                      # Background tasks belong to chat runs for now; a workflow run is already a server job.
+                      "start_task", "wait_tasks", "stop_task"}
 for skill_name, names in (("workspace", WORKSPACE_TOOLS), ("visualization", {"visualize"})):
     schema_path = Path(__file__).parents[1] / "analyst" / "skills" / skill_name / "tools.json"
     TOOLS.extend(item for item in json.loads(schema_path.read_text(encoding="utf-8")) if item["function"]["name"] in names)
@@ -115,13 +116,13 @@ is missing, contradictory, affected by changed inputs or requirements, or explic
 is not verification. Do not claim causality from correlations, average percentiles, mix metric units,
 or treat missing telemetry as zero. Disclose source conventions, limitations, and missing data.
 Start from the session index: read the tables, charts, reports, and files the task needs with read_file (several
-at once with paths) and find mentions with search_files; list_workspace_items covers inputs beyond it. Source fields in the
+at once; rows of tables, pages of PDFs) and find things with search (table rows, files, session items). Source fields in the
 instance are optional task guidance, not built-in adapters. Use the shared Python and workspace tools
 for inspection and analysis. Follow the workspace's Choose an Acquisition Route guidance for missing
 inputs and continue from acquired data to delivery. Print concise evidence. Request_help only when
 required inputs remain inaccessible through available authorized routes or essential intent is unresolved;
 do not claim that a source was fetched merely because it is named in the instance.
-Scripts cannot write files. To save results assign outputs = {'comparison.csv': dataframe, 'notes.md': text}.
+Scripts write only to scratch/. To save results for this run assign outputs = {'comparison.csv': dataframe, 'notes.md': text}.
 The host writes these inside the run directory. Each script starts with a fresh namespace; reread needed files.
 These scratch outputs are intermediates, NOT user-facing deliverables. For a visualization, transform the
 available inputs directly with visualize: it publishes both the derived table and chart. Retain supporting
@@ -132,10 +133,10 @@ Also use create_data for an independently needed data deliverable (or update_dat
 create_file/edit_file for other durable files. Do not ask the user to import your downloads.
 create_data and visualize accept code that reads available inputs. Include their actual workspace IDs
 or file paths as input_sources; never invent a preloaded source path.
-Read published results back with read_file (session/tables/<name>.json, session/charts/<id>.json). For CSV files, create_file can
+Read published results back with read_file (session://tables/<name>, session://charts/<id>). For CSV files, create_file can
 return dataframe.to_csv(index=False) as text. visualize uses chart_type such as Line Chart, Bar Chart,
-Scatter Plot, with encodings mapping x/y/color to field names. Embed returned chart IDs in reports as
-![caption](chart://<chart-id>). write_report publishes directly into Data Formulator's report view.
+Scatter Plot, with encodings mapping x/y/color to field names. Embed returned charts in reports as
+![caption](session://charts/<chart-id>). write_report publishes directly into Data Formulator's report view.
 All outputs belong to the single workflow execution conversation, not new user prompts.
 Retain raw acquisition data unchanged. No network calls,
 credential reads, package installation, cloud changes, or shell commands in analysis scripts.
@@ -153,11 +154,14 @@ Do not ask 'shall I continue'. Be concise. Make one tool call at a time.
 """
 
 
-def new_run(instance: dict, run_id: str, setup: dict | None = None, language: str = "en") -> dict:
-    instance = localize_definition(instance, language)
+def new_run(instance: dict, run_id: str, setup: dict | None = None, language: str = "en", *, require_values: bool = True) -> dict:
+    """A run's first checkpoint. A scheduled run passes ``require_values=False``: its instructions, not a form, say which
+    inputs to use."""
+    # When the workflow runs unattended is not part of the work.
+    instance = {key: value for key, value in localize_definition(instance, language).items() if key != "schedule"}
     steps = deepcopy(instance.get("steps") or initial_steps())
     return {"id": run_id, "definition": deepcopy(instance), "instance": deepcopy(instance), "language": language,
-            "plan": {"steps": steps}, "setup": resolve_setup(instance, setup),
+            "plan": {"steps": steps}, "setup": resolve_setup(instance, setup, require_values=require_values),
             "status": "running", "started_at": datetime.now(timezone.utc).isoformat(),
             "step_id": steps[0]["id"], "trajectory": [], "checks": {}, "evidence": {},
             "transitions": [], "calls": 0, "elapsed_seconds": 0, "revision": 0, "report": "",
@@ -212,6 +216,10 @@ def model_retry_delay(exc: Exception, attempt: int) -> float | None:
 
 
 class WorkflowAgent(AnalystAgent):
+    FAILURE_AGENT = "workflow"
+    # Its run loop executes one call per response (it records only the first).
+    PARALLEL_TOOL_CALLS = False
+
     def __init__(self, client, workspace, state: dict, checkpoint, cancel: Event, identity_id: str,
                  workspace_id: str | None = None):
         super().__init__(client, workspace, identity_id=identity_id, workspace_id=workspace_id,
@@ -227,7 +235,9 @@ class WorkflowAgent(AnalystAgent):
         self.run_dir.mkdir(exist_ok=True)
         from data_formulator.analyst.session_layer import SessionLayer, load_saved_state
         # The session it runs in, as the analyst sees it (design-docs/61): from the saved session state.
+        # in_workflow_run: runs do not see workflows/ (they never author workflows).
         self._run_payload = {"input_tables": [], "charts": [], "skill_state": {}, "conversation_id": state["id"],
+                             "in_workflow_run": True,
                              "identity_id": identity_id, "workspace_id": workspace_id,
                              "session_layer": SessionLayer(load_saved_state(identity_id, workspace_id), workspace)}
         self.state.setdefault("outputs", [])
@@ -341,11 +351,8 @@ class WorkflowAgent(AnalystAgent):
                 continue
             result = output["content"]["result"]
             spec = (result.get("refined_goal") or {}).get("chart", {})
-            content = result.get("content", {})
             charts.append({"chart_id": result.get("chart_id"), "chart_type": spec.get("chart_type"),
-                           "encodings": spec.get("encodings", {}), "code": result.get("code"),
-                           "chart_data": {"rows": content.get("rows", [])[:20],
-                                          "name": (content.get("virtual") or {}).get("table_name")}})
+                           "encodings": spec.get("encodings", {})})
         self._run_payload["charts"] = charts
 
     def resolve_pending(self, result: dict) -> None:
@@ -906,6 +913,7 @@ class WorkflowAgent(AnalystAgent):
                     tool_response = {"role": "tool", "tool_call_id": call.id,
                                      "content": "Execution interrupted before the result was recorded. Inspect existing artifacts before retrying."}
                     trajectory.append(tool_response)
+                    args = None
                     try:
                         args = json.loads(call.function.arguments)
                         if not isinstance(args, dict):
@@ -931,9 +939,13 @@ class WorkflowAgent(AnalystAgent):
                             raise WorkflowInterrupted()
                         self._run_payload["action_narration"] = message.content or ""
                         observation = self._execute(call.function.name, args, call.id)
+                        from data_formulator.agents.failure_log import observation_failure
+                        if (failure := observation_failure(observation)) is not None:
+                            self._log_failure(call.function.name, failure, args, call.id)
                     except WorkflowInterrupted:
                         raise
                     except Exception as exc:
+                        self._log_failure(call.function.name, exc, args, call.id)
                         observation = f"Tool failed: {str(exc)[:2000]}. Inspect the failure and repair, or request_help."
                         self._evidence(call.id, call.function.name, observation)
                         state["evidence"][call.id]["status"] = "failed"

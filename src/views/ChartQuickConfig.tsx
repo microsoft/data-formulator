@@ -21,6 +21,7 @@ import { getChartTemplate } from '../components/ChartTemplates';
 import { ChartEncoding, ChartOption, EncodingActionDef } from 'flint-chart';
 import { ConfigSlider } from './EncodingShelfCard';
 import { iconVar, textVar } from '../app/layout';
+import { ink, paper, weight } from '../app/tokens';
 
 export interface ChartQuickConfigProps {
     chartId: string;
@@ -217,15 +218,15 @@ export const ChartQuickConfig: FC<ChartQuickConfigProps> = function ({ chartId, 
             px: 1.5,
             py: 0.5,
             maxWidth: 900,
-            borderRadius: '8px',
-            backgroundColor: 'rgba(0,0,0,0.025)',
+            borderRadius: 2,
+            backgroundColor: ink(0.025),
         }}>
             {controls.map((propDef) => {
                 if (propDef.type === 'continuous') {
                     const currentValue = getValue(propDef) ?? propDef.min ?? 0;
                     return (
                         <Box key={`qc-${propDef.key}`} sx={{ display: 'flex', alignItems: 'center', minWidth: 150 }}>
-                            <Typography variant="caption" sx={{ pr: 0.75, color: 'text.secondary', fontSize: textVar.xxs, whiteSpace: 'nowrap', fontWeight: 500, userSelect: 'none' }}>
+                            <Typography variant="caption" sx={{ pr: 0.75, color: 'text.secondary', fontSize: textVar.xxs, whiteSpace: 'nowrap', fontWeight: weight(500), userSelect: 'none' }}>
                                 {propDef.label}
                             </Typography>
                             <ConfigSlider
@@ -244,16 +245,16 @@ export const ChartQuickConfig: FC<ChartQuickConfigProps> = function ({ chartId, 
                             cursor: 'pointer',
                         }}
                             onClick={() => commit(propDef, !currentValue)}>
-                            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: textVar.xxs, whiteSpace: 'nowrap', fontWeight: 500, userSelect: 'none', mr: 0.75 }}>
+                            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: textVar.xxs, whiteSpace: 'nowrap', fontWeight: weight(500), userSelect: 'none', mr: 0.75 }}>
                                 {propDef.label}
                             </Typography>
                             <Box sx={{
                                 width: 28, height: 14, borderRadius: '7px',
-                                backgroundColor: currentValue ? theme.palette.primary.main : 'rgba(0,0,0,0.2)',
+                                backgroundColor: currentValue ? theme.palette.primary.main : ink(0.2),
                                 position: 'relative', transition: 'background-color 0.2s', flexShrink: 0,
                             }}>
                                 <Box sx={{
-                                    width: 10, height: 10, borderRadius: '50%', backgroundColor: 'white',
+                                    width: 10, height: 10, borderRadius: '50%', backgroundColor: paper(),
                                     position: 'absolute', top: 2, left: currentValue ? 16 : 2, transition: 'left 0.2s',
                                 }} />
                             </Box>
@@ -268,7 +269,7 @@ export const ChartQuickConfig: FC<ChartQuickConfigProps> = function ({ chartId, 
                 if (selectedIndex < 0) selectedIndex = 0;
                 return (
                     <Box key={`qc-${propDef.key}`} sx={{ display: 'flex', alignItems: 'center', minHeight: '22px' }}>
-                        <Typography variant="caption" sx={{ pr: 0.75, color: 'text.secondary', fontSize: textVar.xxs, whiteSpace: 'nowrap', fontWeight: 500, userSelect: 'none' }}>
+                        <Typography variant="caption" sx={{ pr: 0.75, color: 'text.secondary', fontSize: textVar.xxs, whiteSpace: 'nowrap', fontWeight: weight(500), userSelect: 'none' }}>
                             {propDef.label}
                         </Typography>
                         <Select
@@ -282,11 +283,11 @@ export const ChartQuickConfig: FC<ChartQuickConfigProps> = function ({ chartId, 
                             sx={{
                                 fontSize: textVar.xs, height: '22px', minWidth: 60,
                                 color: 'text.secondary',
-                                '&:before': { borderBottomColor: 'rgba(0,0,0,0.2)' },
-                                '&:hover:not(.Mui-disabled):before': { borderBottomColor: 'rgba(0,0,0,0.42)' },
-                                '&:after': { borderBottomColor: 'rgba(0,0,0,0.42)' },
+                                '&:before': { borderBottomColor: ink(0.2) },
+                                '&:hover:not(.Mui-disabled):before': { borderBottomColor: ink(0.42) },
+                                '&:after': { borderBottomColor: ink(0.42) },
                                 '& .MuiSelect-select': { padding: '1px 18px 1px 2px !important', fontSize: textVar.xs },
-                                '& .MuiSvgIcon-root': { fontSize: iconVar.sm, right: 0, color: 'rgba(0,0,0,0.4)' },
+                                '& .MuiSvgIcon-root': { fontSize: iconVar.sm, right: 0, color: ink(0.4) },
                             }}
                             renderValue={(idx: number) => <span style={{ fontSize: textVar.xs }}>{options[idx]?.label || 'Default'}</span>}
                         >
@@ -331,7 +332,7 @@ export const ChartQuickConfig: FC<ChartQuickConfigProps> = function ({ chartId, 
                     transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
                     slotProps={{ paper: { sx: {
                         p: 1.25,
-                        borderRadius: '8px',
+                        borderRadius: 2,
                         mt: '-10px',
                         ml: '-14px',
                         overflow: 'visible',

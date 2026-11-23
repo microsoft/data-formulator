@@ -1,7 +1,11 @@
 import json
+from collections import OrderedDict
+import httpcore
+import httpx
 import litellm
 import logging
 import os
+import time
 from types import SimpleNamespace
 from urllib.parse import urlparse
 from litellm.responses.utils import ResponsesAPIRequestUtils
@@ -34,12 +38,42 @@ GATEWAY_DEFAULT_API_BASES = {
 }
 
 
+# Backoff before re-sending a request whose connection never opened (e.g. a dropped TLS handshake).
+CONNECT_RETRY_DELAYS = (0.5, 1.0, 2.0, 4.0)
+
+
+def _connection_failed(exc):
+    """Whether the request failed while opening the connection, so the provider never received it."""
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        if isinstance(exc, (httpx.ConnectError, httpcore.ConnectError)):
+            return True
+        seen.add(id(exc))
+        exc = exc.__cause__ or exc.__context__
+    return False
+
+
+def _retry_connect(send, call_kwargs):
+    for delay in (*CONNECT_RETRY_DELAYS, None):
+        try:
+            return send(call_kwargs)
+        except Exception as e:
+            if delay is None or not _connection_failed(e):
+                raise
+            logger.warning("Model connection failed; retrying in %gs: %s", delay, e)
+            time.sleep(delay)
+
+
 def effective_api_base(endpoint, api_base):
     """Return the base URL a request will target, or ``None`` for a first-party provider default."""
     return api_base or GATEWAY_DEFAULT_API_BASES.get(endpoint) or None
 
 
 _translate_responses_chunk = OpenAiResponsesToChatCompletionStreamIterator.translate_responses_chunk_to_openai_stream
+# Each streaming message's phase (``commentary`` before tool calls, ``final_answer`` for the answer), by item id,
+# from its ``output_item.added`` event until it is done; bounded in case a stream ends early.
+_message_phases: "OrderedDict[str, str]" = OrderedDict()
+_MAX_MESSAGE_PHASES = 256
 
 
 def _translate_responses_chunk_or_raise(chunk, *args, **kwargs):
@@ -48,6 +82,9 @@ def _translate_responses_chunk_or_raise(chunk, *args, **kwargs):
     LiteLLM's Responses bridge turns them into empty chunks and then adds
     ``finish_reason='stop'``, so a rate-limited or truncated request would look
     like a model that chose to reply with nothing.
+
+    It also drops the phase the Responses API gives each message; keep it on the message's text deltas as
+    ``delta.provider_specific_fields["phase"]``, so a caller can stream an answer while it is written.
     """
     kind = chunk.get("type") if isinstance(chunk, dict) else None
     kind = getattr(kind, "value", kind)
@@ -55,7 +92,21 @@ def _translate_responses_chunk_or_raise(chunk, *args, **kwargs):
         response = chunk.get("response") or {}
         detail = response.get("error") or response.get("incomplete_details") or chunk.get("error") or chunk
         raise ValueError(f"Model response {kind.removeprefix('response.')}: {json.dumps(detail, default=str)[:500]}")
-    return _translate_responses_chunk(chunk, *args, **kwargs)
+    if kind in ("response.output_item.added", "response.output_item.done"):
+        item = chunk.get("item") or {}
+        if item.get("type") == "message" and item.get("id"):
+            if kind == "response.output_item.done":
+                _message_phases.pop(item["id"], None)
+            elif item.get("phase"):
+                _message_phases[item["id"]] = item["phase"]
+                while len(_message_phases) > _MAX_MESSAGE_PHASES:
+                    _message_phases.popitem(last=False)
+    translated = _translate_responses_chunk(chunk, *args, **kwargs)
+    if kind == "response.output_text.delta" and (phase := _message_phases.get(chunk.get("item_id"))):
+        choices = getattr(translated, "choices", None) or []
+        if choices and getattr(choices[0], "delta", None) is not None:
+            choices[0].delta.provider_specific_fields = {"phase": phase}
+    return translated
 
 
 OpenAiResponsesToChatCompletionStreamIterator.translate_responses_chunk_to_openai_stream = staticmethod(_translate_responses_chunk_or_raise)
@@ -270,6 +321,13 @@ def _salvage_tool_calls_from_content(response, tools):
         break
     return response
 
+
+def _set_reasoning(params: dict, effort: str | None) -> None:
+    """Send ``effort``; ``None`` sends none, so the model reasons at its own default."""
+    if effort is None:
+        params.pop("reasoning_effort", None)
+    else:
+        params["reasoning_effort"] = effort
 
 class Client(object):
     """
@@ -620,23 +678,23 @@ class Client(object):
                 call_kwargs["allowed_openai_params"] = ["reasoning_effort"]
         if self.api_type == "responses":
             try:
-                resp = self._dispatch_responses(call_kwargs)
+                resp = _retry_connect(self._dispatch_responses, call_kwargs)
             except Exception as e:
                 if not (self._auto_responses and self._responses_unavailable(str(e))):
                     raise
                 logger.warning("Responses API unavailable for %s; using Chat Completions", self.model)
                 _CHAT_ONLY.add(self._route_key())
                 self.api_type, self._auto_responses = None, False
-                resp = self._dispatch_chat_completions(call_kwargs)
+                resp = _retry_connect(self._dispatch_chat_completions, call_kwargs)
         else:
-            resp = self._dispatch_chat_completions(call_kwargs)
+            resp = _retry_connect(self._dispatch_chat_completions, call_kwargs)
         if is_ollama and tools:
             resp = _salvage_tool_calls_from_content(resp, tools)
         if is_ollama and stream:
             return _synthesize_stream(resp)
         return resp
 
-    def get_completion(self, messages, stream=False, reasoning_effort="low",
+    def get_completion(self, messages, stream=False, reasoning_effort=None,
                        **kwargs):
         """Send a chat completion request via LiteLLM.
 
@@ -646,7 +704,7 @@ class Client(object):
         ignored rather than causing errors.
         """
         params = self.params.copy()
-        params["reasoning_effort"] = reasoning_effort
+        _set_reasoning(params, reasoning_effort)
         params.update(kwargs)
         if self.endpoint not in _STRUCTURED_OUTPUT_ENDPOINTS:
             params.pop("response_format", None)
@@ -666,14 +724,14 @@ class Client(object):
             raise
 
     def get_completion_with_tools(self, messages, tools, stream=False,
-                                  reasoning_effort="low", **kwargs):
+                                  reasoning_effort=None, **kwargs):
         """Send a chat completion request with tool definitions via LiteLLM.
 
         Same as ``get_completion`` but accepts ``tools`` (and optional
         ``tool_choice``, ``parallel_tool_calls``, etc. via ``**kwargs``).
         """
         params = self.params.copy()
-        params["reasoning_effort"] = reasoning_effort
+        _set_reasoning(params, reasoning_effort)
         try:
             return self._dispatch(messages=messages, stream=stream,
                                   params=params, tools=tools, extra=kwargs)

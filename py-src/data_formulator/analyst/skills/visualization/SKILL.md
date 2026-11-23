@@ -26,44 +26,8 @@ flag or exclude partial ones. Answer from the data; label facts it cannot suppor
 
 ## Inputs and Publication
 
-To fix a chart the user says is wrong or unwanted, publish the corrected one with
-`replaces` set to the old table or chart id; the old pair is deleted. Variations
-and follow-ups add new charts instead.
-
-Choose inputs from the session; to load more, load the `connected_data` skill and follow its Data Access Paths. Compute
-chart-specific filters, grouping, and ranking from their listed paths. No
-separate `create_data` call is needed to prepare or publish chart data.
-Virtual load outcomes are not local chart inputs; follow the workspace policy
-to obtain a compute-ready result or use the connector input path below.
-
-For the optional one-off chart path, declare `connector_inputs` in this call.
-Each input has a unique `alias`, `source_id`,
-`table_key`, and optional structured `query`. The backend persists the query
-result and supplies `connector_inputs['alias']` as its actual Parquet path before
-running Python. Read it with `pd.read_parquet(connector_inputs['alias'])`.
-Do not guess a filename or connect to the source from sandboxed Python.
-
-Connector inputs are added to provenance automatically; `input_sources` lists
-other durable inputs used by the code. Use `[]` when there are no other inputs.
-Matching loaded queries are reused. If Python or rendering fails, the returned
-bindings remain available; retry with those paths instead of reloading.
-
-- `title`: concise, neutral analytical heading naming the subject, measure, and
-  lens. Do not name the chart type, imply causality, or editorialize.
-- `subtitle`: supporting context not already clear from title or axes, at most
-  16 words.
-- `display_instruction`: at most 12 words stating the question or hypothesis.
-- `code`: standalone Python producing the DataFrame named by `output_variable`.
-- `input_sources`: durable inputs materially used by the transform. Use stable
-  IDs and kinds from workspace context; use `[]` when none contributed.
-- `field_metadata`: for encoded fields, a SemanticType name (`Year`, `Amount`,
-  `Category`, …; not `quantitative` or `nominal`) or an object adding `unit`,
-  `intrinsic_domain`, `sort_order` for ordered categories, and
-  `diverging_midpoint` for a baseline. Never invent a unit.
-- `field_display_names`: concise human-readable labels for axes and legends.
-- `chart.encodings`: map each channel to a Flint encoding object
-  (`{"field": ..., "type": ...}`) or a bare field name. Every `field` must name
-  an output column.
+Each `visualize` parameter describes what to write in it. Keep the code standalone and
+every encoded field an output column.
 
 Choose the chart from the analytical intent: comparison, trend, distribution,
 relationship, composition, deviation, ranking, uncertainty, or spatial pattern.
@@ -80,10 +44,35 @@ Common chart contracts:
 | distribution | Histogram, Density Plot, Boxplot, Violin Plot | raw quantitative values |
 | composition | Stacked Bar Chart, Pie Chart, Streamgraph | value plus category |
 | uncertainty | Range Area Chart | x, lower y, upper y2 |
-| spatial | Map, Choropleth | longitude/latitude or region id |
+| spatial | a map file: load `map` and call `write_map`; Map or Choropleth charts only when a chart is explicitly asked for | longitude/latitude or region id |
 
 Pass raw values to Histogram and ECDF Plot rather than precomputing bins or a
 CDF. Regression computes its trend line; do not calculate predictions in code.
 Pie Chart uses `size` for wedge values. Grouped Bar Chart uses `group`. Map uses
 longitude/latitude; Choropleth uses region `id` and quantitative `color`.
 All encoded fields must exist in the output DataFrame.
+
+## Color
+
+Leave colors to the theme unless the values carry a meaning readers already tie
+to a color; then pin them, so a meaningful color never lands on the wrong value.
+Category values keep their colors across the session on their own: a country,
+product or group drawn once keeps its color in later charts and maps that add
+other values, so do not recolor follow-up charts by hand.
+
+- Categories with conventional colors: political parties (US Republican red,
+  Democratic blue), outcomes (win/loss, pass/fail, yes/no: green and red),
+  traffic-light status, energy sources (coal dark grey, solar yellow, wind light
+  blue), a brand's or team's own color. Set `colors` on the field in
+  `field_metadata`, keyed by the values as they appear in the data:
+  `{"party": {"semantic_type": "Category", "colors": {"Republican": "#d62728",
+  "Democratic": "#1f5fbf", "Independent": "#8c8c8c"}}}`. Give non-answers (no
+  race, not called, unknown, other) neutral greys so they do not read as a side.
+  Pin them the first time the values appear: the colors then apply across the
+  session, to the same kind of field in any table and in maps and apps; when a
+  column already lists `colors`, keep them.
+- A diverging measure whose sides mean something (a party margin, surplus versus
+  deficit): match each side's color. A diverging scheme runs from the low end:
+  `redblue` is red for low values and blue for high. Orient the measure so the
+  sides land right (a Democratic-minus-Republican margin with `redblue`: negative
+  is Republican and red), set the scheme, and state the sign in the subtitle.

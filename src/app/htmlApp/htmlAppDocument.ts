@@ -10,7 +10,9 @@
  * own CSP cannot close). Inside it, the app runs with `sandbox="allow-scripts"`
  * (opaque origin: no cookies, storage, or DOM access to Data Formulator) and a
  * CSP that blocks all network access. Data reaches the app only through
- * validated bridge queries for tables declared in its manifest.
+ * validated bridge queries for tables declared in its manifest. User-clicked
+ * HTTP(S) links open separately through the host, never in the app frame; the
+ * host asks first for addresses the app may have built from workspace data.
  */
 
 export const APP_MANIFEST_ID = 'df-app-manifest';
@@ -40,6 +42,8 @@ export const CONTAINER_DOCUMENT = '<!doctype html><html><head><meta charset="utf
 
 export const DEFAULT_QUERY_ROWS = 5000;
 export const MAX_QUERY_ROWS = 50000;
+const MAX_KNOWN_LINKS = 100_000;
+const URL_IN_TEXT = /https?:\/\/[^\s"'`<>\\]+/gi;
 const MAX_LIST_ITEMS = 200;
 const MAX_FILTER_VALUES = 1000;
 const AGGREGATE_OPS = new Set(['count', 'sum', 'avg', 'min', 'max']);
@@ -76,6 +80,8 @@ export interface HtmlAppTheme {
     /** Density-aware type ramp in px, mirroring the host's `--df-text-*`. */
     textSize: { xxs: number; xs: number; sm: number; md: number; lg: number; xl: number; xxl: number };
     palette: string[];
+    /** The host look's overrides of the app kit's variables (corners, shadows, lines); applied after the kit. */
+    lookVars?: Record<string, string>;
 }
 
 export interface SampleTableRequest {
@@ -92,6 +98,46 @@ export interface SampleTableRequest {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** An address an app may open outside its frame: an absolute HTTP(S) URL without credentials. */
+export function webLink(value: unknown): URL | null {
+    if (typeof value !== 'string') return null;
+    try {
+        const url = new URL(value);
+        return /^https?:$/.test(url.protocol) && !url.username && !url.password ? url : null;
+    } catch {
+        return null;
+    }
+}
+
+/** Add the web addresses written out in text (app code, data values) to `into`, normalized as `URL.href`. */
+export function collectLinks(text: string, into: Set<string>): void {
+    if (!/http/i.test(text)) return;
+    for (const [match] of text.replace(/&amp;/gi, '&').matchAll(URL_IN_TEXT)) {
+        // A template literal's `${...}` is not part of a literal address; trailing punctuation may be prose
+        // or part of the address, as in `Foo_(bar)`, so keep each shorter form.
+        let candidate = match.split('${')[0];
+        while (candidate) {
+            if (into.size >= MAX_KNOWN_LINKS) return;
+            const url = webLink(candidate);
+            if (url) into.add(url.href);
+            if (!/[),.;:!?\]}]$/.test(candidate)) break;
+            candidate = candidate.slice(0, -1);
+        }
+    }
+}
+
+/** Add the web addresses in query result rows to `into`. */
+export function collectRowLinks(rows: unknown, into: Set<string>): void {
+    if (!Array.isArray(rows)) return;
+    for (const row of rows) {
+        if (!isRecord(row)) continue;
+        for (const value of Object.values(row)) {
+            if (into.size >= MAX_KNOWN_LINKS) return;
+            if (typeof value === 'string') collectLinks(value, into);
+        }
+    }
+}
 
 export function parseAppManifest(html: string): HtmlAppManifest {
     const empty = { version: 1, title: '', tables: [] };
@@ -125,6 +171,12 @@ export function themeStylesheet(theme: HtmlAppTheme): string {
     return `:root{${variables.map(([name, value]) => `--df-${name}:${cssValue(value)}`).join(';')};color-scheme:light}`;
 }
 
+/** The host look's variables, after the kit so they win; empty for a look that keeps the kit as it is. */
+function lookStylesheet(theme: HtmlAppTheme): string {
+    const entries = Object.entries(theme.lookVars ?? {}).filter(([name]) => /^--df-[a-z0-9-]+$/.test(name));
+    return entries.length ? `<style>:root{${entries.map(([name, value]) => `${name}:${cssValue(value)}`).join(';')}}</style>` : '';
+}
+
 /** Assemble the sandboxed app document; the CSP precedes all author content. */
 export function buildAppDocument(html: string, options: {
     runtimeScripts: string[];
@@ -148,6 +200,7 @@ export function buildAppDocument(html: string, options: {
         + '<meta name="referrer" content="no-referrer">'
         + `<style>${themeStylesheet(options.theme)}</style>`
         + (options.kitStylesheet ? `<style>${options.kitStylesheet.replace(/<\/(style)/gi, '<\\/$1')}</style>` : '')
+        + lookStylesheet(options.theme)
         + `<script>window.__DF_APP_CONFIG__=${config};</script>`
         + runtime
         + author.head.innerHTML

@@ -57,9 +57,34 @@ export default defineConfig({
         target: `http://localhost:${apiPort}`,
         changeOrigin: false,
       },
+      // MCP settings check that requests come from the app's own origin; OAuth also redirects back here.
+      '/api/mcp': {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: false,
+      },
+      // The browser's settings and tab focus check for the app's own origin too.
+      '/api/browser': {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: false,
+      },
+      // So do sign-ins to data providers.
+      '/api/accounts': {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: false,
+      },
+      // So does wormhole session sharing: its codes are secrets.
+      '/api/sessions/wormhole': {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: false,
+      },
       '/api': {
         target: `http://localhost:${apiPort}`,
         changeOrigin: true,
+      },
+      // A share's phone page and image (only these exact paths: Vite serves /src/… itself).
+      '^/s/[A-Za-z0-9_-]+(\\.png)?$': {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: false,
       },
       '/auth/callback': {
         target: `http://localhost:${apiPort}`,

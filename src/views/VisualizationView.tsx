@@ -2,6 +2,8 @@
 // Licensed under the MIT License.
 
 import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { chartThemeKey, resolvedChartTheme, useSavedThemes } from '../app/savedThemes';
+import { chartCategoryColors } from '../app/categoryColors';
 
 import {
     Box,
@@ -38,7 +40,7 @@ import {
 
 import _ from 'lodash';
 
-import { floatingPillSx } from '../app/tokens';
+import { cardRadius, floatingPillSx, paper, weight } from '../app/tokens';
 import { CHART_SIZE_STOPS, chartSizeStopIndex, chartStretchCeiling, defaultChartSizeStop, gridSizeCaps, iconVar, textVar } from '../app/layout';
 import { useContainerSize, useLayout, useSettledValue } from '../app/LayoutProvider';
 
@@ -49,7 +51,7 @@ import '../scss/VisualizationView.scss';
 import '../scss/DataView.scss';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, explanationContent } from '../app/dfSlice';
-import { FLINT_INPUT, assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
+import { FLINT_INPUT, Size, assembleVegaChart, chartCanvasBox, containScale, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
 import { displayRowsCache } from '../app/displayRowsCache';
 import { apiRequest } from '../app/apiClient';
 import { buildDictTableFromWorkspace } from '../app/tableThunks';
@@ -57,12 +59,16 @@ import embed from 'vega-embed';
 import { Chart, DictTable, EncodingItem, EncodingMap, FieldItem, FieldSemanticsInfo, FormArtifact, TextTurn, chartTitleFits } from '../components/ComponentType';
 import { WorkflowProgress } from './WorkflowPanel';
 import { ScheduleFormArtifactView, SessionsFormArtifactView, WorkflowFormArtifactView } from './SetupFormArtifacts';
+import { McpFormSummary } from '../components/McpProposal';
+import { SignInFormCard } from '../components/SignInFormCard';
 import { ConnectorFormCard } from '../components/ConnectorFormCard';
 import { ConversationCanvas } from './ConversationCanvas';
 
 import TerminalIcon from '@mui/icons-material/Terminal';
 import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
 import TuneIcon from '@mui/icons-material/Tune';
+import IosShareIcon from '@mui/icons-material/IosShare';
+const ShareDialog = React.lazy(() => import('../components/ShareDialog'));
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
@@ -101,6 +107,7 @@ import CodeIcon from '@mui/icons-material/Code';
 import type { DataOperation } from '../dataOperations/models';
 import { DataFrameTable } from './DataFrameTable';
 import { WorkspaceFileCanvas } from './WorkspaceFileCanvas';
+import { ArtifactDraftCanvas } from './ArtifactDraft';
 import { ExternalTableReferenceCanvas } from './ExternalTableReferenceCanvas';
 import { ExplanationCanvas } from './ExplanationCanvas';
 
@@ -196,7 +203,7 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
         <Box id="vis-view-canvas" sx={{ width: '100%', height: '100%', overflowY: 'auto', bgcolor: 'background.default' }}>
             <Box sx={{ width: '100%', maxWidth: 1040, mx: 'auto', boxSizing: 'border-box', px: { xs: 1.5, sm: 2.5, md: 3 }, py: { xs: 1.5, md: 2.25 } }}>
                 <Box sx={{ mb: 1.75 }}>
-                    <Typography sx={{ fontSize: textVar.xl, fontWeight: 400 }}>
+                    <Typography sx={{ fontSize: textVar.xl, fontWeight: weight(400) }}>
                         {operation.canvasTitle || t('dataLoading.operation.previewHeading', { defaultValue: 'Tables to load' })}
                     </Typography>
                 </Box>
@@ -226,13 +233,13 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
                                                 <Typography title={preview?.display_name || step.displayName}
                                                     sx={{
-                                                        fontSize: textVar.sm, fontWeight: 600,
+                                                        fontSize: textVar.sm, fontWeight: weight(600),
                                                         color: selected ? 'primary.main' : 'text.primary', minWidth: 0,
                                                     }} noWrap>
                                                     {preview?.display_name || step.displayName}
                                                 </Typography>
                                                 <Typography sx={{
-                                                    fontSize: textVar.xxs, fontWeight: 500, color: 'text.secondary',
+                                                    fontSize: textVar.xxs, fontWeight: weight(500), color: 'text.secondary',
                                                     border: '1px solid', borderColor: 'divider', borderRadius: 0.75,
                                                     px: 0.5, lineHeight: 1.6, flexShrink: 0,
                                                 }}>
@@ -247,7 +254,7 @@ const DataOperationCanvas: FC<{ operation: DataOperation }> = ({ operation }) =>
                                                 >
                                                     {connectorName && <>
                                                         {t('dataLoading.loadPlan.fromSource', { defaultValue: 'From' })}{' '}
-                                                        <Box component="span" sx={{ fontWeight: 600 }}>{connectorName}</Box>
+                                                        <Box component="span" sx={{ fontWeight: weight(600) }}>{connectorName}</Box>
                                                     </>}
                                                     {connectorName && preview?.table_description && ' · '}
                                                     {preview?.table_description}
@@ -331,6 +338,10 @@ const FormArtifactCanvas: FC<{ turn: TextTurn; form: FormArtifact }> = ({ turn, 
             return setupCanvas(<ScheduleFormArtifactView key={turn.id} turn={turn} form={form} />);
         case 'sessions':
             return setupCanvas(<SessionsFormArtifactView key={turn.id} turn={turn} form={form} />);
+        case 'mcp':
+            return setupCanvas(<McpFormSummary key={turn.id} turn={turn} form={form} />);
+        case 'signin':
+            return setupCanvas(<SignInFormCard key={turn.id} turn={turn} form={form} />);
         case 'connector': {
             const connected = form.connector.status === 'connected';
             return (
@@ -577,6 +588,23 @@ const scaleSpecFonts = (spec: any, factor: number): void => {
     walk(spec);
 };
 
+/**
+ * The CSS size Vega drew at: its inline style on a HiDPI canvas, else the
+ * element's own width/height (a 1× canvas, or an SVG). Read from what Vega set,
+ * not from layout, so `max-width: 100%` on the host can't clip it.
+ */
+const drawnCssSize = (drawn: HTMLElement): Size => {
+    const px = (value: string | null | undefined) => {
+        const n = value ? parseFloat(value) : NaN;
+        return Number.isFinite(n) && n > 0 ? n : undefined;
+    };
+    const rect = drawn.getBoundingClientRect();
+    return {
+        width: px(drawn.style.width) ?? px(drawn.getAttribute('width')) ?? rect.width,
+        height: px(drawn.style.height) ?? px(drawn.getAttribute('height')) ?? rect.height,
+    };
+};
+
 /** Main chart uses vega-embed (interactive tooltips). Static toSVG() removes hover behavior. */
 const VegaChartRenderer: FC<{
     chart: Chart;
@@ -606,10 +634,25 @@ const VegaChartRenderer: FC<{
     const elementId = `focused-chart-element-${chart.id}`;
     // Bumped when a render lands, so the display-scale effect can re-apply.
     const [renderTick, setRenderTick] = useState(0);
-    // Vega's own CSS width for the current render — the baseline the shrink is
+    // Vega's own CSS size for the current render — the baseline the shrink is
     // measured against. Captured in the embed callback, never re-derived.
-    const naturalWidthRef = useRef<number | null>(null);
+    const naturalSizeRef = useRef<Size | null>(null);
+    // The box Flint laid this render out for, magnified with the render.
+    const boxRef = useRef<Size | undefined>(undefined);
     const [assemblyError, setAssemblyError] = useState<string>();
+    // The saved theme the chart (or the preview) names: the chart is drawn again when it changes.
+    useSavedThemes();
+    const themeId = themePreview?.active ? themePreview.themeId : chart.themeId;
+    const themeKey = chartThemeKey(themeId);
+    // Category values keep the colours the session gave them; values drawn for the first time are registered.
+    const sessionColors = useSelector(dfSelectors.getSessionCategoryColors);
+    const categoryColors = useMemo(() => chartCategoryColors(sessionColors, chart.encodingMap, conceptShelfItems, visTableRows,
+        fieldSemantics, resolvedChartTheme(themeId)), [sessionColors, chart.encodingMap, conceptShelfItems, visTableRows, fieldSemantics, themeId, themeKey]);
+    const valueColorsKey = JSON.stringify(categoryColors.colors ?? null);
+    const valueColors = useMemo(() => categoryColors.colors, [valueColorsKey]);
+    useEffect(() => {
+        if (categoryColors.register) dispatch(dfActions.registerCategoryColors(categoryColors.register));
+    }, [categoryColors.register, dispatch]);
 
     useEffect(() => {
         setAssemblyError(undefined);
@@ -645,7 +688,8 @@ const VegaChartRenderer: FC<{
                 fieldSemantics,
                 insightTitle,
                 insightSubtitle,
-                themePreview?.active ? themePreview.themeId : chart.themeId,
+                themeId,
+                valueColors,
             );
         } catch (error) {
             console.warn('VegaChartRenderer: chart assembly failed', error);
@@ -667,6 +711,7 @@ const VegaChartRenderer: FC<{
             scaleSpecSize(spec, scaleFactor);
             scaleSpecFonts(spec, scaleFactor);
         }
+        const box = chartCanvasBox(spec);
 
         onSpecReady?.(spec);
 
@@ -690,13 +735,17 @@ const VegaChartRenderer: FC<{
                     return;
                 }
                 embedResult.current = result;
-                // Record Vega's own CSS width before anything rescales it. It
-                // must be read here: Vega writes the width *inline*, so clearing
+                // Record Vega's own CSS size before anything rescales it. It
+                // must be read here: Vega writes the size *inline*, so clearing
                 // that style later doesn't reveal a natural size, it removes the
-                // sizing and leaves the backing-store width (devicePixelRatio
+                // sizing and leaves the backing-store size (devicePixelRatio
                 // times too large on HiDPI).
                 const drawn = el.querySelector('canvas, svg') as HTMLElement | null;
-                naturalWidthRef.current = drawn ? drawn.getBoundingClientRect().width : null;
+                naturalSizeRef.current = drawn ? drawnCssSize(drawn) : null;
+                boxRef.current = box && {
+                    width: box.width * scaleFactor,
+                    height: box.height * scaleFactor,
+                };
                 setRenderTick(t => t + 1);
             })
             .catch((err) => {
@@ -713,17 +762,20 @@ const VegaChartRenderer: FC<{
             el.innerHTML = '';
         };
 
-    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, chart.themeId, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, insightTitle, insightSubtitle, themePreview?.active, themePreview?.themeId, fieldSemantics, onSpecReady, elementId]);
+    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, chart.themeId, themeKey, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, insightTitle, insightSubtitle, themePreview?.active, themePreview?.themeId, fieldSemantics, onSpecReady, elementId, valueColors]);
 
     // Resize the drawn canvas instead of recompiling. Overriding Vega's inline
     // width (with `height: auto` from the wrapper) scales the chart uniformly
-    // and only ever downsamples, so it stays crisp.
+    // and only ever downsamples, so it stays crisp. Two shrinks compose: the
+    // user's zoom, and Flint's contract that the host contains the drawing in
+    // the box it was laid out for (title, keys and axes may run past it).
     useEffect(() => {
         const el = document.getElementById(elementId);
         const drawn = el?.querySelector('canvas, svg') as HTMLElement | null;
-        const natural = naturalWidthRef.current;
+        const natural = naturalSizeRef.current;
         if (!drawn || !natural) return;
-        drawn.style.width = `${Math.round(natural * displayScale)}px`;
+        const fit = containScale(natural, boxRef.current);
+        drawn.style.width = `${Math.round(natural.width * displayScale * fit)}px`;
     }, [displayScale, renderTick, elementId]);
 
     if (chart.chartType === "Auto") {
@@ -870,8 +922,15 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     // recompile the chart every frame — and a width resting near a step
     // boundary would flip between two ceilings. The chart resizes once, when
     // the drag stops.
+    //
+    // The user's stretch setting is the upper bound: a narrow panel can lower
+    // the stretch, a wide one never raises it past what the user chose. The
+    // factor comes from the width only; the box height follows it.
     const settledCanvasWidth = useSettledValue(canvasContentWidth);
-    const chartStretch = chartStretchCeiling(settledCanvasWidth, config.defaultChartWidth);
+    const chartStretch = Math.min(
+        config.maxStretchFactor ?? 1.5,
+        chartStretchCeiling(settledCanvasWidth, config.defaultChartWidth),
+    );
 
     const dispatch = useDispatch();
 
@@ -900,6 +959,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     // panel (not inside the chart's <Fade>), so it never remounts or shifts
     // when the chart re-renders. We anchor the popover to that button via a ref.
     const [encodingOpen, setEncodingOpen] = useState<boolean>(false);
+    const [shareOpen, setShareOpen] = useState(false);
     const editButtonRef = useRef<HTMLButtonElement | null>(null);
 
     // State for the compact action dock that sits below the chart-mode data
@@ -1119,7 +1179,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     
     const actionBtnSx = {
         padding: '4px',
-        borderRadius: '6px',
+        borderRadius: 1.5,
         color: 'text.secondary',
         transition: 'all 0.15s ease',
         '&:hover': {
@@ -1370,7 +1430,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             >
                 <Paper
                     elevation={8}
-                    sx={{ width: 280, maxHeight: '78vh', overflowY: 'auto', mt: 0.5, py: 0.5, borderRadius: '10px', overflowX: 'visible' }}
+                    sx={{ width: 280, maxHeight: '78vh', overflowY: 'auto', mt: 0.5, py: 0.5, borderRadius: 2.5, overflowX: 'visible' }}
                 >
                     <EncodingShelfCard chartId={focusedChart.id} />
                     {/* Footer: low-emphasis link to inspect the assembled
@@ -1475,7 +1535,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             display: 'flex', alignItems: 'center', gap: 0.5, pl: 1, pr: 2.5, py: '8px',
             pointerEvents: 'none', '& > *': { pointerEvents: 'auto' },
         }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', borderRadius: '10px', bgcolor: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(2px)' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', borderRadius: 2.5, bgcolor: paper(0.88), backdropFilter: 'blur(2px)' }}>
                 {chartResizer}
                 {focusedChart && focusedChart.chartType !== 'Table' && focusedChart.chartType !== 'Auto' && (
                     <ChartThemePicker
@@ -1512,6 +1572,17 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         </IconButton>
                     </Tooltip>
                 )}
+                {focusedChart && !['Table', 'Auto', '?'].includes(focusedChart.chartType) && <>
+                    <Tooltip title={t('share.button', { defaultValue: 'Share as an image' })} placement="bottom">
+                        <IconButton size="small" aria-label={t('share.button', { defaultValue: 'Share as an image' })}
+                            onClick={() => setShareOpen(true)} sx={floatingPillSx}>
+                            <IosShareIcon sx={{ fontSize: iconVar.lg }} />
+                        </IconButton>
+                    </Tooltip>
+                    {shareOpen && <React.Suspense fallback={null}><ShareDialog open={shareOpen} onClose={() => setShareOpen(false)}
+                        title={focusedChart.title || table?.displayId || table?.id || t('share.chart', { defaultValue: 'Chart' })}
+                        target={{ path: `session://charts/${focusedChart.id}`, kind: 'chart', id: focusedChart.id }} /></React.Suspense>}
+                </>}
                 {/* Edit-chart (encoding shelf) button — opens the encoding shelf
                     popover; stays available even when the chart can't render yet,
                     so users can fix the encoding. */}
@@ -1546,7 +1617,7 @@ const TableLoadQueryDialog: FC<{ table: DictTable; loadQuery: NonNullable<NonNul
     const options = Object.fromEntries(Object.entries(loadQuery?.query || {}).filter(([key]) => key !== 'native'));
     return <Dialog open onClose={onClose} aria-labelledby={titleId} maxWidth="md" fullWidth>
         <DialogTitle id={titleId} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-            <Typography component="span" sx={{ fontSize: textVar.lg, fontWeight: 600, overflowWrap: 'anywhere' }}>
+            <Typography component="span" sx={{ fontSize: textVar.lg, fontWeight: weight(600), overflowWrap: 'anywhere' }}>
                 {t('chart.loadQuery', { defaultValue: 'Load query' })}: {table.displayId || table.id}
             </Typography>
             <IconButton size="small" aria-label={t('app.close')} onClick={onClose}><CloseIcon /></IconButton>
@@ -1577,7 +1648,7 @@ const TableTransformationDialog: FC<{
             <DialogTitle id={titleId} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, py: 1.25 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
                     <TerminalIcon sx={{ fontSize: iconVar.lg, color: 'text.secondary', flexShrink: 0 }} />
-                    <Typography component="span" sx={{ fontSize: textVar.lg, fontWeight: 600, overflowWrap: 'anywhere' }}>
+                    <Typography component="span" sx={{ fontSize: textVar.lg, fontWeight: weight(600), overflowWrap: 'anywhere' }}>
                         {t('chart.transformation', { defaultValue: 'Transformation' })}: {table.displayId || table.id}
                     </Typography>
                 </Box>
@@ -1712,7 +1783,7 @@ const TableActionDock: FC<{
         }}>
             <Box sx={{
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 0.5,
-                px: 1, py: compact ? 0.25 : 0.5, borderRadius: '8px',
+                px: 1, py: compact ? 0.25 : 0.5, borderRadius: cardRadius('8px'),
                 backgroundColor: 'background.paper',
                 border: '1px solid', borderColor: 'divider',
             }}>
@@ -1833,7 +1904,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
         ? textTurns.find(turn => turn.id === focusedId.textId && turn.workflow)
         : undefined;
     const focusedFormTurn = focusedId?.type === 'text'
-        ? textTurns.find(turn => turn.id === focusedId.textId && turn.form)
+        ? textTurns.find(turn => turn.id === focusedId.textId && turn.form && turn.form.kind !== 'signin')
         : undefined;
     const focusedExplanationTurn = focusedId?.type === 'text'
         ? textTurns.find(turn => turn.id === focusedId.textId && turn.textKind === 'explain' && turn.presentation === 'long_response' && !turn.form && !turn.dataOperation)
@@ -1868,8 +1939,12 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     if (focusedId?.type === 'file') {
         return <WorkspaceFileCanvas fileName={focusedId.fileName} floatingAppControls />;
     }
+    // A run's open end owns the canvas only while it writes an app or map (selectCanvasTarget).
+    if (focusedId?.type === 'draft') {
+        return <ArtifactDraftCanvas draftId={focusedId.draftId} />;
+    }
     if (focusedId?.type === 'conversation') {
-        return <ConversationCanvas textTurnId={focusedId.tableId} nodeIds={focusedId.nodeIds} label={focusedId.label} />;
+        return <ConversationCanvas textTurnId={focusedId.tableId} nodeIds={focusedId.nodeIds} label={focusedId.label} anchorId={focusedId.anchorId} />;
     }
     if (focusedWorkflowTurn) {
         if (focusedWorkflowTurn.workflow?.status === 'paused' && focusedWorkflowTurn.workflow.dataOperation) {
@@ -1900,7 +1975,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                         <Typography sx={{
                             fontSize: textVar.xs,
                             color: 'text.secondary',
-                            fontWeight: 400,
+                            fontWeight: weight(400),
                             mb: 1.5,
                             pl: 1,
                         }}>{category}</Typography>

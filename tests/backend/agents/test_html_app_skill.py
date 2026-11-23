@@ -60,10 +60,11 @@ def test_registry_exposes_gated_app_actions() -> None:
     assert registry.action_owner("write_html_app") == "html_app"
     assert "html_app" in registry.gated_skill_names()
     schemas = {tool["function"]["name"]: tool["function"] for tool in registry.action_tools_for(["html_app"])}
-    # filename (new app) or path + expected_content_hash (rewrite in place); the handler enforces one.
-    assert set(schemas["write_app"]["parameters"]["required"]) == {"title", "tables", "code"}
-    assert set(schemas["write_html_app"]["parameters"]["required"]) == {"title", "tables", "html"}
-    assert {"filename", "path", "expected_content_hash"} <= set(schemas["write_app"]["parameters"]["properties"])
+    # One files/ path for a new app or a rewrite in place (with expected_content_hash); filename is not offered.
+    assert set(schemas["write_app"]["parameters"]["required"]) == {"path", "title", "tables", "code"}
+    assert set(schemas["write_html_app"]["parameters"]["required"]) == {"path", "title", "tables", "html"}
+    assert {"path", "expected_content_hash"} <= set(schemas["write_app"]["parameters"]["properties"])
+    assert "filename" not in schemas["write_app"]["parameters"]["properties"]
     body = registry.load_body("html_app")
     assert "useQuery" in body and "FlintChart" in body and "edit_file" in body and "no network" in body
     assert "DF.query" in body and "df-card" in body
@@ -145,6 +146,13 @@ def test_lint_warns_about_code_that_cannot_work_in_the_sandbox() -> None:
     assert lint_html(APP, ["sales"]) == []
 
 
+def test_lint_allows_web_links_but_not_external_assets() -> None:
+    assert "External scripts" not in " ".join(lint_html('<a href="https://neurips.cc/virtual/2026" target="_blank">Site</a>', []))
+    assert lint_react_app('export default () => <Link href="https://arxiv.org/abs/1">Paper</Link>;', []) == []
+    assert "External scripts" in " ".join(lint_html('<link rel="stylesheet" href="https://cdn.example.com/a.css">', []))
+    assert "External scripts" in " ".join(lint_react_app('export default () => <img src={"https://x.example/a.png"} />;', []))
+
+
 def test_lint_steers_styling_toward_the_df_app_kit() -> None:
     styled = (
         '<html><head><style>body{font-family:Georgia;color:#111}.a{background:#fafafa;border:1px solid rgb(0, 0, 0)}'
@@ -165,9 +173,10 @@ def test_lint_steers_styling_toward_the_df_app_kit() -> None:
 
 REACT_APP = """import { useState } from 'react';
 import {
-  Page,
-  Select,
-} from '@df/ui';
+  Container as Page,
+  MenuItem,
+  TextField,
+} from '@mui/material';
 import { useQuery, useDistinct } from '@df/data';
 import { FlintChart } from '@df/chart';
 
@@ -175,7 +184,8 @@ export default function App() {
   const [region, setRegion] = useState('');
   const regions = useDistinct('sales', 'region');
   const totals = useQuery('sales', { columns: ['region'], aggregates: [{ op: 'sum', field: 'amount' }] });
-  return <Page title="Sales"><Select label="Region" value={region} onChange={setRegion} options={regions.values} />
+  return <Page title="Sales"><TextField select label="Region" value={region} onChange={event => setRegion(event.target.value)}>
+    {regions.values.map(name => <MenuItem key={name} value={name}>{name}</MenuItem>)}</TextField>
     <FlintChart chartType="Bar Chart" query={totals} encodings={{ x: 'region', y: 'amount_sum' }} /></Page>;
 }
 """
@@ -231,7 +241,7 @@ def test_react_app_text_stays_readable_after_agent_edits(workspace) -> None:
 
 
 def test_react_lint_and_import_helpers() -> None:
-    assert react_imports(REACT_APP) == ["react", "@df/ui", "@df/data", "@df/chart"]
+    assert react_imports(REACT_APP) == ["react", "@mui/material", "@df/data", "@df/chart"]
     validate_react_app(REACT_APP)
     assert lint_react_app(REACT_APP, ["sales"]) == []
     warnings = " ".join(lint_react_app(
@@ -239,16 +249,38 @@ def test_react_lint_and_import_helpers() -> None:
         "borderColor: '#333', outlineColor: '#444' }} />; }", ["sales"]))
     assert "Network requests are blocked" in warnings and "Browser storage" in warnings
     assert "never reads them" in warnings and "hardcodes 4 colors" in warnings
+    # Colours stated on purpose (a theme object, a category's colours) are fine; CSS that fights the theme is not.
+    themed = ("const THEME = { extends: 'board', ink: { accent: '#c2410c', series: { categorical: ['#c2410c', '#0f766e', "
+              "'#7c3aed', '#ca8a04'] } } };\nexport default () => <AppTheme theme={THEME}><FlintChart semanticTypes={{ party: "
+              "{ semanticType: 'Category', colors: { Rep: '#d62728', Dem: '#1f5fbf' } } }} /></AppTheme>;")
+    assert lint_react_app(themed, []) == []
+    clashing = " ".join(lint_react_app(
+        "export default () => <Box sx={{ '& .MuiPaper-root': { borderRadius: 0 }, '--df-primary': 'red', "
+        "fontFamily: 'Georgia', '& [data-flint-chart] text': { fill: 'red' } }} />;", []))
+    assert "MUI's internal classes" in clashing and "charts' own SVG" in clashing
+    assert "sets --df-* tokens" in clashing and "names a font" in clashing
+    # Long text and a caveat alert always shown are flagged; SQL and an alert under a condition are not.
+    wordy = " ".join(lint_react_app(
+        "export default () => <Stack><Alert severity=\"info\">Data is a historical snapshot.</Alert>"
+        "{truncated && <Alert severity=\"warning\">Results were truncated.</Alert>}"
+        f"<Typography>{'This note explains the method at length ' * 6}</Typography>"
+        "{useSql(`SELECT a, CASE\n WHEN b THEN 'x' END FROM t WHERE c GROUP BY a ORDER BY a`)}</Stack>;", []))
+    assert "over 40 words" in wordy and "info or warning Alert" in wordy
+    assert lint_react_app("export default () => <Stack>{truncated && (\n <Alert severity=\"warning\">Cut short.</Alert>)}</Stack>;", []) == []
     stamped = stamp_react_manifest("// @df-app {}\r\n\nexport default 1", {"version": 2})
     assert stamped == '// @df-app {"version": 2}\nexport default 1'
 
 
-def test_skill_starter_app_is_valid_and_lint_clean() -> None:
+def test_skill_example_apps_are_valid_and_lint_clean() -> None:
     body = build_registry().load_body("html_app")
-    starter = body.split("```jsx", 1)[1].split("```", 1)[0]
-    validate_react_app(starter)
-    assert set(react_imports(starter)) <= set(ALLOWED_IMPORTS)
-    assert lint_react_app(starter, ["sales"]) == []
+    blocks = [block.split("```", 1)[0] for block in body.split("```jsx")[1:]]
+    apps = [block for block in blocks if "export default" in block]
+    # The starter dashboard and the story example; other blocks are fragments.
+    assert len(apps) == 2
+    for app in apps:
+        validate_react_app(app)
+        assert set(react_imports(app)) <= set(ALLOWED_IMPORTS)
+        assert lint_react_app(app, ["sales"]) == []
 
 
 def _hash(workspace, name):

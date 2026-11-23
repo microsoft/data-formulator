@@ -4,7 +4,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { textVar } from '../app/layout';
-import { radius } from '../app/tokens';
+import { radius, weight } from '../app/tokens';
 import type { DataOperation } from '../dataOperations/models';
 
 interface DataOperationCardProps {
@@ -45,7 +45,7 @@ export const DataOperationCard: React.FC<DataOperationCardProps> = ({
                                 primary={plan.label}
                                 sx={{ my: 0 }}
                                 slotProps={{
-                                    primary: { sx: { fontSize: textVar.sm, fontWeight: 500, lineHeight: 1.35 } },
+                                    primary: { sx: { fontSize: textVar.sm, fontWeight: weight(500), lineHeight: 1.35 } },
                                     secondary: { component: 'div' },
                                 }}
                                 secondary={(

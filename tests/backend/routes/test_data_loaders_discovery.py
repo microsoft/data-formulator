@@ -76,10 +76,12 @@ def client_with_plugin(tmp_path, monkeypatch):
     (plugins_dir / "fake_warehouse_data_loader.py").write_text(PLUGIN_BODY)
 
     monkeypatch.setenv("DATA_FORMULATOR_HOME", str(tmp_path))
-    monkeypatch.setenv("WORKSPACE_BACKEND", "local")
     monkeypatch.delenv("DF_PLUGIN_DIR", raising=False)
+    import data_formulator.auth.identity as identity
+    monkeypatch.setattr(identity, "_localhost_identity", "local:tester")
 
     dl = _reload_data_loader_module()
+    dl.load_plugins()
     assert "fake_warehouse" in dl.PLUGIN_LOADERS, "plugin scanner didn't pick up fixture"
 
     # Mount just the discovery blueprint on a minimal Flask app.
@@ -158,10 +160,11 @@ def test_display_name_default_titlecases_registry_key(tmp_path, monkeypatch):
     )
 
     monkeypatch.setenv("DATA_FORMULATOR_HOME", str(tmp_path))
-    monkeypatch.setenv("WORKSPACE_BACKEND", "local")
     monkeypatch.delenv("DF_PLUGIN_DIR", raising=False)
+    import data_formulator.auth.identity as identity
+    monkeypatch.setattr(identity, "_localhost_identity", "local:tester")
 
-    _reload_data_loader_module()
+    _reload_data_loader_module().load_plugins()
 
     from data_formulator.data_connector import connectors_bp
     from data_formulator.error_handler import register_error_handlers
@@ -191,10 +194,11 @@ def test_plugins_block_surfaces_loaded_and_rejected(tmp_path, monkeypatch):
     )
 
     monkeypatch.setenv("DATA_FORMULATOR_HOME", str(tmp_path))
-    monkeypatch.setenv("WORKSPACE_BACKEND", "local")
     monkeypatch.delenv("DF_PLUGIN_DIR", raising=False)
+    import data_formulator.auth.identity as identity
+    monkeypatch.setattr(identity, "_localhost_identity", "local:tester")
 
-    _reload_data_loader_module()
+    _reload_data_loader_module().load_plugins()
 
     from data_formulator.data_connector import connectors_bp
     from data_formulator.error_handler import register_error_handlers

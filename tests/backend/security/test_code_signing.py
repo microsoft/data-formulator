@@ -85,3 +85,40 @@ class TestSignResult:
     def test_returns_result_for_chaining(self):
         result = {"code": "x = 1"}
         assert sign_result(result) is result
+
+
+# ===================================================================
+# Signing key source
+# ===================================================================
+
+class TestSigningKeySource:
+
+    @pytest.fixture(autouse=True)
+    def _isolated_home(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("DATA_FORMULATOR_HOME", str(tmp_path))
+        monkeypatch.delenv("DF_CODE_SIGNING_SECRET", raising=False)
+        monkeypatch.delenv("FLASK_SECRET_KEY", raising=False)
+        return tmp_path
+
+    def test_old_fixed_dev_key_cannot_forge(self):
+        import hashlib
+        import hmac
+        code = "import os"
+        forged = hmac.new(b"data-formulator-dev-signing-key", code.encode(), hashlib.sha256).hexdigest()
+        assert not verify_code(code, forged)
+
+    def test_installation_key_is_random_private_and_stable(self, _isolated_home):
+        import os
+        signature = sign_code("x = 1")
+        key_file = _isolated_home / ".code-signing-key"
+        assert len(bytes.fromhex(key_file.read_text())) == 32
+        if os.name == "posix":
+            assert key_file.stat().st_mode & 0o777 == 0o600
+        assert sign_code("x = 1") == signature
+
+    def test_explicit_and_flask_secrets_take_priority(self, monkeypatch, _isolated_home):
+        monkeypatch.setenv("FLASK_SECRET_KEY", "flask-secret")
+        from_flask = sign_code("x = 1")
+        monkeypatch.setenv("DF_CODE_SIGNING_SECRET", "explicit")
+        assert sign_code("x = 1") != from_flask
+        assert not (_isolated_home / ".code-signing-key").exists()

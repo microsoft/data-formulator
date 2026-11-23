@@ -1,16 +1,16 @@
 ---
 name: terminal
 description: >-
-   Acquire data from local files, installed clients, public endpoints, and cloud
-   sources using existing CLI logins, register a reusable workspace input, then analyze it.
-   Also discover sources and diagnose connections under the application's policy.
+   Acquire data from local files, installed clients, public datasets and APIs on the web,
+   and cloud sources using existing CLI logins, register a reusable workspace input, then
+   analyze it. Also discover sources and diagnose connections under the application's policy.
 when_to_use: >-
-   Use when local files, command-line clients, or existing authenticated access
-   can retrieve data needed for the user's task, without requiring a connector.
-   Only available in single-user local mode on macOS and Linux.
+   Use when local files, command-line clients, public data on the web (downloadable files,
+   open APIs), or existing authenticated access can retrieve data needed for the user's task,
+   without requiring a connector. Only available in single-user local mode on macOS, Linux and Windows.
 always_on: false
-tools: []
-actions: [run_terminal]
+tools: [wait_tasks, stop_task]
+actions: [run_terminal, start_task]
 ---
 
 # Terminal for data acquisition
@@ -30,17 +30,21 @@ require the user's authorization for the destination and operation.
 
 ## Execution contract
 
-Call `run_terminal` with `argv` (executable and exact arguments), `cwd` (absolute
-directory or `~`), and `purpose` (task and expected side effects). There is no
+Call `run_terminal` with `argv` (executable and exact arguments), `purpose` (task
+and expected side effects), and optionally `cwd`: the workspace root by default, where
+Python runs, so `scratch/…` names the same file in both; a workspace folder such as
+`scratch/`; or an absolute path or `~` for the user's own folders. There is no
 implicit shell expansion; invoke a shell explicitly when pipes or redirects are
 necessary. Approval covers the entire invocation, including any script.
 
 {terminal_policy}
 
-Sandboxed commands can write to `DF_SCRATCH_DIR`, private `DF_RUNTIME_DIR`, and
-the application's `sandbox.filesystem.allowWrite` paths. `cwd` grants no write
-access. Common disposable caches and temporary files are redirected to runtime
-storage, which is deleted after each command. Use scratch for files needed later.
+Sandboxed commands can write to `scratch/` (`$DF_SCRATCH_DIR`), private
+`DF_RUNTIME_DIR`, and the application's `sandbox.filesystem.allowWrite` paths. `cwd`
+grants no write access. Common disposable caches and temporary files (`$TMPDIR`) are
+redirected to runtime storage, which is deleted after each command. Write files you
+or Python need later to `scratch/…` and throwaway files to `$TMPDIR`; never hard-code
+`/tmp` or an absolute workspace path.
 Data Formulator's own credential store and configuration, and on macOS its local
 API, are unavailable to sandboxed commands; use the application's tools for them.
 The default persistent grants cover CLI state and token/discovery caches; a
@@ -63,6 +67,25 @@ Do not retry a rejected operation through another route or edit permission setti
 Results return automatically; do not repeat a command merely to retrieve them.
 Each command has a fresh process, no interactive stdin, a 60-second limit, and the
 last 32 KiB of combined output. No persistent shell state or background services.
+
+## Long commands: background tasks
+
+A command that may take more than a minute (a crawl, a large download, a long
+script) runs as a background task: call `start_task` with the same arguments and
+approval rules as `run_terminal`. It returns at once with a task id; the task has a
+2-hour budget, logs its full output to `scratch/tasks/<id>.log`, and keeps running
+if this run stops. Do not split a long job into repeated resumable chunks.
+
+Stay in charge while it runs: do other work the plan allows, then call
+`wait_tasks`, which parks until a task ends, the timeout passes, or the user stops
+the run, and returns each task's status and last output lines. After each wait,
+tell the user in one or two sentences how it is going (progress, rate, problems),
+then wait again with a timeout suited to the work: short at first, longer once it is
+steady. Read the log or partial files for detail. When a task ends, use its results;
+if it failed, inspect why before proposing a fix. A task the user stopped was their
+decision: do not restart it unless they ask. Use `stop_task` for a task that went
+wrong or is no longer needed. Write progress (e.g. counts done) to the output so
+waits can report it.
 The environment includes selected CLI profile/config and proxy/CA variables, not
 server API keys. Install needed packages only in an isolated scratch/runtime
 environment, never the application's environment. Leave interactive login,
@@ -76,8 +99,11 @@ before installing. To add one for this session, install it with Data Formulator'
 Python into `DF_SITE_PACKAGES` (in scratch), which sandboxed Python imports from:
 `["sh", "-c", "uv pip install --python \"$DF_PYTHON\" --target \"$DF_SITE_PACKAGES\" <package>"]`
 (or `"$DF_PYTHON" -m pip install --target "$DF_SITE_PACKAGES" <package>` where pip is
-available). Without `DF_PYTHON` (the desktop app), session packages are unavailable.
-Sandboxed Python still has no network, no subprocesses, and no writes; a package
+available). Without `DF_PYTHON` (the desktop app), session packages are unavailable,
+and `python3` in a command is the user's own Python (if any), which usually lacks
+pandas and Data Formulator's other packages: use terminal commands to fetch data into
+scratch files, and do the analysis in sandboxed Python.
+Sandboxed Python still has no network, no subprocesses, and no writes outside `scratch/`; a package
 that needs them will not work there. The Docker sandbox does not see session packages.
 
 ## Data workflow
@@ -87,7 +113,7 @@ CLI acquisition -> scratch dataset -> workspace input -> analysis and delivery.
 1. Inspect only what is needed to identify the source and query. For analysis,
    retrieve actual records or aggregates, not just resource metadata. Bound scope,
    dates, fields, and volume; account for pagination and missing coverage.
-2. Save results under `DF_SCRATCH_DIR` without modifying source files. Check exit
+2. Save results under `scratch/` without modifying source files. Check exit
    code, timeout, truncation, and dataset validity. Return an acquisition summary
    and saved path, not rows reconstructed from truncated terminal output.
 3. Register the reusable dataset with `create_data`, referencing `scratch/...`

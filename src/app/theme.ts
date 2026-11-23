@@ -1,42 +1,57 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { alpha, createTheme, type Theme } from '@mui/material/styles';
+import { alpha, createTheme, lighten, type Theme } from '@mui/material/styles';
 
 import { menuPaperSlotProps } from './LayoutProvider';
 import { buttonVar, iconVar, textVar } from './layout';
-import { bgAlpha, defaultPaletteKey, fontSans, palettes } from './tokens';
+import { DEFAULT_LOOK, LOOKS, type Look } from './look';
+import { lookComponents } from './look/muiOverrides';
+import { bgAlpha, defaultPaletteKey, fontSans, palettes, weight } from './tokens';
 
 /**
- * Data Formulator's MUI theme for a palette. Shared by the app shell and by
+ * Data Formulator's MUI theme for a palette and look. Shared by the app shell and by
  * sandboxed React apps so both render with identical components and tokens.
  * Sizes resolve through the `--df-*` CSS variables that LayoutProvider sets.
  */
-export function createDfTheme(paletteKey: string): Theme {
+export function createDfTheme(paletteKey: string, look: Look = DEFAULT_LOOK): Theme {
+    const { palette: lookPalette, corner, mode, tint } = LOOKS[look];
     return createTheme({
+    look,
+    shape: { borderRadius: corner.unit },
     typography: {
-        fontFamily: fontSans
+        fontFamily: fontSans,
+        // The look's weight shift (`--df-weight-shift`) for MUI's own type; views use tokens.ts `weight`.
+        fontWeightRegular: weight(400) as unknown as number,
+        fontWeightMedium: weight(500) as unknown as number,
     },
     // Default Material UI palette
     // Active palette from user config — selectable via Settings dialog
     // Available: material, fluent, vivid, jewel, electric, tealCoral, copilot
     palette: (() => {
         const p = palettes[paletteKey] ?? palettes[defaultPaletteKey];
-        const bg = (entry: { main: string; bgcolor?: string }) => entry.bgcolor ?? alpha(entry.main, bgAlpha);
-        const tc = (entry: { main: string; textColor?: string }) => entry.textColor ?? entry.main;
+        // A look with its own tint (dark) fills every tinted card with it, since palettes' light tints and dark text
+        // shades are made for a white page.
+        const bg = (entry: { main: string; bgcolor?: string }) => tint ?? entry.bgcolor ?? alpha(entry.main, bgAlpha);
+        const tc = (entry: { main: string; textColor?: string }) => mode === 'dark' ? lighten(entry.main, 0.3) : entry.textColor ?? entry.main;
         return {
+            mode,
             primary:   { main: p.primary.main,   bgcolor: bg(p.primary),   textColor: tc(p.primary)   },
             secondary: { main: p.secondary.main, bgcolor: bg(p.secondary), textColor: tc(p.secondary) },
             derived:   { main: p.derived.main,   bgcolor: bg(p.derived),   textColor: tc(p.derived)   },
             custom:    { main: p.custom.main,    bgcolor: bg(p.custom),    textColor: tc(p.custom)    },
             warning:   { main: p.warning.main },
+            // The look's text and divider strength (sharp draws quiet text and dividers darker everywhere).
+            ...(lookPalette ? { text: lookPalette.text, divider: lookPalette.divider } : {}),
+            ...(lookPalette?.background ? { background: lookPalette.background } : {}),
         };
     })(),
     components: {
+        ...lookComponents(look),
         MuiMenu: {
             defaultProps: { slotProps: { paper: menuPaperSlotProps } },
             styleOverrides: {
-                paper: { maxWidth: 'calc(100vw - 32px)', borderRadius: 4, fontSize: 'var(--df-menu-font-size, max(0.875rem, var(--df-text-md, 13px)))' },
+                paper: { maxWidth: 'calc(100vw - 32px)', borderRadius: corner.control, fontSize: 'var(--df-menu-font-size, max(0.875rem, var(--df-text-md, 13px)))' },
                 list: { paddingTop: 4, paddingBottom: 4 },
             },
         },
@@ -109,8 +124,8 @@ export function createDfTheme(paletteKey: string): Theme {
             styleOverrides: {
                 root: {
                     textTransform: 'none',
-                    borderRadius: 4,
-                    fontWeight: 500,
+                    borderRadius: corner.control,
+                    fontWeight: weight(500),
                     lineHeight: 1.4,
                     minWidth: 0,
                     whiteSpace: 'nowrap',

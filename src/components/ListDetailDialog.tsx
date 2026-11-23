@@ -4,7 +4,7 @@ import { Box, ButtonBase, Dialog, DialogActions, DialogTitle, IconButton, Typogr
 import AddIcon from '@mui/icons-material/Add';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { dialogHeight, dialogWidth, iconVar, textVar } from '../app/layout';
-import { borderColor } from '../app/tokens';
+import { borderColor, ink, weight } from '../app/tokens';
 import { ScrollFadeContainer, ScrollFadeEdge, useScrollFade } from './ScrollFade';
 
 /** Left list column shared by management panels (schedules, workflows, data connectors), with scroll-edge fades. */
@@ -12,14 +12,16 @@ export const ListDetailList: React.FC<{
     component?: 'nav' | 'div';
     role?: string;
     'aria-label': string;
+    /** Space between items; plain-row lists sit tighter than card lists. */
+    gap?: number;
     children: React.ReactNode;
-}> = ({ component = 'div', role, 'aria-label': ariaLabel, children }) => {
+}> = ({ component = 'div', role, 'aria-label': ariaLabel, gap = 0.75, children }) => {
     const scrollRef = React.useRef<HTMLDivElement>(null);
     const { moreAbove, moreBelow, update } = useScrollFade(scrollRef);
     return <Box sx={{ position: 'relative', display: 'flex', flexShrink: 0, minHeight: 0, width: { xs: '100%', sm: 240 },
         borderRight: { xs: 0, sm: `1px solid ${borderColor.divider}` }, borderBottom: { xs: `1px solid ${borderColor.divider}`, sm: 0 } }}>
         <Box ref={scrollRef} component={component} role={role} aria-label={ariaLabel} onScroll={update} sx={{
-            flex: 1, minWidth: 0, display: 'flex', flexDirection: { xs: 'row', sm: 'column' }, gap: 0.75,
+            flex: 1, minWidth: 0, display: 'flex', flexDirection: { xs: 'row', sm: 'column' }, gap,
             px: 1.25, pt: { xs: 1, sm: 0.5 }, pb: { xs: 1, sm: 4 },
             overflowY: { xs: 'hidden', sm: 'auto' }, overflowX: { xs: 'auto', sm: 'hidden' } }}>
             {children}
@@ -34,10 +36,10 @@ export const listDetailItemSx = (selected: boolean) => ({
     display: 'block', flexShrink: 0, width: { xs: 'auto', sm: '100%' }, minWidth: { xs: 'max-content', sm: 0 },
     textAlign: 'left', px: 1.25, py: 0.75, fontSize: textVar.sm, textTransform: 'none',
     border: 1, borderRadius: 1, borderColor: selected ? 'primary.main' : 'divider',
-    color: 'text.primary', fontWeight: selected ? 500 : 400,
+    color: 'text.primary', fontWeight: selected ? weight(500) : weight(400),
     bgcolor: selected ? 'rgba(25, 118, 210, 0.04)' : 'background.paper',
     transition: 'border-color 150ms ease, box-shadow 150ms ease',
-    '&:hover': selected ? {} : { borderColor: 'rgba(0, 0, 0, 0.18)', boxShadow: '0 2px 8px rgba(32, 33, 36, 0.08)' },
+    '&:hover': selected ? {} : { borderColor: ink(0.18), boxShadow: '0 2px 8px rgba(32, 33, 36, 0.08)' },
 } as const);
 
 export interface ListDetailItem {
@@ -75,7 +77,7 @@ export const ListDetailNav: React.FC<{
             <Box component="span" sx={{ flex: 1, minWidth: 0 }}>
                 <Typography component="span" sx={{ display: 'block', fontSize: 'inherit', fontWeight: 'inherit', overflowWrap: 'anywhere',
                     color: item.muted ? 'text.disabled' : 'inherit' }}>{item.primary}</Typography>
-                {item.secondary && <Typography component="span" sx={{ display: 'block', fontSize: textVar.xs, fontWeight: 400,
+                {item.secondary && <Typography component="span" sx={{ display: 'block', fontSize: textVar.xs, fontWeight: weight(400),
                     color: 'text.secondary', overflowWrap: 'anywhere' }}>{item.secondary}</Typography>}
             </Box>
             {item.trailing && <Box component="span" sx={{ display: 'inline-flex', alignSelf: 'center', flexShrink: 0 }}>{item.trailing}</Box>}
@@ -111,7 +113,7 @@ export const ListDetailDialog: React.FC<{
             display: 'flex', flexDirection: 'column' } }}>
         <Box component={onSubmit ? 'form' : 'div'} onSubmit={onSubmit} onInvalidCapture={onInvalidCapture}
             sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden', fontFamily: theme => theme.typography.fontFamily }}>
-            <DialogTitle id={titleId} sx={{ display: 'flex', alignItems: 'center', px: 2.5, pt: 1.75, pb: 1, fontSize: textVar.lg, fontWeight: 600 }}>
+            <DialogTitle id={titleId} sx={{ display: 'flex', alignItems: 'center', px: 2.5, pt: 1.75, pb: 1, fontSize: textVar.lg, fontWeight: weight(600) }}>
                 <Box component="span" sx={{ flex: 1 }}>{title}</Box>
                 <IconButton aria-label={t('app.close')} size="small" disabled={busy} onClick={onClose}><CloseRoundedIcon sx={{ fontSize: iconVar.md }} /></IconButton>
             </DialogTitle>

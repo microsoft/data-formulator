@@ -42,14 +42,30 @@ MAX_APP_BYTES = 500_000
 
 REACT_APP_SUFFIX = ".app.jsx"
 # Modules the sandboxed React runtime provides (src/app/reactApp/compile.ts ALLOWED_IMPORTS).
-ALLOWED_IMPORTS = ("react", "react/jsx-runtime", "@df/ui", "@df/data", "@df/chart", "@df/format", "@df/icons", "@mui/material",
-                   "d3", "lodash", "@df/geo")
+ALLOWED_IMPORTS = ("react", "react/jsx-runtime", "@df/data", "@df/chart", "@df/format", "@df/icons", "@mui/material",
+                   "d3", "lodash", "@df/geo", "@mui/icons-material")
+# `@mui/material/Box`, `@mui/material/styles`: paths into MUI, which the runtime resolves.
+_MUI_PATH_RE = re.compile(r"^@mui/(?:material/[A-Za-z]+|icons-material/[A-Za-z0-9]+)$")
 _REACT_MANIFEST_RE = re.compile(r"^[ \t]*//[ \t]*@df-app\b.*(?:\r?\n|$)", re.MULTILINE)
 _IMPORT_FROM_RE = re.compile(r"^\s*(?:import|export)\s[^'\";]*?\bfrom\s*['\"]([^'\"]+)['\"]", re.MULTILINE)
 _BARE_IMPORT_RE = re.compile(r"^\s*import\s*['\"]([^'\"]+)['\"]", re.MULTILINE)
 _REQUIRE_RE = re.compile(r"\b(?:require|import)\s*\(\s*['\"]([^'\"]+)['\"]\s*\)")
 _DEFAULT_EXPORT_RE = re.compile(r"^\s*export\s+default\b", re.MULTILINE)
 _HEX_COLOR_RE = re.compile(r"['\"]#[0-9a-fA-F]{3,8}['\"]")
+# Where an app states colours on purpose: a theme object (`extends`, `ink`) and a category's `colors`.
+_THEME_KEY_RE = re.compile(r"\b(?:extends|ink|colors)\s*:")
+# CSS that reaches into MUI's or the charts' own markup, sets the theme's tokens, or names a font.
+_MUI_CLASS_RE = re.compile(r"\.Mui[A-Z]\w*")
+_CHART_INTERNALS_RE = re.compile(r"""['"`][^'"`\n]*(?:\[data-flint-chart\]|\.vega-embed|\bsvg\s+(?:text|path|rect|g)\b)[^'"`\n]*['"`]\s*:""")
+_TOKEN_SET_RE = re.compile(r"""['"]--df-[\w-]+['"]\s*:""")
+# The prose an app writes: JSX text and string literals of several words (not SQL), and caveat alerts.
+_JSX_TEXT_RE = re.compile(r">([^<>{}]*[A-Za-z][^<>{}]*)<")
+_STRING_RE = re.compile(r"'((?:[^'\\\n]|\\.)*)'|\"((?:[^\"\\\n]|\\.)*)\"|`((?:[^`\\]|\\.)*)`")
+_SQL_RE = re.compile(r"\b(?:SELECT|FROM|WHERE|GROUP\s+BY|WITH|CASE\s+WHEN|JOIN|ORDER\s+BY)\b")
+_CAVEAT_ALERT_RE = re.compile(r"<Alert\b[^>]*\bseverity=[\"'](?:info|warning)[\"']")
+MAX_TEXT_WORDS = 40
+MAX_APP_WORDS = 350
+_FONT_LITERAL_RE = re.compile(r"""fontFamily\s*:\s*['"`]([^'"`]*)['"`]""")
 
 _MANIFEST_RE = re.compile(
     r"<script\b[^>]*\bid\s*=\s*[\"']?" + MANIFEST_ID + r"[\"']?[^>]*>(.*?)</script\s*>",
@@ -61,7 +77,8 @@ _HEAD_OPEN_RE = re.compile(r"<head\b[^>]*>", re.IGNORECASE)
 _HTML_OPEN_RE = re.compile(r"<html\b[^>]*>", re.IGNORECASE)
 
 _LINT_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r"\b(?:src|href)\s*=\s*[\"']?\s*(?:https?:)?//", re.IGNORECASE),
+    # Assets only: ordinary `<a href>` links to web pages open in a new tab (and MUI's `<Link>` is such a link).
+    (re.compile(r"(?i:\bsrc\s*=\s*\{?\s*[\"'`]?\s*(?:https?:)?//)|<link\b[^>]*\bhref\s*=\s*[\"']?\s*(?:https?:)?//"),
      "External scripts, stylesheets, fonts, and images are blocked; inline them or use DF.chart."),
     (re.compile(r"(?:@import|url\(\s*[\"']?)\s*(?:https?:)?//", re.IGNORECASE),
      "External CSS imports and url() assets are blocked; use inline styles and data: URIs."),
@@ -156,7 +173,7 @@ def validate_react_app(code: str) -> None:
 
     Syntax and runtime errors show when the app renders, with a button to ask the agent to fix them.
     """
-    disallowed = [name for name in react_imports(code) if name not in ALLOWED_IMPORTS]
+    disallowed = [name for name in react_imports(code) if name not in ALLOWED_IMPORTS and not _MUI_PATH_RE.match(name)]
     if disallowed:
         allowed = ", ".join(name for name in ALLOWED_IMPORTS if name != "react/jsx-runtime")
         raise ValueError(f"Cannot import {', '.join(disallowed)}; apps can import only {allowed}")
@@ -164,15 +181,111 @@ def validate_react_app(code: str) -> None:
         raise ValueError("The app must `export default` a React component")
 
 
+def _without_theme_objects(code: str) -> str:
+    """The code without the object literals that hold a theme or a category's colours, where colours belong."""
+    spans: list[tuple[int, int]] = []
+    for match in _THEME_KEY_RE.finditer(code):
+        # The object the key is in: back to its unmatched `{`, then on to the matching `}`.
+        depth, start = 0, None
+        for index in range(match.start() - 1, -1, -1):
+            if code[index] == "}":
+                depth += 1
+            elif code[index] == "{":
+                if depth == 0:
+                    start = index
+                    break
+                depth -= 1
+        if start is None:
+            continue
+        depth, end = 0, None
+        for index in range(start, len(code)):
+            if code[index] == "{":
+                depth += 1
+            elif code[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    end = index + 1
+                    break
+        if end is not None:
+            spans.append((start, end))
+    kept, cursor = [], 0
+    for start, end in sorted(spans):
+        if start >= cursor:
+            kept.append(code[cursor:start])
+            cursor = end
+        else:
+            cursor = max(cursor, end)
+    kept.append(code[cursor:])
+    return "".join(kept)
+
+
+def _prose(code: str) -> list[str]:
+    """The pieces of text an app shows: JSX text and string literals that read as words, not code or SQL."""
+    pieces = [match.group(1) for match in _JSX_TEXT_RE.finditer(code)]
+    for match in _STRING_RE.finditer(code):
+        text = next(group for group in match.groups() if group is not None)
+        if _SQL_RE.search(text):
+            continue
+        text = re.sub(r"\$\{[^}]*\}", "x", text)
+        if len(re.findall(r"[A-Za-z]{2,}", text)) >= 3 and " " in text:
+            pieces.append(text)
+    return [" ".join(piece.split()) for piece in pieces if piece.strip()]
+
+
 def lint_react_app(code: str, tables: list[str]) -> list[str]:
     warnings = [message for pattern, message in _LINT_RULES if pattern.search(code)]
     if tables and not re.search(r"\b(?:useQuery|useDistinct|useTable|useSql)\s*\(", code):
         warnings.append("The app declares tables but never reads them; use useQuery, useSql, useDistinct, or useTable from @df/data.")
-    colors = sorted({color.strip("'\"").lower() for color in _HEX_COLOR_RE.findall(code)})
+    styled = _without_theme_objects(code)
+    colors = sorted({color.strip("'\"").lower() for color in _HEX_COLOR_RE.findall(styled)})
     if len(colors) > MAX_COLOR_LITERALS:
         warnings.append(
-            f"The app hardcodes {len(colors)} colors ({', '.join(colors[:5])}); use theme colors such as "
-            "'primary.main' or 'text.secondary', and the Kpi/Callout tones, so the app matches Data Formulator."
+            f"The app hardcodes {len(colors)} colors ({', '.join(colors[:5])}) in its styles; read them from the theme "
+            "('primary.main', 'text.secondary', 'divider'; var(--df-palette-1) in CSS; useInks() in d3), and state "
+            "the app's own colours once, in its AppTheme theme object or a category's `colors`."
+        )
+    if _MUI_CLASS_RE.search(code):
+        warnings.append(
+            "The app styles MUI's internal classes (.Mui…), which change between versions and fight the theme; "
+            "use component props, `sx` on the component itself, or the AppTheme theme object."
+        )
+    if _CHART_INTERNALS_RE.search(code):
+        warnings.append(
+            "The app styles the charts' own SVG; change a FlintChart's look through its `theme` or the AppTheme "
+            "(scope the app's own SVG styles to its own class)."
+        )
+    if _TOKEN_SET_RE.search(code):
+        warnings.append(
+            "The app sets --df-* tokens; they are read-only outputs of the theme (MUI and the charts do not read "
+            "them back). Change colours and fonts in the AppTheme theme object, and name the app's own variables "
+            "with another prefix (--app-…)."
+        )
+    pieces = _prose(code)
+    words = [len(piece.split()) for piece in pieces]
+    long = [piece for piece, count in zip(pieces, words) if count > MAX_TEXT_WORDS]
+    if long:
+        warnings.append(
+            f"The app has {len(long)} text(s) over {MAX_TEXT_WORDS} words (\"{long[0][:80]}…\"). On a dashboard, explorer, "
+            "panel, or slides, keep headings, subtitles, and notes short, with only caveats that change how a number reads "
+            "(Words in the skill); a data story's step text may run longer."
+        )
+    if sum(words) > MAX_APP_WORDS:
+        warnings.append(
+            f"The app writes about {sum(words)} words of text. A dashboard, explorer, panel, or slides reads at a glance "
+            "with about 150 outside its charts: cut method notes, filter explanations, missing-value counts, and "
+            "disclaimers. A data story may need more."
+        )
+    # An alert shown under a condition (a truncated query) is fine; one always shown is a caveat in a box.
+    if any(not re.search(r"(?:&&|\?|:)\s*\(?\s*$", code[:match.start()]) for match in _CAVEAT_ALERT_RE.finditer(code)):
+        warnings.append(
+            "The app shows an info or warning Alert; a caveat belongs in the closing note, in a line, and an Alert only "
+            "for a failed query or data that cannot answer what the page asks."
+        )
+    if any("var(--df-font" not in family and family.strip().lower() not in ("inherit", "monospace")
+           for family in _FONT_LITERAL_RE.findall(code)):
+        warnings.append(
+            "The app names a font; fonts come from the theme (set them in the AppTheme theme object's `type`), "
+            "or use var(--df-font), var(--df-font-display), or var(--df-font-mono)."
         )
     return warnings
 
@@ -218,34 +331,55 @@ def _declared_tables(spec: dict[str, Any], ctx: SkillContext) -> list[str]:
     return tables
 
 
-def _app_target(spec: dict[str, Any], suffix: str, ctx: SkillContext) -> tuple[str, str | None]:
-    """Resolve the file a write targets: a new ``filename`` or an existing ``path`` plus its hash."""
-    path = spec.get("path")
-    expected = spec.get("expected_content_hash")
-    if path is None:
-        filename = spec.get("filename")
-        problem = _invalid_filename(filename, suffix)
-        if problem:
-            raise ValueError(problem)
-        if expected is not None:
-            raise ValueError("expected_content_hash is only for revisions; pass path with it")
-        if ctx.workspace is not None and any(item.name == filename for item in ctx.workspace.list_workspace_files()):
-            raise ValueError(
-                f"files/{filename} already exists; to revise it pass path=\"files/{filename}\" and its "
-                "expected_content_hash, or use edit_file for small changes"
-            )
-        return filename, None
-    if not isinstance(path, str) or not path.startswith("files/"):
-        raise ValueError("path must be the files/... path of an existing app")
-    filename = path.removeprefix("files/")
-    problem = _invalid_filename(filename, suffix)
+def _target_name(spec: dict[str, Any], suffix: str) -> str:
+    """The workspace file name a write targets: ``path`` (``files/<name>``), or a bare ``filename`` from older
+    calls, which means the same file."""
+    path, filename = spec.get("path"), spec.get("filename")
+    target = path if path is not None else filename
+    if not isinstance(target, str) or not target.strip():
+        raise ValueError(f"path is required: the files/ path of the app, e.g. files/sales{suffix}")
+    if path is not None and filename is not None and str(filename).strip().removeprefix("files/") != path.strip().removeprefix("files/"):
+        raise ValueError("Give path, not both path and filename")
+    target = target.strip()
+    if path is not None and not target.startswith("files/"):
+        raise ValueError(f"path must be the app's files/... path, e.g. files/sales{suffix}")
+    name = target.removeprefix("files/")
+    problem = _invalid_filename(name, suffix)
     if problem:
         raise ValueError(problem.replace("filename", "path"))
-    if spec.get("filename") not in (None, filename):
-        raise ValueError("Give filename for a new app or path for an existing app, not both")
+    return name
+
+
+def target_exists(spec: dict[str, Any], ctx: SkillContext, suffix: str) -> bool:
+    """Whether the target file exists, so a write rewrites it (else it creates one)."""
+    try:
+        name = _target_name(spec, suffix)
+    except ValueError:
+        return False
+    return ctx.workspace is not None and ctx.workspace.get_metadata().files.get(name) is not None
+
+
+def rewriting(spec: dict[str, Any], ctx: SkillContext, suffix: str) -> bool:
+    """Whether a write means to rewrite an existing file: it passes the file's hash, or the file exists."""
+    return spec.get("expected_content_hash") is not None or target_exists(spec, ctx, suffix)
+
+
+def _app_target(spec: dict[str, Any], suffix: str, ctx: SkillContext) -> tuple[str, str | None]:
+    """The file a write targets, and for a rewrite the hash it rewrites: a new path creates the file; an existing
+    one is rewritten in place, given its ``expected_content_hash``."""
+    name = _target_name(spec, suffix)
+    expected = spec.get("expected_content_hash")
+    if not target_exists(spec, ctx, suffix):
+        if expected is not None:
+            raise ValueError(f"files/{name} does not exist yet; omit expected_content_hash to create it")
+        return name, None
+    if expected is None:
+        raise ValueError(f'files/{name} already exists; to rewrite it pass path="files/{name}" with its '
+                         "expected_content_hash (read_file shows it), use edit_file for small changes, or choose a new path")
     if not isinstance(expected, str) or not _CONTENT_HASH_RE.match(expected):
         raise ValueError("expected_content_hash must be the app's current SHA-256 content hash")
-    return filename, expected
+    return name, expected
+
 
 
 def read_react_manifest(code: str) -> dict[str, Any] | None:
@@ -268,6 +402,26 @@ def read_html_manifest(html: str) -> dict[str, Any] | None:
     except ValueError:
         return None
     return manifest if isinstance(manifest, dict) else None
+
+
+APP_FILE_SUFFIXES = (REACT_APP_SUFFIX, ".html", ".map.json")
+
+
+def read_app_manifest(name: str, text: str) -> dict[str, Any] | None:
+    """The manifest of a workspace app or map file (``tables``, ``sources``), or ``None``."""
+    lower = name.lower()
+    if lower.endswith(REACT_APP_SUFFIX):
+        return read_react_manifest(text)
+    if lower.endswith(".html"):
+        return read_html_manifest(text)
+    if lower.endswith(".map.json"):
+        from data_formulator.analyst.skills.map.validate import map_tables
+        try:
+            spec = json.loads(text)
+        except ValueError:
+            return None
+        return {"title": spec.get("title"), "tables": map_tables(spec)} if isinstance(spec, dict) else None
+    return None
 
 
 def check_app_revision(filename: str, original: str | None, content: Any, ctx: SkillContext) -> dict[str, Any] | None:
@@ -336,9 +490,9 @@ def _save_app(ctx: SkillContext, encoded: bytes, filename: str, media_type: str,
         # A revision checks the hash of the app it revises, then rewrites it in place.
         current = ctx.workspace.get_metadata().files.get(filename)
         if current is None:
-            raise ValueError(f"files/{filename} does not exist; create a new app with filename instead")
+            raise ValueError(f"files/{filename} does not exist; create it without expected_content_hash")
         if current.origin != "agent" or current.edit_policy != "agent_editable":
-            raise ValueError("This workspace file is protected; create a new app with filename instead")
+            raise ValueError("This workspace file is protected; write the app to a new path instead")
         if current.content_hash != expected_hash:
             raise ValueError("File changed; read it again before revising it")
     try:
@@ -347,7 +501,7 @@ def _save_app(ctx: SkillContext, encoded: bytes, filename: str, media_type: str,
             expected_content_hash=expected_hash,
         )
     except FileNotFoundError as error:
-        raise ValueError(f"files/{filename} does not exist; create a new app with filename instead") from error
+        raise ValueError(f"files/{filename} does not exist; create it without expected_content_hash") from error
     try:
         from data_formulator.analyst.workspace_inputs import WorkspaceInputEngine
         ctx.payload["workspace_inputs"] = WorkspaceInputEngine(
@@ -382,7 +536,7 @@ class HtmlAppSkill:
                    "message_code": "agent.unknownAction"}
             return f"html_app cannot handle action '{action}'."
         react = action == "write_app"
-        updating = spec.get("path") is not None
+        updating = rewriting(spec, ctx, REACT_APP_SUFFIX if react else ".html")
         try:
             replaces = replace_file_in_place(spec, ctx)
             file, warnings, tables = self._write_react(spec, ctx) if react else self._write_html(spec, ctx)

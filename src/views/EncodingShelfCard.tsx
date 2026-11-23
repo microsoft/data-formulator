@@ -111,6 +111,7 @@ const chartCategoryToI18nKey: Record<string, string> = {
 import { AppDispatch } from '../app/store';
 
 import { iconVar, textVar } from '../app/layout';
+import { ink, paper, weight } from '../app/tokens';
 
 // Property and state of an encoding shelf
 export interface EncodingShelfCardProps { 
@@ -365,13 +366,13 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     return (
                                         <Box key={`config-${propDef.key}`} sx={{
                                             display: 'flex', alignItems: 'center', 
-                                            borderRadius: '12px',
+                                            borderRadius: 3,
                                             minHeight: '18px',
                                             overflow: 'hidden', padding: '0px 10px 0px 0px',
                                         }}>
                                             <Typography variant="caption" sx={{
                                                 padding: '0px 6px', color: 'text.secondary', fontSize: textVar.xxs,
-                                                whiteSpace: 'nowrap', fontWeight: 500, minWidth: '40px', userSelect: 'none',
+                                                whiteSpace: 'nowrap', fontWeight: weight(500), minWidth: '40px', userSelect: 'none',
                                             }}>
                                                 {propDef.label}
                                             </Typography>
@@ -388,30 +389,30 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     return (
                                         <Box key={`config-${propDef.key}`} sx={{
                                             display: 'flex', alignItems: 'center',
-                                            borderRadius: '12px',
+                                            borderRadius: 3,
                                             minHeight: '18px',
                                             overflow: 'hidden', padding: '0px 8px',
                                             cursor: 'pointer',
-                                            '&:hover': { backgroundColor: 'rgba(0,0,0,0.04)' },
+                                            '&:hover': { backgroundColor: ink(0.04) },
                                         }}
                                         onClick={() => {
                                             dispatch(dfActions.updateChartConfig({chartId, key: propDef.key, value: !currentValue}));
                                         }}>
                                             <Typography variant="caption" sx={{
                                                 flex: 1, color: 'text.secondary', fontSize: textVar.xxs,
-                                                whiteSpace: 'nowrap', fontWeight: 500, userSelect: 'none',
+                                                whiteSpace: 'nowrap', fontWeight: weight(500), userSelect: 'none',
                                             }}>
                                                 {propDef.label}
                                             </Typography>
                                             <Box sx={{
                                                 width: 28, height: 14, borderRadius: '7px',
-                                                backgroundColor: currentValue ? theme.palette.primary.main : 'rgba(0,0,0,0.2)',
+                                                backgroundColor: currentValue ? theme.palette.primary.main : ink(0.2),
                                                 position: 'relative', transition: 'background-color 0.2s',
                                                 flexShrink: 0,
                                             }}>
                                                 <Box sx={{
                                                     width: 10, height: 10, borderRadius: '50%',
-                                                    backgroundColor: 'white',
+                                                    backgroundColor: paper(),
                                                     position: 'absolute', top: 2,
                                                     left: currentValue ? 16 : 2,
                                                     transition: 'left 0.2s',
@@ -430,13 +431,13 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                 return (
                                     <Box key={`config-${propDef.key}`} sx={{
                                         display: 'flex', alignItems: 'center', 
-                                        borderRadius: '12px',
+                                        borderRadius: 3,
                                         minHeight: '22px',
                                         overflow: 'hidden',
                                     }}>
                                         <Typography variant="caption" sx={{
                                             padding: '0px 8px', color: 'text.secondary', fontSize: textVar.xxs,
-                                            whiteSpace: 'nowrap', fontWeight: 500, userSelect: 'none',
+                                            whiteSpace: 'nowrap', fontWeight: weight(500), userSelect: 'none',
                                         }}>
                                             {propDef.label}
                                         </Typography>
@@ -451,9 +452,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                             disableUnderline
                                             sx={{
                                                 flex: 1, fontSize: textVar.xs, height: '22px',
-                                                backgroundColor: 'rgba(0,0,0,0.04)',
-                                                borderRadius: '6px',
-                                                '&:hover': { backgroundColor: 'rgba(0,0,0,0.07)' },
+                                                backgroundColor: ink(0.04),
+                                                borderRadius: 1.5,
+                                                '&:hover': { backgroundColor: ink(0.07) },
                                                 '& .MuiSelect-select': { padding: '1px 20px 1px 6px !important', fontSize: textVar.xs },
                                                 '& .MuiSvgIcon-root': { fontSize: iconVar.sm, right: 2 },
                                             }}
@@ -509,7 +510,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 }}>
                     <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.75 }}>
                         <WritingPencil size={12} />
-                        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: textVar.xs, lineHeight: 1.4 }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: weight(500), fontSize: textVar.xs, lineHeight: 1.4 }}>
                             {agentStatusText}
                         </Typography>
                     </Box>

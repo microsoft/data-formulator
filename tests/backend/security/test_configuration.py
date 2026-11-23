@@ -1,8 +1,9 @@
 import json
+import logging
 
 import pytest
 
-from data_formulator.configuration import read_configuration, save_configuration, effective_limit
+from data_formulator.configuration import read_configuration, save_configuration, effective_limit, terminal_mode
 
 pytestmark = [pytest.mark.backend]
 
@@ -33,6 +34,8 @@ def test_terminal_policy_persistence_and_deployment_ceiling(monkeypatch, mode):
     assert configuration.terminal_mode() == 'off'
     monkeypatch.setenv('DF_TERMINAL_MODE', 'auto')
     monkeypatch.setattr(configuration.sys, 'platform', 'win32')
+    assert configuration.terminal_mode() == 'auto'
+    monkeypatch.setattr(configuration.sys, 'platform', 'freebsd14')
     assert configuration.terminal_mode() == 'off'
     monkeypatch.setattr(configuration.sys, 'platform', 'darwin')
     monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: False)
@@ -168,6 +171,74 @@ def test_configured_only_connectors_block_creation_and_personal_lookup(monkeypat
             data_connector._resolve_connector_with_key({'connector_id': 'personal'})
         assert caught.value.code == ErrorCode.ACCESS_DENIED
         assert data_connector._visible_connector_items('user:test') == [('admin', admin, True)]
+
+
+def test_a_space_shows_its_sources_and_leaves_capabilities_to_the_deployment(monkeypatch):
+    from flask import Flask
+    from data_formulator import data_connector, spaces
+    from data_formulator import configuration
+    from data_formulator.configuration import terminal_available, user_connectors_disabled
+    from data_formulator.errors import AppError, ErrorCode
+    monkeypatch.setattr('data_formulator.auth.identity.is_local_mode', lambda: True)
+    monkeypatch.setattr(configuration.sys, 'platform', 'darwin')
+    offered, other, samples = object(), object(), object()
+    monkeypatch.setattr(data_connector, 'DATA_CONNECTORS', {'dataverse': offered, 'warehouse': other, 'sample_datasets': samples})
+    monkeypatch.setattr(data_connector, '_ADMIN_CONNECTOR_IDS', {'dataverse', 'warehouse', 'sample_datasets'})
+    monkeypatch.setattr(data_connector, '_sync_installation_connectors', lambda: None)
+    monkeypatch.setattr(data_connector, 'load_connectors', lambda identity: None)
+    monkeypatch.setattr(data_connector.DataConnector, '_get_identity', staticmethod(lambda: 'user:test'))
+    monkeypatch.setattr(spaces, 'known_space_id', lambda space_id: space_id if space_id == 'demo' else None)
+    monkeypatch.setattr(spaces, 'space_profile', lambda space_id: {'sources': [{'connector': 'dataverse'}]} if space_id == 'demo' else None)
+    app = Flask(__name__)
+    with app.test_request_context(headers={'X-DF-Space': 'demo'}, json={'loader_type': 'mysql'}):
+        # The space alone takes nothing away: own connections and local tools follow the deployment.
+        assert not user_connectors_disabled() and terminal_available()
+        # It shows its own sources; other administrator connections only when the operator exposes them.
+        assert data_connector.visible_admin_connector_ids() == {'dataverse'}
+        assert data_connector._resolve_connector_with_key({'connector_id': 'dataverse'}) == ('dataverse', offered)
+        for refused in ('warehouse', 'sample_datasets'):
+            with pytest.raises(AppError) as caught:
+                data_connector._resolve_connector_with_key({'connector_id': refused})
+            assert caught.value.code == ErrorCode.ACCESS_DENIED
+        monkeypatch.setenv('DF_SPACES__demo__connectors', 'sample_datasets')
+        assert data_connector.visible_admin_connector_ids() == {'dataverse', 'sample_datasets'}
+        # A deployment that blocks own connections does so in a space as in the standard app.
+        monkeypatch.setattr(configuration, 'user_connectors_locked', lambda: True)
+        assert user_connectors_disabled() and not terminal_available()
+        with pytest.raises(AppError) as caught:
+            data_connector.create_connector()
+        assert caught.value.code == ErrorCode.ACCESS_DENIED
+    with app.test_request_context():
+        assert data_connector.visible_admin_connector_ids() == {'dataverse', 'warehouse', 'sample_datasets'}
+
+
+def test_a_space_offers_only_the_models_and_server_workflows_it_lists(monkeypatch, tmp_path):
+    from flask import Flask
+    from data_formulator import spaces
+    from data_formulator.model_registry import model_registry
+    from data_formulator.workflows.instances import WorkflowStore
+    workflow = "version: 1\nname: {}\noverview: Shared\ndeliverables: [A report]\nsteps:\n  - id: s\n    description: d\n    instructions: i\n"
+    save_configuration({'workflows': {'server/listed.yaml': {'content': workflow.format('Listed')},
+                                      'server/other.yaml': {'content': workflow.format('Other')}}}, 0)
+    model = {'endpoint': 'openai', 'model': 'm', 'api_key': 'k', 'api_base': '', 'api_version': ''}
+    monkeypatch.setattr(model_registry, '_models', {'offered': {**model, 'id': 'offered'}, 'kept-back': {**model, 'id': 'kept-back'}})
+    monkeypatch.setattr(spaces, 'known_space_id', lambda space_id: space_id if space_id == 'demo' else None)
+    monkeypatch.setattr(spaces, 'space_profile', lambda space_id: {'models': ['offered'], 'workflows': ['server/listed.yaml']}
+                        if space_id == 'demo' else None)
+    store = WorkflowStore(tmp_path / 'home')
+    app = Flask(__name__)
+    with app.test_request_context(headers={'X-DF-Space': 'demo'}):
+        assert [item['id'] for item in model_registry.list_public()] == ['offered']
+        assert model_registry.get_config('kept-back') is None and model_registry.get_config('offered')
+        assert [item['path'] for item in store.list_all()] == ['server/listed.yaml']
+        with pytest.raises(ValueError):
+            store.read('server/other.yaml')
+        # The operator's per-space list replaces the profile's.
+        monkeypatch.setenv('DF_SPACES__demo__models', 'kept-back')
+        assert [item['id'] for item in model_registry.list_public()] == ['kept-back']
+    with app.test_request_context():
+        assert {item['id'] for item in model_registry.list_public()} == {'offered', 'kept-back'}
+        assert {'server/listed.yaml', 'server/other.yaml'} <= {item['path'] for item in store.list_all()}
 
 
 @pytest.mark.parametrize('overrides', [
@@ -311,7 +382,9 @@ def test_model_thinking_level_applies_to_the_analysis_agent_only(monkeypatch):
             agents.get_client({'endpoint': 'openai', 'model': 'gpt-5', 'api_key': 'key', 'reasoning_effort': 'extreme'})
     assert (server.reasoning_effort, personal.reasoning_effort) == ('medium', 'high')
     assert reasoning_effort_for('analyst', 'gpt-5', server.reasoning_effort) == 'medium'
-    assert reasoning_effort_for('analyst', 'gpt-5', None) == 'low'
+    # Without a chosen level the analysis agent sends none: the model reasons at its own default.
+    assert reasoning_effort_for('analyst', 'gpt-5', None) is None
+    assert reasoning_effort_for('starter_questions', 'gpt-5') == 'low'
     assert reasoning_effort_for('chart_insight', 'gpt-5') == 'minimal'
 
 
@@ -523,14 +596,16 @@ def test_managed_startup_admin_warnings(monkeypatch, caplog, local, provider_nam
     monkeypatch.delenv('WEBSITE_INSTANCE_ID', raising=False)
     caplog.clear()
     application._safety_checks()
+    # The sandbox-isolation line is informational; this test is about warnings.
+    warnings = lambda: [record for record in caplog.records if record.levelno >= logging.WARNING]
     if expected:
         assert expected in caplog.text
     else:
-        assert not caplog.records
+        assert not warnings()
     caplog.clear()
     application.app.config['CLI_ARGS']['managed'] = False
     application._safety_checks()
-    assert not caplog.records
+    assert not warnings()
 
 
 def test_managed_app_config_reports_mode_separately_from_admin_permission(monkeypatch):
@@ -554,6 +629,7 @@ def test_managed_app_config_reports_mode_separately_from_admin_permission(monkey
         assert config['APP_TAGLINE'] == ''
         assert config['MANAGED_MODE'] is True
         assert config['CAN_CONFIGURE'] is False
+        assert config['WORKFLOWS_AVAILABLE'] is True
         assert config['EXTERNAL_TABLE_MAX_ROWS'] == 1000000
         assert config['EXTERNAL_TABLE_MAX_BYTES'] == 512 * 1048576
         save_configuration({'app_name': '  Team Analytics  ', 'app_tagline': '  Explore our data.  ',
@@ -566,9 +642,12 @@ def test_managed_app_config_reports_mode_separately_from_admin_permission(monkey
         monkeypatch.setattr(configurations, 'get_identity_id', lambda: 'user:admin')
         assert application.app.make_response(application.get_app_config()).get_json()['data']['CAN_CONFIGURE'] is True
         application.app.config['CLI_ARGS']['managed'] = False
+        # A hosted (not local) deployment that is not managed offers no workflows; the frontend hides them.
+        monkeypatch.setattr(identity, 'is_local_mode', lambda: False)
         config = application.app.make_response(application.get_app_config()).get_json()['data']
         assert config['MANAGED_MODE'] is False
         assert config['CAN_CONFIGURE'] is False
+        assert config['WORKFLOWS_AVAILABLE'] is False
 
 
 def test_admin_branding_save_and_reset(config_client):
@@ -597,6 +676,18 @@ def test_model_catalog_overrides_do_not_change_credentials(monkeypatch):
     assert 'private-test-key' not in str(models)
     assert registry.get_config('global-openai-first') is None
     assert registry.get_config('global-openai-first', configured=False)['api_key'] == 'private-test-key'
+
+
+def test_the_deployment_default_model_is_listed_first_unless_an_admin_picks_one(monkeypatch):
+    from data_formulator.model_registry import ModelRegistry
+    monkeypatch.setenv('OPENAI_API_KEY', 'private-test-key')
+    monkeypatch.setenv('OPENAI_MODELS', 'first,second,third')
+    monkeypatch.setenv('DF_DEFAULT_MODEL', 'global-openai-third')
+    registry = ModelRegistry()
+    names = lambda: [model['model'] for model in registry.list_public() if model['endpoint'] == 'openai']
+    assert names()[0] == 'third'
+    save_configuration({'default_model': 'global-openai-second'}, 0)
+    assert names()[0] == 'second'
 
 
 def test_published_workflow_lifecycle(tmp_path):
@@ -809,13 +900,22 @@ def test_local_terminal_settings_without_administration(config_client, monkeypat
     filesystem = policy.pop('sandboxFilesystem')
     assert filesystem['configured'] is False
     assert '~/.azure' in filesystem['requested']
-    assert policy == {'mode': 'off', 'available': True, 'locked': False, 'revision': saved['revision']}
+    # Whether a sandbox is installed depends on the machine; a hint shows only without one.
+    sandboxed, hint = policy.pop('sandboxed'), policy.pop('sandboxInstallHint')
+    assert isinstance(sandboxed, bool) and (hint is None if sandboxed else hint is None or 'bubblewrap' in hint)
+    assert policy == {'mode': 'off', 'enabled': True, 'available': True, 'locked': False, 'revision': saved['revision']}
     response = config_client.put('/api/configurations/terminal', json={'mode': mode, 'revision': policy['revision']},
         headers={'Origin': 'http://localhost', 'X-DF-Configuration': '1'})
     assert response.get_json()['data']['mode'] == mode
     assert read_configuration()['overrides'] == {'app_name': 'Keep this', 'terminal_mode': mode}
     assert config_client.put('/api/configurations/terminal', json={'mode': mode, 'revision': policy['revision']},
         headers={'Origin': 'http://localhost', 'X-DF-Configuration': '1'}).status_code == 409
+    # The terminal's own switch turns it off without changing the mode the agent's other tools share.
+    revision = read_configuration()['revision']
+    switched = config_client.put('/api/configurations/terminal', json={'enabled': False, 'revision': revision},
+        headers={'Origin': 'http://localhost', 'X-DF-Configuration': '1'}).get_json()['data']
+    assert switched['mode'] == mode and switched['enabled'] is False and terminal_mode() == 'off'
+    assert read_configuration()['overrides'] == {'app_name': 'Keep this', 'terminal_mode': mode, 'terminal_enabled': False}
 
 
 @pytest.mark.parametrize('case', ['hosted', 'identity', 'origin', 'no-origin', 'header', 'cross-site', 'remote', 'host', 'locked', 'disabled', 'extra-field'])

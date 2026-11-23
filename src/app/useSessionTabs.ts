@@ -6,16 +6,32 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigationType, useSearchParams } from 'react-router-dom';
 import { DataFormulatorState, dfActions, dfSelectors } from './dfSlice';
 import { leaveSession, openSession } from './sessionThunks';
-import { claimSession, registerSessionHolder, SESSION_PARAM } from './sessionTabs';
+import { registerSessionHolder, SESSION_PARAM } from './sessionTabs';
 import { store, AppDispatch } from './store';
 import { getSerializableState } from './useAutoSave';
 import { saveWorkspaceState } from './workspaceService';
 
 
 /**
+ * Browser storage is shared by every tab, so the state it restores may be a session
+ * another tab is working on. Keep it only when this tab's URL names that session
+ * (a reload); otherwise start on the landing page rather than taking the session
+ * over, so each tab can work on its own session. Runs once restored state is in
+ * the store, before the app renders or sends requests with its workspace id.
+ */
+export function dropRestoredSessionOfOtherTabs(search: string = window.location.search): void {
+    const state = store.getState();
+    const urlId = new URLSearchParams(search).get(SESSION_PARAM);
+    if (state.activeWorkspace?.id === urlId) return;
+    if (!state.activeWorkspace && dfSelectors.selectSessionEmpty(state)) return;
+    store.dispatch(dfActions.resetState());
+}
+
+/**
  * Make this tab own one session (see `sessionTabs.ts`):
- * - on start, open the session named in the URL from the backend; state restored
- *   from shared browser storage may belong to a different tab;
+ * - on start, open the session named in the URL from the backend: restored
+ *   browser state is older than the saved copy (or not this tab's, see
+ *   `dropRestoredSessionOfOtherTabs`);
  * - keep the URL naming the open session so reload and new tabs work, adding a
  *   history entry each time the user enters, leaves, or switches sessions;
  * - follow the browser's back/forward buttons between the landing page and sessions;
@@ -69,10 +85,10 @@ export function useSessionTabs() {
             return;
         }
         if (workspace && !workspace.readOnly && !workspace.provisional) {
-            // Restored state is this tab's session; take it back from any tab editing it.
-            void claimSession(workspace.id).then(released => {
-                if (released) void dispatch(openSession(workspace.id, workspace.displayName, { saveCurrent: false }));
-            });
+            // Restored state is this tab's session, but browser storage can hold an older copy than the server's
+            // (it is shared by every tab and can fall behind), so open the saved copy; opening also takes the
+            // session back from any tab editing it. Saving the restored copy here could overwrite newer work.
+            void dispatch(openSession(workspace.id, workspace.displayName, { saveCurrent: false }));
         }
     }, []);
 

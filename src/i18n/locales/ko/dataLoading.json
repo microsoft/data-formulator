@@ -18,6 +18,7 @@
     "chatHintExample": "여기에 어떤 데이터가 있나요?",
     "placeholder": "추출, 업로드 또는 생성할 데이터를 설명하세요...",
     "attachTooltip": "파일 또는 이미지 첨부",
+    "dropToAttach": "파일을 끌어다 놓아 첨부",
     "stopTooltip": "생성 중지",
     "sendTooltip": "보내기 (Enter)",
     "shiftEnterHint": "새 줄: Shift+Enter",

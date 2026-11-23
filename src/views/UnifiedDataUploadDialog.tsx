@@ -3,7 +3,7 @@
 
 import * as React from 'react';
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { borderColor, transition, radius } from '../app/tokens';
+import { borderColor, transition, radius, ink, weight } from '../app/tokens';
 import { dialogHeight, dialogWidth, iconVar, textVar } from '../app/layout';
 import { InlineLoadingStatus } from '../components/FunComponents';
 import {
@@ -34,7 +34,7 @@ import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutl
 import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
 import FolderZipOutlinedIcon from '@mui/icons-material/FolderZipOutlined';
-import { StreamIcon, getConnectorIcon, connectorSortOrder, connectorCategory } from '../icons';
+import { StreamIcon, getConnectorIcon, connectorSortOrder, connectorCategory, FileTypeIcon } from '../icons';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
@@ -47,7 +47,8 @@ import { loadTable } from '../app/tableThunks';
 import { DataSourceConfig, DictTable, ConnectorAuthPath, ConnectorInstance } from '../components/ComponentType';
 import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, readFileText } from '../data/utils';
 import { ScrollFadeContainer } from '../components/ScrollFade';
-import { ListDetailList, ListDetailNav, listDetailItemSx } from '../components/ListDetailDialog';
+import { ListDetailList, ListDetailNav } from '../components/ListDetailDialog';
+import type { Theme } from '@mui/material';
 import { CONNECTOR_URLS, CONNECTOR_ACTION_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { deriveConnectorDisplayName } from '../app/connectorNames';
@@ -211,7 +212,7 @@ const SourceLink: React.FC<DataSourceCardProps> = ({
                 component="span"
                 className="SourceLink-title"
                 sx={{
-                    fontWeight: 400,
+                    fontWeight: weight(400),
                     fontSize: '0.8125rem',
                     lineHeight: 1.4,
                     color: 'inherit',
@@ -438,6 +439,7 @@ const CONNECTOR_TYPE_KEY_MAP: Record<string, string> = {
     CosmosDBDataLoader: 'cosmosdb',
     MongoDBDataLoader: 'mongodb',
     BigQueryDataLoader: 'bigquery',
+    SnowflakeDataLoader: 'snowflake',
     AthenaDataLoader: 'athena',
     KustoDataLoader: 'kusto',
     SupersetLoader: 'superset',
@@ -636,7 +638,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 }}>
                     <Typography
                         variant="body2"
-                        sx={{ fontSize: '0.8rem', fontWeight: 600, color: alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 }}
+                        sx={{ fontSize: '0.8rem', fontWeight: weight(600), color: alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 }}
                     >
                         {t('upload.dataSourcesLabel', { defaultValue: 'Connected to:' })}
                     </Typography>
@@ -664,7 +666,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 }}>
                     <Typography
                         variant="body2"
-                        sx={{ fontSize: '0.8rem', fontWeight: 600, color: alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 }}
+                        sx={{ fontSize: '0.8rem', fontWeight: weight(600), color: alpha(theme.palette.text.primary, 0.72), mr: 0.25, flexShrink: 0 }}
                     >
                         {t('upload.addSourceLabel', { defaultValue: 'Add data:' })}
                     </Typography>
@@ -716,16 +718,26 @@ const ConnectorTypePicker: React.FC<{
     disabledLoaders?: Record<string, { install_hint: string }>;
 }> = ({ loaderTypes, selectedType, onSelect, disabledLoaders = {} }) => {
     const { t } = useTranslation();
-    const itemSx = (selected: boolean) => ({ ...listDetailItemSx(selected), display: 'flex', alignItems: 'center', gap: 0.75,
-        '& .MuiSvgIcon-root': { fontSize: iconVar.md, color: 'text.secondary' } });
-    return <ListDetailList role="group" aria-label={t('upload.dataSourceTypes', { defaultValue: 'Data Sources' })}>
+    // A picker of types, not a list of objects: plain rows, with the selection as a tint rather than a card.
+    const itemSx = (selected: boolean) => ({
+        display: 'flex', alignItems: 'center', gap: 0.75, flexShrink: 0,
+        width: { xs: 'auto', sm: '100%' }, minWidth: { xs: 'max-content', sm: 0 },
+        px: 1, py: 0.625, borderRadius: 1, fontSize: textVar.sm, textAlign: 'left',
+        color: selected ? 'primary.main' : 'text.primary', fontWeight: selected ? weight(500) : weight(400),
+        bgcolor: selected ? (theme: Theme) => alpha(theme.palette.primary.main, 0.08) : 'transparent',
+        transition: 'background-color 120ms ease',
+        '&:hover': { bgcolor: selected ? undefined : 'action.hover' },
+        '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 },
+        '& .MuiSvgIcon-root': { fontSize: iconVar.md, color: selected ? 'primary.main' : (theme: Theme) => alpha(theme.palette.text.primary, 0.75) },
+    });
+    return <ListDetailList role="group" gap={0.25} aria-label={t('upload.dataSourceTypes', { defaultValue: 'Data Sources' })}>
         {[...loaderTypes].sort((first, second) => connectorSortOrder(first.type, second.type)).map((loader, index, sorted) => {
             const isPlugin = loader.source === 'plugin';
             const category = connectorCategory(loader.type);
             const header = (index === 0 || connectorCategory(sorted[index - 1].type) !== category) && <Typography
                 key={`group-${category}`} role="presentation" sx={{
-                    display: { xs: 'none', sm: 'block' }, px: 0.5, pt: index === 0 ? 0.25 : 0.75,
-                    fontSize: textVar.xs, color: 'text.disabled',
+                    display: { xs: 'none', sm: 'block' }, px: 1, pt: index === 0 ? 0.25 : 1.25, pb: 0.25,
+                    fontSize: textVar.xs, color: 'text.secondary',
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0,
                 }}>
                 {t(`upload.connectorGroups.${category}`)}
@@ -741,7 +753,7 @@ const ConnectorTypePicker: React.FC<{
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{loader.name}</Box>
                 {isPlugin && <Box component="span" sx={{
                     px: 0.5, fontSize: textVar.xxs, color: 'text.secondary', flexShrink: 0,
-                    bgcolor: 'rgba(0,0,0,0.045)', borderRadius: 0.5, lineHeight: 1.6,
+                    bgcolor: ink(0.045), borderRadius: 0.5, lineHeight: 1.6,
                 }}>plugin</Box>}
             </ButtonBase>;
             const item = isPlugin ? <Tooltip key={loader.type} title={`External plugin loaded from ${loader.source_path}`} placement="right" arrow>
@@ -752,7 +764,7 @@ const ConnectorTypePicker: React.FC<{
         {Object.entries(disabledLoaders).sort(([first], [second]) => connectorSortOrder(first, second)).map(([name, { install_hint }]) => (
             <Tooltip key={name} title={install_hint} placement="right" arrow>
                 <Box component="span" sx={{ display: 'flex', flexShrink: 0 }}>
-                    <ButtonBase disabled sx={{ ...itemSx(false), width: '100%', color: 'text.disabled', borderStyle: 'dashed',
+                    <ButtonBase disabled sx={{ ...itemSx(false), width: '100%', color: 'text.disabled',
                         '& .MuiSvgIcon-root': { fontSize: iconVar.md, opacity: 0.4 } }}>
                         {getConnectorIcon(name)}
                         <Box component="span" sx={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</Box>
@@ -785,7 +797,7 @@ export const ConnectorSetupForm: React.FC<{
         {[{ label: 'Display name', value: connectionProperties.displayName, onChange: connectionProperties.onDisplayNameChange },
           { label: 'Description', value: connectionProperties.description, onChange: connectionProperties.onDescriptionChange }].map(field =>
             <Box key={field.label}>
-                <Typography component="label" htmlFor={`${fieldId}-${field.label.replaceAll(' ', '-')}`} sx={{ display: 'block', fontSize: '0.8125rem', fontWeight: 500, lineHeight: 1.4, mb: 0.5 }}>{field.label}</Typography>
+                <Typography component="label" htmlFor={`${fieldId}-${field.label.replaceAll(' ', '-')}`} sx={{ display: 'block', fontSize: '0.8125rem', fontWeight: weight(500), lineHeight: 1.4, mb: 0.5 }}>{field.label}</Typography>
                 <TextField id={`${fieldId}-${field.label.replaceAll(' ', '-')}`} size="small" fullWidth value={field.value}
                     sx={{ '& .MuiInputBase-root': { fontSize: '0.8125rem' } }} onChange={event => field.onChange(event.target.value)} />
             </Box>)}
@@ -796,7 +808,7 @@ export const ConnectorSetupForm: React.FC<{
         <Box sx={{ flex: 1, minWidth: 0, overflow: 'auto', p: 0 }}>
             {pluginsInfo && pluginsInfo.errors.length > 0 && <Box sx={{ px: 2, pt: 1.5 }}>
                 <Alert severity="error" variant="outlined" sx={{ mb: 1, fontSize: textVar.xs, py: 0.5 }}>
-                    <AlertTitle sx={{ fontSize: textVar.sm, fontWeight: 600, mb: 0.5 }}>
+                    <AlertTitle sx={{ fontSize: textVar.sm, fontWeight: weight(600), mb: 0.5 }}>
                         {pluginsInfo.errors.length} plugin{pluginsInfo.errors.length === 1 ? '' : 's'} rejected
                     </AlertTitle>
                     {pluginsInfo.errors.map((error, index) => <Box key={index} sx={{ fontSize: textVar.xs, lineHeight: 1.4 }}>
@@ -1787,7 +1799,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 {activeConnector ? (
                     <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 1 }}>
                         <Typography component="span" noWrap title={activeConnector.display_name}
-                            sx={{ minWidth: 0, fontSize: 18, lineHeight: 1.35, fontWeight: 500 }}>
+                            sx={{ minWidth: 0, fontSize: 18, lineHeight: 1.35, fontWeight: weight(500) }}>
                             {activeConnector.display_name}
                         </Typography>
                         {activeConnector.type_name && activeConnector.type_name.toLowerCase() !== activeConnector.display_name.trim().toLowerCase() &&
@@ -2036,9 +2048,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                         {filePreviewFiles.map(file => {
                                             const tableIndex = filePreviewTableFiles.findIndex(tableFile => tableFile === file);
                                             const hasTablePreview = tableIndex >= 0;
-                                            const { color: categoryColor, Icon: CategoryIcon } = fileCategoryVisuals[
-                                                getFileCategory(file.name, hasTablePreview)
-                                            ];
+                                            const category = getFileCategory(file.name, hasTablePreview);
+                                            const { color: categoryColor, Icon: CategoryIcon } = fileCategoryVisuals[category];
                                             const isPreviewSelected = (hasTablePreview
                                                 && showSelectedFileTablePreview
                                                 && filePreviewActiveIndex === tableIndex)
@@ -2082,10 +2093,12 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                                     color: categoryColor,
                                                     backgroundColor: 'action.hover',
                                                 }}>
-                                                    <CategoryIcon sx={{ fontSize: iconVar.md }} />
+                                                    {category === 'document' || category === 'generic'
+                                                        ? <FileTypeIcon path={file.name} size={iconVar.md} />
+                                                        : <CategoryIcon sx={{ fontSize: iconVar.md }} />}
                                                 </Box>
                                                 <Box sx={{ flex: 1, minWidth: 0 }}>
-                                                    <Typography noWrap sx={{ fontSize: textVar.sm, fontWeight: 500 }}>
+                                                    <Typography noWrap sx={{ fontSize: textVar.sm, fontWeight: weight(500) }}>
                                                         {file.name}
                                                     </Typography>
                                                     <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>
@@ -2123,7 +2136,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                                 alignSelf: 'center',
                                                 textTransform: 'none',
                                                 fontSize: textVar.sm,
-                                                fontWeight: 500,
+                                                fontWeight: weight(500),
                                             }}
                                         >
                                             {t('upload.addMoreFiles')}
@@ -2270,7 +2283,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                             />
                                         }
                                         label={
-                                            <Typography component="span" variant="body2" sx={{ fontWeight: 500 }}>
+                                            <Typography component="span" variant="body2" sx={{ fontWeight: weight(500) }}>
                                                 {t('upload.autoRefresh')}
                                             </Typography>
                                         }
@@ -2306,7 +2319,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                                             border: 'none',
                                                             bgcolor: selected ? 'primary.main' : 'transparent',
                                                             color: selected ? 'primary.contrastText' : 'text.secondary',
-                                                            fontWeight: selected ? 600 : 400,
+                                                            fontWeight: selected ? weight(600) : weight(400),
                                                             '& .MuiChip-label': { px: 0.75 },
                                                             '&:hover': { bgcolor: selected ? 'primary.dark' : 'action.hover' },
                                                         }}
@@ -2329,7 +2342,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     borderColor: { md: 'divider' },
                                     pl: { xs: 0, md: 3 },
                                 }}>
-                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, fontWeight: 500 }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, fontWeight: weight(500) }}>
                                         {t('upload.tryExamples')}
                                     </Typography>
                                     {exampleUrls.map((example) => (
@@ -2569,7 +2582,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             </DialogContent>
             <Dialog open={renameOpen && !!activeConnector} onClose={() => setRenameOpen(false)} maxWidth="xs" fullWidth>
                 <Box component="form" onSubmit={(event: React.FormEvent) => { event.preventDefault(); void commitConnectorName(); }}>
-                    <DialogTitle sx={{ fontSize: textVar.lg, fontWeight: 600, pb: 1 }}>
+                    <DialogTitle sx={{ fontSize: textVar.lg, fontWeight: weight(600), pb: 1 }}>
                         {t('upload.renameConnector', { defaultValue: 'Rename connector' })}
                     </DialogTitle>
                     <DialogContent sx={{ pt: '8px !important' }}>

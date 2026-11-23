@@ -24,7 +24,7 @@
     flex-wrap: nowrap;
     justify-content: flex-start;
     align-items: center;
-    background-color: #fafafa;
+    background-color: var(--df-surface-sunk, #fafafa);
 }
 
 .table-header-icon {
@@ -32,7 +32,7 @@
     margin-top: 4px;
     display: inline-block;
     font-size: 18px;
-    color: #717171;
+    color: var(--df-text-muted, #717171);
 }
 
 .table-container-small {
@@ -53,7 +53,7 @@
 .table-box {
     height: 100%;
     margin: 0px;
-    background: white;
+    background: rgba(var(--df-paper-rgb, 255, 255, 255), 1);
 }
 
 .table-footer-container {
@@ -70,7 +70,7 @@
     .table-footer-number {
         font-size: small;
         line-height: 1.5;
-        color: rgba(0, 0, 0, 0.54);
+        color: rgba(var(--df-ink-rgb, 0, 0, 0), 0.54);
     }
 }
 

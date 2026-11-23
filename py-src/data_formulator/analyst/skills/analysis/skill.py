@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any, Generator
 
-from data_formulator.agents.context import handle_inspect_source_data
 from data_formulator.analyst.skills.base import Event, SkillContext, ToolResult
 
 
@@ -20,10 +19,6 @@ class AnalysisSkill:
             if result.get("error"):
                 text += f"\n\nError: {result['error']}"
             return ToolResult(text=text)
-        if name == "inspect_source_data":
-            return ToolResult(text=handle_inspect_source_data(
-                args.get("table_names", []), input_tables, ctx.workspace,
-            ))
         return ToolResult(text=f"analysis has no tool '{name}'.")
 
     def handle_action(

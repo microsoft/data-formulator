@@ -61,20 +61,74 @@ def user_connectors_locked() -> bool:
 
 
 def user_connectors_disabled() -> bool:
+    """The deployment's policy (flags and settings), the same in the standard app and every space
+    (design-docs/77): it also turns off the terminal and MCP servers."""
     return user_connectors_locked() or user_resource_policy('disable_user_connectors')
 
 
 def terminal_available() -> bool:
     from data_formulator.auth.identity import is_local_mode
 
-    return is_local_mode() and sys.platform in {'darwin', 'linux'} and not user_connectors_disabled()
+    return is_local_mode() and sys.platform in {'darwin', 'linux', 'win32'} and not user_connectors_disabled()
 
 
-def terminal_mode() -> str:
-    if not terminal_available():
+def tools_mode() -> str:
+    """The approval mode the agent's local tools share (the terminal and the user's MCP servers): off, ask or auto.
+
+    Stored as ``terminal_mode`` (and locked by ``DF_TERMINAL_MODE``), where it lived before tools were unified.
+    """
+    from data_formulator.auth.identity import is_local_mode
+
+    if not is_local_mode() or user_connectors_disabled():
         return 'off'
     mode = os.environ.get('DF_TERMINAL_MODE', read_configuration()['overrides'].get('terminal_mode', 'ask'))
     return mode if mode in ('off', 'ask', 'auto') else 'off'
+
+
+def terminal_enabled() -> bool:
+    """The terminal's own switch in the tools settings; the shared mode still applies when it is on."""
+    return read_configuration()['overrides'].get('terminal_enabled', True) is not False
+
+
+def terminal_mode() -> str:
+    if not terminal_available() or not terminal_enabled():
+        return 'off'
+    return tools_mode()
+
+
+# auto picks the user's default browser on macOS (Edge, Chrome or Safari, with their sign-ins) and
+# Edge elsewhere; profile drives the installed Edge with Data Formulator's own browser profile.
+BROWSER_CHOICES = ('auto', 'edge', 'chrome', 'safari', 'profile')
+
+
+def browser_available() -> bool:
+    """The agent can use a browser on this computer: local mode on macOS or Windows (Linux through Playwright)."""
+    return terminal_available()
+
+
+def browser_enabled() -> bool:
+    """The browser's own switch; off until the user opts in."""
+    return read_configuration()['overrides'].get('browser_enabled', False) is True
+
+
+def browser_choice() -> str:
+    choice = read_configuration()['overrides'].get('browser_name', 'auto')
+    return choice if choice in BROWSER_CHOICES else 'auto'
+
+
+def browser_allowed_sites() -> list[str]:
+    return list(read_configuration()['overrides'].get('browser_allowed_sites', []))
+
+
+def browser_mode() -> str:
+    """The browser's approval mode for the agent; off while its switch is off or its last check failed."""
+    if not browser_available() or not browser_enabled():
+        return 'off'
+    from data_formulator.browser.service import browser_ready
+
+    if browser_ready() is False:
+        return 'off'
+    return tools_mode()
 
 
 def user_models_locked() -> bool:
@@ -92,7 +146,8 @@ def resource_enabled(section: str, identifier: str) -> bool:
 
 
 def validate_overrides(overrides: dict) -> None:
-    if not isinstance(overrides, dict) or set(overrides) - {'models', 'connectors', 'workflows', 'default_model', 'limits', 'allowed_api_bases', 'connections', 'disable_user_connectors', 'disable_user_models', 'app_name', 'app_tagline', 'terminal_mode', 'sandbox'}:
+    if not isinstance(overrides, dict) or set(overrides) - {'models', 'connectors', 'workflows', 'default_model', 'limits', 'allowed_api_bases', 'connections', 'disable_user_connectors', 'disable_user_models', 'app_name', 'app_tagline', 'terminal_mode', 'terminal_enabled', 'sandbox',
+                                                             'browser_enabled', 'browser_name', 'browser_allowed_sites', 'share_links'}:
         raise ValueError('Unknown configuration fields.')
     if 'sandbox' in overrides:
         sandbox = overrides['sandbox']
@@ -104,16 +159,27 @@ def validate_overrides(overrides: dict) -> None:
         paths = filesystem['allowWrite']
         if (not isinstance(paths, list) or len(paths) > 64
                 or any(not isinstance(path, str) or not path or len(path) > 2000 or '\0' in path
-                       or not Path(path).expanduser().is_absolute() for path in paths)):
+                       or not os.path.isabs(os.path.expanduser(path)) for path in paths)):
             raise ValueError('sandbox.filesystem.allowWrite must contain at most 64 absolute paths (or ~/ paths).')
         home = Path.home().resolve()
         protected = configuration_path().parent.resolve()
         for path in paths:
-            resolved = Path(path).expanduser().resolve()
+            resolved = Path(os.path.realpath(os.path.expanduser(path)))
             if resolved == home or resolved in home.parents or protected.is_relative_to(resolved):
                 raise ValueError('Sandbox write paths cannot cover the home, filesystem root, or application configuration.')
     if 'terminal_mode' in overrides and overrides['terminal_mode'] not in ('off', 'ask', 'auto'):
         raise ValueError('Terminal mode must be off, ask, or auto.')
+    if 'terminal_enabled' in overrides and not isinstance(overrides['terminal_enabled'], bool):
+        raise ValueError('terminal_enabled must be true or false.')
+    if 'browser_enabled' in overrides and not isinstance(overrides['browser_enabled'], bool):
+        raise ValueError('browser_enabled must be true or false.')
+    if 'browser_name' in overrides and overrides['browser_name'] not in BROWSER_CHOICES:
+        raise ValueError(f'browser_name must be one of: {", ".join(BROWSER_CHOICES)}.')
+    if 'browser_allowed_sites' in overrides:
+        sites = overrides['browser_allowed_sites']
+        if (not isinstance(sites, list) or len(sites) > 500
+                or any(not isinstance(site, str) or not site or len(site) > 253 or site != site.strip().lower() for site in sites)):
+            raise ValueError('browser_allowed_sites must list lower-case host names.')
     for name, maximum in (('app_name', 80), ('app_tagline', 300)):
         if name in overrides and (not isinstance(overrides[name], str) or len(overrides[name]) > maximum):
             raise ValueError(f'{name} must be text of at most {maximum} characters.')
@@ -121,6 +187,8 @@ def validate_overrides(overrides: dict) -> None:
         raise ValueError('Disable user connectors must be a boolean.')
     if 'disable_user_models' in overrides and type(overrides['disable_user_models']) is not bool:
         raise ValueError('Disable user models must be a boolean.')
+    if 'share_links' in overrides and type(overrides['share_links']) is not bool:
+        raise ValueError('Share links must be a boolean.')
     connections = overrides.get('connections', {})
     if not isinstance(connections, dict) or set(connections) - {'models', 'connectors'}:
         raise ValueError('Invalid connection collections.')

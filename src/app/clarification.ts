@@ -1,5 +1,7 @@
 import {
+    CLARIFICATION_OPTION_ICONS,
     ClarificationOption,
+    ClarificationOptionIcon,
     ClarificationQuestion,
     ClarificationResponse,
 } from '../components/ComponentType';
@@ -11,7 +13,7 @@ export interface NormalizedClarification {
 }
 
 /** Resolve an option's user-visible label.
- *  Accepts a bare string or a `{label, label_code?}` dict; returns null
+ *  Accepts a bare string or a `{label, label_code?, value?, icon?}` dict; returns null
  *  if no usable label can be produced. The `label_code` is a backend i18n
  *  key consumed by `translateBackend`; we don't keep it on the normalized
  *  output because nothing downstream reads it. */
@@ -29,7 +31,10 @@ function normalizeOption(raw: any): ClarificationOption | null {
     const value = typeof raw.value === 'string' && raw.value.trim()
         ? raw.value.trim()
         : undefined;
-    return label ? { label, ...(value ? { value } : {}) } : null;
+    const icon = (CLARIFICATION_OPTION_ICONS as readonly unknown[]).includes(raw.icon)
+        ? raw.icon as ClarificationOptionIcon
+        : undefined;
+    return label ? { label, ...(value ? { value } : {}), ...(icon ? { icon } : {}) } : null;
 }
 
 /** Resolve a question's translated text + its options. The `*_code` /

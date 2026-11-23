@@ -63,8 +63,9 @@ def test_write_report_names_the_report_it_replaces() -> None:
     skill = build_registry().get_skill("report")
     ctx = SkillContext(client=None, workspace=None, payload={"replaceable_artifacts": LISTED, "run_artifacts": {}})
     events = list(_drain(skill.handle_action("write_report", {"report": "# Fixed", "replaces": "report-1"}, ctx)))
-    assert events[0] == {"type": "action", "action": "write_report",
+    assert events[0] == {"type": "action", "action": "write_report", "report_id": events[0]["report_id"],
                          "replaces": {"id": "report-1", "kind": "report", "name": "Findings", "node_id": "report-1"}}
+    assert events[0]["report_id"].startswith("report-")
     events, observation = _drain_with_result(skill.handle_action("write_report", {"report": "# Fixed", "replaces": "d_trend"}, ctx))
     assert events[0]["type"] == "error" and observation.startswith("[REPORT NOT DELIVERED]")
 

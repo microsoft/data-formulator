@@ -171,6 +171,8 @@ export interface QuickActionContext {
     hasUserSources: boolean;
     hasSessions: boolean;
     hasWorkflows: boolean;
+    /** Whether the deployment offers workflows at all. */
+    canWorkflow?: boolean;
     canSchedule: boolean;
     hasSchedules: boolean;
 }
@@ -196,7 +198,7 @@ export function buildDataLoadingQuickActions(
     const action = (kind: string, text: string) => ({ kind, label: text, onClick: () => fillAndSend(text) });
     const nextSteps = [
         action('connect', label('connect', 'Guide me to connect a data source')),
-        context?.hasSessions && !context.hasWorkflows
+        context?.hasSessions && !context.hasWorkflows && context.canWorkflow !== false
             && action('workflow', label('workflowFromSession', 'Turn my last analysis into a workflow')),
         context?.canSchedule && context.hasWorkflows && !context.hasSchedules
             && action('schedule', label('scheduleWorkflow', 'Schedule a workflow to run daily')),
@@ -205,4 +207,17 @@ export function buildDataLoadingQuickActions(
     const next = context && !context.hasUserSources ? nextSteps[0]
         : nextSteps[Math.min(nextSteps.length - 1, Math.floor(seed * nextSteps.length))];
     return [action('ask', label('askConnected', 'List tables from my connected sources')), next];
+}
+
+/** What a blank session offers to ask the agent: listing data, then what the deployment allows (a recurring
+ *  workflow, a new source, tools to find data online on the user's own computer). */
+export function buildSessionStartPrompts(t: TFunction, allows: { workflows: boolean; schedules: boolean; connectors: boolean; local: boolean }): string[] {
+    const label = (key: string, defaultValue: string) => t(`upload.sessionStart.${key}`, { defaultValue }) as string;
+    return [
+        label('list', "Show me what's in my connected sources"),
+        allows.workflows && (allows.schedules ? label('scheduledWorkflow', 'I want to create a recurring workflow to create reports')
+            : label('workflow', 'I want to create a reusable workflow to create reports')),
+        allows.connectors && label('connect', 'Walk me through connecting a new data source'),
+        allows.local && label('discover', 'Help me set up tools to discover data online'),
+    ].filter((text): text is string => !!text);
 }

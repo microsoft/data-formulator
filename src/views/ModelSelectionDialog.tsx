@@ -72,6 +72,7 @@ import { apiRequest, ApiError, ApiRequestError } from '../app/apiClient';
 import { useTranslation } from 'react-i18next';
 import { LogViewerDialog } from './LogViewerDialog';
 import { iconVar, textVar } from '../app/layout';
+import { identText, ink, weight } from '../app/tokens';
 
 
 // Add this helper function at the top of the file, after the imports
@@ -240,8 +241,13 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
     const [newApiVersion, setNewApiVersion] = useState<string>(initialDefinition?.api_version || "");
     const [managedIdentityClientId, setManagedIdentityClientId] = useState(initialDefinition?.managed_identity_client_id || '');
     const [advancedOpen, setAdvancedOpen] = useState(false);
-    const [azureAuthMethod, setAzureAuthMethod] = useState<'azure_cli' | 'managed_identity' | 'api_key'>(
+    const [selectedAzureAuthMethod, setAzureAuthMethod] = useState<'azure_cli' | 'managed_identity' | 'api_key'>(
         initialDefinition?.auth_mode === 'managed_identity' ? 'managed_identity' : initialDefinition?.auth_mode === 'key' ? 'api_key' : 'azure_cli');
+    // A model added in the browser on a hosted server would sign in as the server, not the user,
+    // so Azure identity sign-in is offered only locally and in administrator connections.
+    const azureIdentityAvailable = Boolean(onStageConnection) || Boolean(serverConfig.IS_LOCAL_MODE);
+    const azureAuthMethod = azureIdentityAvailable || selectedAzureAuthMethod !== 'azure_cli'
+        ? selectedAzureAuthMethod : 'api_key';
     const [isAddingModel, setIsAddingModel] = useState(false);
     const [newModelError, setNewModelError] = useState("");
     const [newModelDiagnostic, setNewModelDiagnostic] = useState<ApiError | null>(null);
@@ -804,7 +810,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
         '& .MuiOutlinedInput-root': {
             fontSize: '0.75rem',
             borderRadius: 0.5,
-            backgroundColor: 'rgba(0,0,0,0.02)',
+            backgroundColor: ink(0.02),
             height: 28,
             '& fieldset': { borderColor: 'divider' },
             '&:hover fieldset': { borderColor: 'text.disabled' },
@@ -894,7 +900,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                         <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75, mt: 0.25 }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
                                 <Typography component="code" variant="body2" aria-label={t('model.deviceCode')}
-                                    sx={{ fontFamily: 'monospace', fontSize: textVar.sm, fontWeight: 600, overflowWrap: 'anywhere', userSelect: 'all' }}>{deviceCode}</Typography>
+                                    sx={{ fontFamily: 'monospace', fontSize: textVar.sm, fontWeight: weight(600), overflowWrap: 'anywhere', userSelect: 'all' }}>{deviceCode}</Typography>
                                 <Tooltip title={t('model.copyDeviceCode')}><IconButton size="small" aria-label={t('model.copyDeviceCode')}
                                     onClick={() => void navigator.clipboard?.writeText(deviceCode).catch(() => setOpenRouterError(t('model.copyDeviceCodeFailed')))}>
                                     <ContentCopyOutlinedIcon sx={{ fontSize: iconVar.sm }} />
@@ -946,7 +952,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                             display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: 1.5, maxWidth: '100%',
                             '& .MuiButton-root': {
                                 minWidth: 0, p: 0,
-                                fontSize: textVar.sm, fontWeight: 400, lineHeight: 1.5,
+                                fontSize: textVar.sm, fontWeight: weight(400), lineHeight: 1.5,
                                 textTransform: 'none', color: 'text.secondary',
                                 '&:hover, &.Mui-focusVisible': { color: 'text.primary', bgcolor: 'transparent', textDecoration: 'underline' },
                                 '&.Mui-disabled': { color: 'text.disabled' },
@@ -1041,7 +1047,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                 <Typography variant="caption" color="text.secondary">{t(isChatGPT ? 'model.chatgptBilling' : isCopilot ? 'model.copilotBilling' : 'model.openRouterBilling')}</Typography>
             </>}
 
-            {newEndpoint === 'azure' && (
+            {newEndpoint === 'azure' && azureIdentityAvailable && (
                 <ToggleButtonGroup
                     exclusive
                     size="small"
@@ -1203,9 +1209,10 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
 
             {newEndpoint && !onStageConnection && <TextField
                 select fullWidth size="small" disabled={!isEditingDetails}
-                label={t('model.thinking')} value={newReasoningEffort || 'low'}
-                onChange={event => setNewReasoningEffort(event.target.value === 'low' ? '' : event.target.value as typeof newReasoningEffort)}
+                label={t('model.thinking')} value={newReasoningEffort || 'default'}
+                onChange={event => setNewReasoningEffort(event.target.value === 'default' ? '' : event.target.value as typeof newReasoningEffort)}
                 helperText={t('model.thinkingHint')}>
+                <MenuItem value="default">{t('model.thinkingDefault')}</MenuItem>
                 <MenuItem value="low">{t('model.thinkingLow')}</MenuItem>
                 <MenuItem value="medium">{t('model.thinkingMedium')}</MenuItem>
                 <MenuItem value="high">{t('model.thinkingHigh')}</MenuItem>
@@ -1328,7 +1335,8 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                 <Typography component="dd" variant="body2">{newSmallModel || t('model.sameAsModel')}</Typography>
                 <Typography component="dt" variant="body2">{t('model.thinking')}</Typography>
                 <Typography component="dd" variant="body2">{t(newReasoningEffort === 'high' ? 'model.thinkingHigh'
-                    : newReasoningEffort === 'medium' ? 'model.thinkingMedium' : 'model.thinkingLow')}</Typography>
+                    : newReasoningEffort === 'medium' ? 'model.thinkingMedium' : newReasoningEffort === 'low' ? 'model.thinkingLow'
+                    : 'model.thinkingDefault')}</Typography>
                 <Typography component="dt" variant="body2">{t(detailUsesAccount ? 'model.account' : 'model.authentication')}</Typography>
                 <Box component="dd">
                     {!detailUsesAccount && <Typography variant="body2">
@@ -1413,7 +1421,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                                     <Box component="dl" sx={{ display: 'grid', gridTemplateColumns: 'max-content minmax(0, 1fr)', alignItems: 'baseline', columnGap: 1, rowGap: 0.25, m: 0 }}>
                                         <Typography component="dt" variant="caption" color="text.secondary">{t('model.mainShort')}</Typography>
                                         <Tooltip title={model.model}>
-                                            <Typography component="dd" variant="body2" noWrap sx={{ m: 0, fontWeight: 500 }}>{model.model}</Typography>
+                                            <Typography component="dd" variant="body2" noWrap sx={{ m: 0, fontWeight: weight(500) }}>{model.model}</Typography>
                                         </Tooltip>
                                         {model.small_model?.trim() && model.small_model.trim() !== model.model.trim() && <>
                                             <Typography component="dt" variant="caption" color="text.secondary">{t('model.smallShort')}</Typography>
@@ -1471,7 +1479,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
             <Box sx={{ minWidth: 0 }}>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
                     <Box sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                        <Typography variant="subtitle1" sx={{ fontWeight: weight(600) }}>
                             {detailModel ? detailModel.display_name || detailModel.model : t(serverConfig.DISABLE_CUSTOM_MODELS ? 'model.pleaseSelectModel' : 'model.newModel')}
                         </Typography>
                         {detailIsGlobal && (
@@ -1583,7 +1591,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                                     color: 'text.primary',
                                     minWidth: 0,
                                     px: 0.75,
-                                    fontWeight: 500,
+                                    fontWeight: weight(500),
                                     '&:hover': { color: 'primary.main' },
                                 },
                             }}>
@@ -1624,7 +1632,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
 
     let tempModel = allModels.find(m => m.id == tempSelectedModelId);
     let tempModelName = tempModel ? tempModel.display_name || `${tempModel.endpoint}/${tempModel.model}` : t('model.pleaseSelectModel');
-    let selectedModelName = allModels.find(m => m.id == selectedModelId)?.model || t('model.unselected');
+    let selectedModelName = allModels.find(m => m.id == selectedModelId)?.model;
 
     const selectedReady = isModelReady(selectedModelId);
     const isInlineAction = appearance === 'inline';
@@ -1642,7 +1650,9 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
             <Button
                 sx={{
                     fontSize: isInlineAction ? 'inherit' : '13px',
-                    fontWeight: 400,
+                    // The model's id is data: the toolbar shows it in the look's ident font.
+                    ...(isInlineAction ? {} : identText),
+                    fontWeight: weight(400),
                     textTransform: 'none',
                     px: 1.5,
                     py: 0.5,
@@ -1651,7 +1661,7 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                     color: selectedReady ? 'text.secondary' : undefined,
                     '&:hover': {
                         color: selectedReady ? 'text.primary' : undefined,
-                        backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                        backgroundColor: ink(0.04),
                     },
                 }}
                 variant="text"
@@ -1663,7 +1673,9 @@ export const ModelSelectionButton: React.FC<ModelSelectionButtonProps> = ({ appe
                     setModelDialogOpen(true);
                 }}
             >
-                {selectedReady ? selectedModelName : t('model.selectModels')}
+                {/* A selected model keeps its name even when unverified (warning colour); the prompt to
+                    select is only for when there is none. */}
+                {selectedModelName ?? t('model.selectModels')}
             </Button>
         </Tooltip>
         <Dialog 

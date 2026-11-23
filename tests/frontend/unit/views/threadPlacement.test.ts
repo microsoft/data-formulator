@@ -77,7 +77,7 @@ describe('Thread artifact placement', () => {
         expect(danglingParents(store.getState())).toEqual(['orphan']);
     });
 
-    it('opens an older conversation when an app made directly in it is focused', () => {
+    it('outlines a file made directly in an older collapsed conversation when it is focused, leaving it collapsed', () => {
         const store = configureStore({ reducer: dataFormulatorReducer });
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'old', displayId: 'Old', textKind: 'explain',
             prompt: 'Old question', content: 'Old answer.', parentNodeId: 'conversation-root:old', createdAt: 1 }));
@@ -90,9 +90,14 @@ describe('Thread artifact placement', () => {
                 React.createElement(LayoutProvider, { children: React.createElement(DataThread) }),
             }),
         }));
-        expect(screen.queryByRole('button', { name: 'File old-app' })).toBeNull();
+        // The older thread is collapsed and lists the file as a row.
+        expect(screen.getByRole('button', { name: 'File old-app' })).toHaveAttribute('aria-pressed', 'false');
         act(() => store.dispatch(dfActions.setFocused({ type: 'file', fileName: 'old-app.md' })));
-        expect(screen.getByRole('button', { name: 'File old-app' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'File old-app' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.queryByText('Old answer.')).toBeNull();
+        // Clicking another row focuses it there too.
+        fireEvent.click(screen.getByRole('button', { name: 'File old-app' }));
+        expect(store.getState().focusedId).toEqual({ type: 'file', fileName: 'old-app.md' });
     });
 });
 

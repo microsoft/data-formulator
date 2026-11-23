@@ -101,7 +101,7 @@ _default_ws_backend = os.environ.get('WORKSPACE_BACKEND', 'local')
 if _disable_database and _default_ws_backend == 'local':
     _default_ws_backend = 'ephemeral'
 app.config['CLI_ARGS'] = {
-    'host': os.environ.get('HOST', '127.0.0.1'),
+    'host': os.environ.get('HOST'),
     'managed': _disable_database or os.environ.get('DF_MANAGED', 'false').lower() == 'true',
     'disable_database': _disable_database,
     'sandbox': os.environ.get('SANDBOX', 'local'),
@@ -275,7 +275,8 @@ def _register_blueprints():
     from data_formulator.routes.model_endpoints import model_endpoints_bp
     from data_formulator.routes.workspace_files import workspace_files_bp
     from data_formulator.routes.apps import apps_bp
-    from data_formulator.sites.routes import site_bp
+    from data_formulator.spaces.routes import space_bp
+    from data_formulator.routes.shares import shares_bp
 
     # Register blueprints
     app.register_blueprint(tables_bp)
@@ -286,13 +287,16 @@ def _register_blueprints():
     app.register_blueprint(logs_bp)
     app.register_blueprint(model_endpoints_bp)
     app.register_blueprint(workspace_files_bp)
-    app.register_blueprint(site_bp)
-    from data_formulator.sites import warn_about_missing_sites
-    warn_about_missing_sites()
+    app.register_blueprint(space_bp)
+    app.register_blueprint(shares_bp)
+    from data_formulator.spaces import warn_about_missing_spaces
+    warn_about_missing_spaces()
 
     # Initialise pluggable authentication (reads AUTH_PROVIDER env var)
     from data_formulator.auth.identity import init_auth, get_active_provider
     init_auth(app)
+    from data_formulator.data_loader import load_plugins
+    load_plugins()
 
     # Register auth gateway blueprints for stateful providers (e.g. GitHub OAuth)
     provider = get_active_provider()
@@ -304,9 +308,11 @@ def _register_blueprints():
     from data_formulator.auth.gateways.oidc_gateway import auth_tokens_bp
     app.register_blueprint(auth_tokens_bp)
 
-    # Kusto delegated Microsoft sign-in is independent of application SSO.
+    # Kusto and Dataverse delegated Microsoft sign-in are independent of application SSO.
     from data_formulator.auth.gateways.kusto_oauth_gateway import kusto_oauth_bp
     app.register_blueprint(kusto_oauth_bp)
+    from data_formulator.auth.gateways.dataverse_oauth_gateway import dataverse_oauth_bp
+    app.register_blueprint(dataverse_oauth_bp)
 
     # Register backend OIDC gateway (auto-detected: active when OIDC_CLIENT_SECRET is set)
     from data_formulator.auth.providers.oidc import is_backend_oidc_mode
@@ -319,17 +325,22 @@ def _register_blueprints():
     from data_formulator.routes.credentials import credential_bp
     app.register_blueprint(credential_bp)
 
-    # Register knowledge management API (rules, skills, workflows)
-    from data_formulator.routes.knowledge import knowledge_bp
-    app.register_blueprint(knowledge_bp)
+    from data_formulator.routes.themes import themes_bp
+    app.register_blueprint(themes_bp)
 
     from data_formulator.routes.workflows import workflow_bp
     app.register_blueprint(workflow_bp)
-    from data_formulator.routes.schedules import schedule_bp
-    app.register_blueprint(schedule_bp)
+    from data_formulator.routes.tasks import task_bp
+    app.register_blueprint(task_bp)
 
     from data_formulator.routes.configurations import configuration_bp
     app.register_blueprint(configuration_bp)
+    from data_formulator.mcp_servers.routes import mcp_bp
+    app.register_blueprint(mcp_bp)
+    from data_formulator.accounts.routes import accounts_bp
+    app.register_blueprint(accounts_bp)
+    from data_formulator.routes.browser import browser_bp
+    app.register_blueprint(browser_bp)
 
     with spinner("Loading data connectors"):
         from data_formulator.data_connector import register_data_connectors
@@ -363,13 +374,27 @@ def _safety_checks():
                 logger.warning('DF_ADMIN_EMAILS contains invalid sign-in addresses. Use full addresses, not short aliases.')
             if not local_mode and (provider is None or not (identities or (email_supported and valid_emails))):
                 logger.warning('Managed mode has no usable administrator access configuration. Configure authentication and DF_ADMIN_EMAILS or DF_ADMIN_IDENTITIES.')
-            host = cli.get('host') or os.environ.get('HOST', '127.0.0.1')
+            host = cli.get('host') or os.environ.get('HOST', '')
             if local_mode and (host not in ('127.0.0.1', 'localhost', '::1')
                                or os.environ.get('WEBSITE_INSTANCE_ID') or os.environ.get('WEBSITE_HOSTNAME')):
                 logger.critical('SECURITY WARNING: Managed mode uses local-owner administrator identity on a hosted or non-loopback server. Configure verified authentication before exposing this server.')
     backend = cli.get('workspace_backend', 'local')
     sandbox = cli.get('sandbox', 'not_a_sandbox')
     multi_user = backend != 'local'
+
+    if sandbox == 'local':
+        from data_formulator.sandbox.confinement import confinement_kind, describe
+        from data_formulator.sandbox.local_sandbox import _os_sandbox_required
+        # A data_formulator logger: under `gunicorn --chdir .../data_formulator app:app` this
+        # module is the top-level `app`, whose INFO records would not reach the configured handler.
+        sandbox_log = logging.getLogger('data_formulator.sandbox')
+        isolation = describe()
+        if confinement_kind() is None and _os_sandbox_required():
+            sandbox_log.critical('Python sandbox isolation: %s. DF_REQUIRE_OS_SANDBOX is set, so generated code will not run.', isolation)
+        elif confinement_kind() is None and multi_user:
+            sandbox_log.warning('Python sandbox isolation: %s. Native libraries (DuckDB, pyarrow) can read files beyond the workspace.', isolation)
+        else:
+            sandbox_log.info('Python sandbox isolation: %s', isolation)
 
     if multi_user and sandbox == 'not_a_sandbox':
         logger.critical(
@@ -414,10 +439,35 @@ def get_auth_info():
     return json_ok({"action": "none"})
 
 
+def _app_version() -> str:
+    """The installed Data Formulator's version (pyproject.toml), or "" when it is not installed as a package."""
+    from data_formulator.updates import current_version
+    return current_version()
+
+
+def _share_links() -> bool:
+    from data_formulator.shares import shares_available
+    return shares_available()
+
+
+@app.route('/api/update-check', methods=['GET'])
+def get_update_check():
+    """Whether a newer Data Formulator is out (see updates.py). Only a person's own copy asks: a shared server
+    is updated by whoever runs it."""
+    from data_formulator.auth.identity import is_local_mode
+    from data_formulator.error_handler import json_ok
+    from data_formulator.updates import check, install_kind
+    if not (is_local_mode() or install_kind() == 'desktop'):
+        return json_ok({"current": _app_version(), "update_available": False})
+    return json_ok(check())
+
+
 @app.route('/api/app-config', methods=['GET'])
 def get_app_config():
     """Provide frontend configuration settings from CLI arguments"""
-    from data_formulator.configuration import effective_limit, is_managed_mode, read_configuration, terminal_available, terminal_mode, user_connectors_disabled, user_models_disabled
+    from data_formulator.configuration import browser_available, browser_enabled, browser_mode, effective_limit, is_managed_mode, read_configuration, terminal_available, terminal_enabled, terminal_mode, tools_mode, user_connectors_disabled, user_models_disabled
+    from data_formulator.browser.service import browser_ready as _browser_ready
+    from data_formulator.mcp_servers.config import mcp_available, mcp_servers_on
     args = app.config['CLI_ARGS']
     
     workspace_backend = args.get('workspace_backend', 'local')
@@ -432,30 +482,43 @@ def get_app_config():
         "TERMINAL_MODE": terminal_mode(),
         "TERMINAL_AVAILABLE": terminal_available(),
         "TERMINAL_CONFIG_LOCKED": 'DF_TERMINAL_MODE' in os.environ,
+        "TERMINAL_ENABLED": terminal_enabled(),
+        "TOOLS_MODE": tools_mode(),
+        "BROWSER_AVAILABLE": browser_available(),
+        "BROWSER_ENABLED": browser_enabled() and _browser_ready() is not False,
+        "BROWSER_MODE": browser_mode(),
+        "MCP_AVAILABLE": mcp_available(),
+        "MCP_SERVERS_ON": mcp_servers_on(),
         "DISABLE_CUSTOM_MODELS": user_models_disabled(),
         "MAX_DISPLAY_ROWS": effective_limit('max_display_rows'),
         "EXTERNAL_TABLE_MAX_ROWS": effective_limit('external_table_max_rows'),
         "EXTERNAL_TABLE_MAX_BYTES": effective_limit('external_table_max_bytes'),
         "DEV_MODE": args.get('dev', False),
         "WORKSPACE_BACKEND": workspace_backend,
+        "VERSION": _app_version(),
+        "SHARE_LINKS": _share_links(),
     }
 
-    from data_formulator.sites import current_site, default_demo, demo_status, site_frontend_config
-    from data_formulator.sites.install import can_install, listed_demos
-    config["DEFAULT_DEMO"] = default_demo()
-    config["DEMOS"] = listed_demos()
+    from data_formulator.spaces import current_space, default_space, space_status, space_frontend_config
+    from data_formulator.spaces.install import can_install, listed_spaces
+    config["DEFAULT_SPACE"] = default_space()
+    config["SPACES"] = listed_spaces()
     config["STANDARD_APP_NAME"] = config["APP_NAME"]
-    site = current_site()
-    if site:
-        site_config = site_frontend_config(site)
-        site_config["status"] = demo_status(site)
-        site_config["can_install"] = can_install(site)
-        config["SITE"] = site_config
-        config["APP_NAME"] = site_config["name"] or config["APP_NAME"]
-        config["APP_TAGLINE"] = site_config["tagline"] or config["APP_TAGLINE"]
+    space = current_space()
+    if space:
+        space_config = space_frontend_config(space)
+        space_config["status"] = space_status(space)
+        space_config["can_install"] = can_install(space)
+        config["SPACE"] = space_config
+        config["APP_NAME"] = space_config["name"] or config["APP_NAME"]
+        config["APP_TAGLINE"] = space_config["tagline"] or config["APP_TAGLINE"]
 
     from data_formulator.auth.identity import is_local_mode
     config["IS_LOCAL_MODE"] = is_local_mode()
+    from data_formulator import session_wormhole
+    config["SESSION_WORMHOLE_AVAILABLE"] = session_wormhole.enabled()
+    from data_formulator.analyst.skills.configure.automation import workflows_unavailable
+    config["WORKFLOWS_AVAILABLE"] = workflows_unavailable() is None
     from data_formulator.routes.configurations import can_configure
     config["CAN_CONFIGURE"] = can_configure()
 
@@ -615,8 +678,19 @@ def run_app():
     # under the resolved DF home (re-points if it differs from the default).
     configure_file_logging()
 
+    # Single-user mode and plugins were first decided at import, before --host was known.
+    if os.environ.get('AUTH_PROVIDER', '').strip().lower() in ('', 'anonymous'):
+        from data_formulator.auth.identity import configure_local_mode
+        configure_local_mode(app)
+    from data_formulator.data_loader import load_plugins
+    load_plugins()
+
     # Register blueprints (this is where heavy imports happen)
     _register_blueprints()
+    # Admin connectors were registered at import, before plugins could load: add those a plugin provides.
+    from data_formulator.data_connector import register_admin_connectors
+    with app.app_context():
+        register_admin_connectors()
     _safety_checks()
 
     from data_formulator.workflows.scheduler import start_scheduler

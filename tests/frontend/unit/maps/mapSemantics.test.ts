@@ -1,0 +1,185 @@
+import * as d3 from 'd3';
+import { describe, expect, it } from 'vitest';
+
+import { loadGeoSet } from '../../../../src/maps/geography';
+import { buildLayer } from '../../../../src/maps/model';
+import { colorScale, formatter } from '../../../../src/maps/scales';
+import { annotateField, colorDefaults, humanize, resolveField } from '../../../../src/maps/semantics';
+import { parseMapSpec, type MapSpec } from '../../../../src/maps/spec';
+import { mapStyle, themeInk } from '../../../../src/maps/styles';
+
+const spec = (body: Record<string, unknown>): MapSpec => {
+    const parsed = parseMapSpec(JSON.stringify(body));
+    if (!parsed.spec) throw new Error(parsed.errors.join('; '));
+    return parsed.spec;
+};
+
+describe('field semantics', () => {
+    it('guesses types from names and values, and keeps declared ones', () => {
+        expect(annotateField('poverty_rate', [12.5, 8])).toMatchObject({ semanticType: 'Percentage' });
+        expect(annotateField('share', [0.2, 0.5])).toMatchObject({ semanticType: 'Percentage', intrinsicDomain: [0, 1] });
+        expect(annotateField('gdp_usd', [1, 2])).toMatchObject({ semanticType: 'Amount', unit: 'USD' });
+        expect(annotateField('vote_margin', [-3, 4])).toMatchObject({ semanticType: 'PercentageChange' });
+        expect(annotateField('region', ['a', 'b'])).toMatchObject({ semanticType: 'Category' });
+        expect(annotateField('poverty_rate', [1], { semanticType: 'Score' })).toMatchObject({ semanticType: 'Score' });
+        expect(humanize('life_expectancy')).toBe('Life expectancy');
+        expect(resolveField('nuclear_electricity_twh', [1, 2], { semanticType: 'Quantity', unit: 'TWh' }).label).toBe('Nuclear electricity (TWh)');
+    });
+
+    it('resolves aggregation, colour type, and units the way charts do', () => {
+        const amount = resolveField('income', [100, 2000], { semanticType: 'Amount', unit: 'USD' });
+        expect(amount).toMatchObject({ aggregate: 'sum', colorType: 'sequential', additive: true, label: 'Income (US$)' });
+        expect(amount.format?.prefix).toBe('$');
+        const rate = resolveField('rate', [1, 5], { semanticType: 'Percentage' });
+        expect(rate).toMatchObject({ aggregate: 'mean', additive: false });
+        const change = resolveField('margin', [-4, 6], { semanticType: 'PercentageChange', unit: 'pts', displayName: 'Margin' });
+        expect(change).toMatchObject({ colorType: 'diverging', midpoint: 0, label: 'Margin (pts)' });
+        const pivot = resolveField('temp', [10, 30], { semanticType: 'Temperature', divergingMidpoint: 18 });
+        expect(pivot).toMatchObject({ colorType: 'diverging', midpoint: 18 });
+    });
+
+    it('gives switch options that compare one scale, while another keeps its own', () => {
+        const fields = { poorest: { semanticType: 'Percentage', thresholds: [20, 40, 60, 80] },
+            richest: { semanticType: 'Percentage', thresholds: [20, 40, 60, 80] }, gap: { semanticType: 'Number' } };
+        const breaks = (field: 'poorest' | 'richest' | 'gap', values: number[]) => {
+            const encoding = colorDefaults({ field }, resolveField(field, values, fields[field]));
+            const legend = colorScale(encoding, values, field).legend;
+            return legend.kind === 'classes' ? legend.items.slice(1).map(item => item.from) : [];
+        };
+        // The two groups' rates, far apart in their values, are classed alike.
+        expect(breaks('poorest', [2, 10, 30, 50, 70])).toEqual([20, 40, 60, 80]);
+        expect(breaks('richest', [60, 80, 90, 95, 99])).toEqual([20, 40, 60, 80]);
+        // The gap, another kind of measure, fits its own data.
+        expect(breaks('gap', [5, 10, 20, 40, 70])).not.toEqual([20, 40, 60, 80]);
+        // A field's extent instead spans the ramp in equal steps; a scale on the encoding itself wins.
+        expect(colorDefaults({ field: 'poorest' }, resolveField('poorest', [1], { domain: [0, 100] })))
+            .toMatchObject({ domain: [0, 100], method: 'equal' });
+        expect(colorDefaults({ field: 'poorest', thresholds: [50] }, resolveField('poorest', [1], fields.poorest)).thresholds).toEqual([50]);
+        expect(parseMapSpec(JSON.stringify({ fields: { rate: { domain: [100, 0] }, share: { thresholds: 'x' } }, layers: [] })).errors)
+            .toEqual(expect.arrayContaining([expect.stringContaining('fields.rate.domain'), expect.stringContaining('fields.share.thresholds')]));
+    });
+
+    it('keeps a share held as 0–100 out of a fraction format, even when most values are under 1', () => {
+        // Most countries hold under 1% of papers, which reads as a 0–1 share; 46 then showed as "4600%".
+        const values = [46.1, 33.9, 10.8, 8.5, 4, 2.5, 1.2, ...Array(80).fill(0.3)];
+        const resolved = resolveField('share', values, { semanticType: 'Percentage', unit: '%' });
+        expect(resolved.format?.pattern ?? '').not.toContain('%');
+        const legend = colorScale(colorDefaults({ field: 'share', thresholds: [5, 15, 30] }, resolved), values, 'Share').legend;
+        expect(legend.kind === 'classes' ? legend.items.map(item => item.label) : []).toEqual(['< 5', '5 – 15', '15 – 30', '≥ 30']);
+    });
+
+    it('ignores a stored 0–1 domain that the values plainly exceed', () => {
+        // An inferred [0, 1] on a share held as 0–100 would format 30 as "3000%" and colour it as diverging.
+        const values = [46, 31.2, 8.5, 2.1, 0.4];
+        const resolved = resolveField('share', values, { semanticType: 'Percentage', unit: '%', intrinsicDomain: [0, 1] });
+        expect(resolved.colorType).toBe('sequential');
+        const legend = colorScale(colorDefaults({ field: 'share', thresholds: [5, 15, 30] }, resolved), values, 'Share').legend;
+        expect(legend.kind === 'classes' ? legend.items.map(item => item.label) : []).toEqual(['< 5', '5 – 15', '15 – 30', '≥ 30']);
+        // A domain the values fit is kept.
+        expect(annotateField('share', [0.2, 0.5], { semanticType: 'Percentage', intrinsicDomain: [0, 1] }).intrinsicDomain).toEqual([0, 1]);
+    });
+
+    it('formats with a currency before the sign', () => {
+        expect(formatter(undefined, '$')(-1234567)).toBe('−$1.23M');
+        expect(formatter(undefined, '', ' kt')(42)).toBe('42 kt');
+    });
+
+    it('pins colours to category values; the rest take the palette without reusing them', () => {
+        const values = ['Democratic', 'Republican', 'No race', 'Not called'];
+        const scale = colorScale({ field: 'winner', type: 'categorical', colors: { republican: '#d62728', ' Democratic ': '#1f5fbf' } },
+            values, 'Winner', undefined, { categorical: ['#1f5fbf', '#ff7f0e', '#2ca02c'] });
+        expect(scale.color('Republican')).toBe('#d62728');
+        expect(scale.color('Democratic')).toBe('#1f5fbf');
+        expect(['#ff7f0e', '#2ca02c']).toContain(scale.color('No race'));
+        expect(scale.color('No race')).not.toBe(scale.color('Not called'));
+        // A field's stored colours reach the map's colour encoding.
+        const resolved = resolveField('winner', values, { semanticType: 'Category', colors: { Republican: '#d62728' } });
+        expect(colorDefaults({ field: 'winner' }, resolved).colors).toEqual({ Republican: '#d62728' });
+    });
+});
+
+describe('styles and themes', () => {
+    it('reads a Flint chart theme as the map palette', () => {
+        const ink = themeInk('datawrapper')!;
+        expect(ink.palette.single).toBe('#18a1cd');
+        expect(ink.palette.classes).toBe(5);
+        expect(typeof ink.palette.sequential).toBe('function');
+        expect(themeInk('none')).toBeUndefined();
+        expect(mapStyle('dark').mode).toBe('dark');
+        expect(mapStyle(undefined).id).toBe('dark');
+    });
+
+    it('draws a named scheme as designed, and fits the default ramp to a dark surface', () => {
+        const land = mapStyle('dark').land;
+        const values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        const lightness = (color: string) => d3.lab(color).l;
+        // Named: as designed on either style, even where its darkest red sinks into the dark land.
+        const named = colorScale({ field: 'v', method: 'continuous', scheme: 'reds' }, values, 'V', undefined, { surface: land });
+        expect(named.color(10)).toBe(d3.interpolateReds(1));
+        // Default: keeps its direction, its dark end stopped short of the land.
+        for (const surface of [land, mapStyle('light').land]) {
+            const reds = colorScale({ field: 'v', method: 'continuous' }, values, 'V', undefined, { surface, sequential: d3.interpolateReds });
+            expect(lightness(reds.color(10))).toBeLessThan(lightness(reds.color(1)));
+        }
+        const reds = colorScale({ field: 'v', method: 'continuous' }, values, 'V', undefined, { surface: land, sequential: d3.interpolateReds, designed: true });
+        expect(lightness(reds.color(10)) - lightness(land)).toBeGreaterThanOrEqual(17);
+        expect(reds.color(1)).toBe(d3.interpolateReds(0));
+        // A default diverging ramp turns its lightness around on dark land: the middle recedes, the ends glow.
+        const margins = [-10, -5, 0, 5, 10];
+        const diverging = colorScale({ field: 'v', type: 'diverging' }, margins, 'V', undefined, { surface: land, diverging: d3.interpolateRdBu });
+        expect(lightness(diverging.color(0))).toBeLessThan(lightness(diverging.color(10)) - 20);
+        expect(lightness(diverging.color(0))).toBeGreaterThan(lightness(land) + 10);
+        const rdBu = colorScale({ field: 'v', type: 'diverging', scheme: 'rdBu' }, margins, 'V', undefined, { surface: land });
+        expect(rdBu.color(0)).toBe(d3.interpolateRdBu(0.5));
+    });
+
+    it('formats a number as a year only when its field is declared one, never by its value', () => {
+        const rows = [{ iso3: 'FRA', year: 2020, visitors: 1999 }];
+        const map = parseMapSpec(JSON.stringify({ data: { d: { values: rows } }, fields: { year: 'Year' },
+            layers: [{ id: 'r', type: 'regions', data: 'd', key: 'iso3', color: { field: 'visitors' } }] })).spec!;
+        const model = buildLayer(map, map.layers[0], { d: rows }, {}, {});
+        expect(model.describe('year').format(2020)).toBe('2020');
+        expect(model.describe('visitors').format(1999)).toBe('1,999');
+        expect(formatter()(2020)).toBe('2,020');
+    });
+
+    it('classes a diverging measure by its thresholds, coloured by side and distance from the midpoint', () => {
+        const values = [-12000, -60, -20, -5, 5, 20, 60, 12000];
+        const scale = colorScale({ field: 'v', type: 'diverging', midpoint: 0, method: 'threshold', thresholds: [-50, -10, 0, 10, 50], scheme: 'rdYlGn' },
+            values, 'V');
+        expect(scale.legend?.kind).toBe('classes');
+        const color = (value: number) => scale.color(value);
+        expect(color(-5)).toBe(d3.interpolateRdYlGn(0.5 - 0.5 / 3));
+        expect(color(5)).toBe(d3.interpolateRdYlGn(0.5 + 0.5 / 3));
+        expect(color(-12000)).toBe(d3.interpolateRdYlGn(0));
+        expect(color(12000)).toBe(d3.interpolateRdYlGn(1));
+        // Without a method, a diverging measure stays a continuous ramp.
+        expect(colorScale({ field: 'v', type: 'diverging', scheme: 'rdYlGn' }, values, 'V').legend?.kind).toBe('gradient');
+    });
+
+    it('parses styles, themes, and field annotations', () => {
+        const parsed = parseMapSpec(JSON.stringify({ view: { style: 'atlas', theme: 'nyt', labels: false },
+            fields: { pop: 'Count', gdp: { semanticType: 'Amount', unit: 'USD' } }, layers: [] }));
+        expect(parsed.spec?.fields).toEqual({ pop: { semanticType: 'Count' }, gdp: { semanticType: 'Amount', unit: 'USD' } });
+        expect(parseMapSpec(JSON.stringify({ view: { style: 'neon' }, layers: [] })).errors[0]).toMatch(/view.style/);
+    });
+
+    it('fills encodings from semantics under the theme, with the spec winning', async () => {
+        const geoSets = { countries: await loadGeoSet('countries') };
+        const rows = [{ c: 'France', margin: -5, pop: 10 }, { c: 'France', margin: 3, pop: 5 }, { c: 'Brazil', margin: 8, pop: 20 }];
+        const map = spec({ data: { d: { values: rows } }, fields: { margin: 'PercentageChange', pop: 'Count' },
+            layers: [{ id: 'a', type: 'regions', data: 'd', key: 'c', color: { field: 'margin' } },
+                { id: 'b', type: 'regions', data: 'd', key: 'c', color: { field: 'pop' } },
+                { id: 'c', type: 'regions', data: 'd', key: 'c', color: { field: 'margin', type: 'quantitative', title: 'Mine' } }] });
+        const palette = themeInk('datawrapper')!.palette;
+        const [diverging, totals, explicit] = map.layers.map(layer => buildLayer(map, layer, { d: rows }, {}, geoSets, null, { palette }));
+        expect(diverging.color.legend).toMatchObject({ kind: 'gradient', midpoint: 0, title: 'Margin' });
+        // A rate averages across rows; a count sums.
+        expect(diverging.marks.find(mark => mark.regionId === 'FRA')?.colorValue).toBe(-1);
+        expect(totals.marks.find(mark => mark.regionId === 'FRA')?.colorValue).toBe(15);
+        expect(totals.color.legend).toMatchObject({ kind: 'classes', title: 'Pop' });
+        expect(explicit.color.legend).toMatchObject({ title: 'Mine' });
+        expect(explicit.color.legend?.kind).not.toBe('gradient');
+        expect(diverging.describe('pop').label).toBe('Pop');
+    });
+});

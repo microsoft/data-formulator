@@ -1,23 +1,31 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Button, ButtonBase, Tooltip, Typography, useTheme } from '@mui/material';
+import { Box, Button, ButtonBase, Typography, useTheme } from '@mui/material';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import InsertChartOutlinedIcon from '@mui/icons-material/InsertChartOutlined';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import AttachFileIcon from '@mui/icons-material/AttachFile';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { DataFormulatorState, dfActions, dfSelectors, explanationContent } from '../app/dfSlice';
 import { textVar } from '../app/layout';
-import { readingTypography } from '../app/tokens';
+import { readingTypography, weight } from '../app/tokens';
 import { getCachedChart } from '../app/chartCache';
 import { TerminalMessageContent } from '../components/TerminalApprovalDialog';
 import { CompactMarkdown, RunPlanChecklist } from './InteractionEntryCard';
 import { ConversationWorkLog, workEntriesOf } from './ConversationWorkLog';
+import { codeCallsOf } from '../app/toolCalls';
+import { conversationNodeIds } from '../app/threadGraph';
+import { parseItemName, workspaceFileName } from '../app/itemNames';
+import { useItemOpener } from './ItemReferences';
 import { DataFrameTable } from './DataFrameTable';
 import { HorizontalScrollFade } from '../components/ScrollFade';
 import { apiRequest } from '../app/apiClient';
 import { getUrls } from '../app/utils';
 import { DictTable } from '../components/ComponentType';
+import { isAppFile } from '../icons';
+import { ThreadArtifactCard } from './DataThreadCards';
+import { AppMiniature, ReportMiniature } from '../components/ArtifactMiniatures';
+import { ThreadReferenceChips } from '../components/ThreadReferenceIcon';
+import type { ThreadReference } from '../components/ComponentType';
 
 /**
  * A result's first rows, shown when opened. A workspace table may keep none of its rows in the
@@ -43,6 +51,7 @@ const TableRowsPreview: React.FC<{ table: DictTable; rowCount: number; format: (
     </HorizontalScrollFade>;
 };
 import { WorkflowFormArtifactView } from './SetupFormArtifacts';
+import { SignInFormCard } from '../components/SignInFormCard';
 import { chartTitleFits } from '../components/ComponentType';
 
 /**
@@ -50,7 +59,11 @@ import { chartTitleFits } from '../components/ComponentType';
  * the items they produced inline. Without `nodeIds`, shows the one message and
  * the replies that branch from it.
  */
-export const ConversationCanvas = ({ textTurnId, nodeIds, label }: { textTurnId: string; nodeIds?: string[]; label?: string }) => {
+export const ConversationCanvas = ({ textTurnId, nodeIds, label, anchorId }: {
+    textTurnId: string; nodeIds?: string[]; label?: string;
+    /** A message to bring into view when the conversation opens. */
+    anchorId?: string;
+}) => {
     const dispatch = useDispatch();
     const theme = useTheme();
     const { t } = useTranslation();
@@ -63,17 +76,27 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label }: { textTurnId:
     const fileNodes = useSelector((state: DataFormulatorState) => state.fileNodes);
     const reports = useSelector((state: DataFormulatorState) => state.generatedReports);
     const drafts = useSelector((state: DataFormulatorState) => state.draftNodes);
+    const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    // A path a tool call named opens what it names on the canvas, while that still exists.
+    const openItem = useItemOpener();
+    const openSessionPath = (path: string): (() => void) | undefined => {
+        const target = parseItemName(path);
+        if (target?.kind === 'web') return undefined;
+        // Only workspace files the session lists open from a tool call (not scratch files).
+        if (target?.kind === 'file' && !(target.path.startsWith('files/') && fileNodes.some(file => file.path === workspaceFileName(target.path)))) return undefined;
+        return openItem(target);
+    };
     const selectedRef = useRef<HTMLDivElement>(null);
     // Rows load only once a result's rows are opened.
     const [rowsOpened, setRowsOpened] = useState<Set<string>>(new Set());
-    const path = nodeIds ?? [textTurnId];
+    const path = (nodeIds ? conversationNodeIds(graph, textTurnId, nodeIds) : undefined) ?? [textTurnId];
     const pathIds = new Set(path);
     const firstPromptId = path.find(id => turns.find(turn => turn.id === id)?.prompt);
     const branchOptions = nodeIds ? [] : turns.filter(turn => turn.parentNodeId === path[path.length - 1] && !pathIds.has(turn.id));
 
     useEffect(() => {
         selectedRef.current?.scrollIntoView?.({ block: 'start' });
-    }, [textTurnId]);
+    }, [textTurnId, anchorId]);
 
     const artifactButtonSx = { textTransform: 'none', fontSize: '0.8125rem', justifyContent: 'flex-start' } as const;
     // A soft raised surface rather than an outlined box.
@@ -82,24 +105,30 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label }: { textTurnId:
     // Working numbers read at four significant figures, as people quote them.
     const roundRow = (row: Record<string, unknown>) => Object.fromEntries(Object.entries(row).map(([key, value]) =>
         [key, typeof value === 'number' && !Number.isInteger(value) ? Number(value.toPrecision(4)) : value]));
-    const reportArtifact = (report: typeof reports[number]) => <Button key={report.id} startIcon={<OpenInNewIcon />} sx={artifactButtonSx}
-        onClick={() => { dispatch(dfActions.setFocused({ type: 'report', reportId: report.id })); dispatch(dfActions.setViewMode('report')); }}>{report.title || t('conversation.report', { defaultValue: 'Report' })}</Button>;
-    const fileArtifact = (file: typeof fileNodes[number]) => <Box key={file.id} sx={{ mb: 1 }}>
-        <Tooltip describeChild title={file.path}>
-            <Button startIcon={<AttachFileIcon />} sx={{ ...artifactButtonSx, maxWidth: '100%', overflowWrap: 'anywhere' }}
-                onClick={() => dispatch(dfActions.setFocused({ type: 'file', fileName: file.path }))}>
-                {file.displayName}
-            </Button>
-        </Tooltip>
-        {file.notes && <Typography sx={{ fontSize: textVar.sm, overflowWrap: 'anywhere' }}>{file.notes}</Typography>}
+    // Reports, apps and files show as the same cards as in the thread, at a card's width.
+    const reportArtifact = (report: typeof reports[number]) => <Box key={report.id} data-conversation-artifact sx={{ maxWidth: 320, my: 1.5 }}>
+        <ThreadArtifactCard artifactType="report" title={report.title || t('conversation.report', { defaultValue: 'Report' })}
+            selected={focusedId?.type === 'report' && focusedId.reportId === report.id}
+            preview={<ReportMiniature chartIds={report.selectedChartIds || []} width={48} peek />}
+            onClick={() => { dispatch(dfActions.setFocused({ type: 'report', reportId: report.id })); dispatch(dfActions.setViewMode('report')); }} />
     </Box>;
+    const fileArtifact = (file: typeof fileNodes[number]) => {
+        const isApp = isAppFile(file.path);
+        return <Box key={file.id} data-conversation-artifact sx={{ maxWidth: 320, my: 1.5 }}>
+            <ThreadArtifactCard artifactType={isApp ? 'app' : 'file'} title={file.displayName} notes={file.notes}
+                selected={focusedId?.type === 'file' && focusedId.fileName === file.path}
+                preview={isApp ? <AppMiniature path={file.path} version={file.contentHash} /> : undefined}
+                onClick={() => dispatch(dfActions.setFocused({ type: 'file', fileName: file.path }))} />
+        </Box>;
+    };
     // Each exchange opens with the user's message, set apart from the one before it.
-    const userMessage = (content: string, key: string, first: boolean) => <Box key={key} data-conversation-role="user"
-        sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'flex-start', gap: 1, mt: first ? 0 : 4, mb: 2 }}>
+    const userMessage = (content: string, key: string, first: boolean, references?: ThreadReference[]) => <Box key={key} data-conversation-role="user"
+        sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5, mt: first ? 0 : 4, mb: 2 }}>
         <Typography sx={{ maxWidth: '80%', minWidth: 0, px: 2, py: 1.25, borderRadius: '18px 18px 4px 18px',
             // The same tint as the user's cards in the thread.
             bgcolor: theme.palette.custom?.bgcolor ?? 'action.hover',
             color: 'inherit', fontSize: 'inherit', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.6 }}>{content}</Typography>
+        {references?.length ? <ThreadReferenceChips references={references} sx={{ maxWidth: '80%', justifyContent: 'flex-end' }} /> : null}
     </Box>;
     const agentMessage = (children: React.ReactNode) => <Box data-conversation-role="agent"
         sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 2 }}>
@@ -114,7 +143,7 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label }: { textTurnId:
         const name = table.displayId || table.id;
         const rowCount = table.virtual?.rowCount ?? table.rows.length;
         const tableCharts = charts.filter(chart => chart.tableRef === table.id && !['Auto', '?', 'Table'].includes(chart.chartType));
-        return <Box key={table.id} ref={table.id === textTurnId ? selectedRef : undefined}
+        return <Box key={table.id} ref={table.id === (anchorId ?? textTurnId) ? selectedRef : undefined}
             data-conversation-entry={table.id} sx={{ my: 3, scrollMarginTop: 12 }}>
             <Box sx={{ ...cardSx, overflow: 'hidden' }}>
                 <ButtonBase onClick={() => dispatch(dfActions.setFocused({ type: 'table', tableId: table.id }))}
@@ -122,7 +151,7 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label }: { textTurnId:
                     sx={{ display: 'flex', width: '100%', justifyContent: 'flex-start', gap: 1, px: 1.5, py: 1, textAlign: 'left',
                         '&:hover': { bgcolor: 'action.hover' }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}>
                     <TableChartOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary', flexShrink: 0 }} />
-                    <Typography component="span" sx={{ flex: 1, minWidth: 0, fontSize: '0.875rem', fontWeight: 500,
+                    <Typography component="span" sx={{ flex: 1, minWidth: 0, fontSize: '0.875rem', fontWeight: weight(500),
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</Typography>
                     <Typography component="span" sx={{ flexShrink: 0, fontSize: '0.8125rem', color: 'text.secondary' }}>
                         {t('conversation.tableSize', { defaultValue: '{{rows}} rows × {{columns}} columns',
@@ -149,8 +178,8 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label }: { textTurnId:
                             bgcolor: 'transparent', cursor: 'pointer',
                             '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}>
                         <Box component="img" src={image} alt={label} sx={{ display: 'block', width: '100%', height: 'auto',
-                            maxWidth: Math.min(cached?.naturalWidth || 480, 560), mx: 'auto', objectFit: 'contain',
-                            ...(cached?.naturalWidth && cached?.naturalHeight ? { aspectRatio: `${cached.naturalWidth} / ${cached.naturalHeight}` } : {}) }} />
+                            maxWidth: Math.min(cached?.displayWidth || 480, 560), mx: 'auto', objectFit: 'contain',
+                            ...(cached?.displayWidth && cached?.displayHeight ? { aspectRatio: `${cached.displayWidth} / ${cached.displayHeight}` } : {}) }} />
                     </Box>;
                 })}
                 <Box component="details" sx={{
@@ -171,7 +200,7 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label }: { textTurnId:
         <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 3, pt: 3, pb: 6 }}>
             {/* A reading column: 14px type, generous leading, about 80 characters a line. */}
             <Box sx={{ maxWidth: 720, mx: 'auto', fontFamily: readingTypography.fontFamily, fontSize: '0.875rem', lineHeight: 1.65,
-                color: readingTypography.color, '& strong': { fontWeight: 600 },
+                color: readingTypography.color, '& strong': { fontWeight: weight(600) },
                 '--df-text-xs': '0.75rem', '--df-text-sm': '0.8125rem', '--df-text-md': '0.875rem',
             }}>
                 {/* Where the thread starts, marked as in the thread list. */}
@@ -216,26 +245,30 @@ export const ConversationCanvas = ({ textTurnId, nodeIds, label }: { textTurnId:
                     const turn = turns.find(item => item.id === nodeId);
                     if (!turn) return null;
                     // A step's text that only repeats what its tool call did is already on the call.
-                    const callPurposes = new Set([...(turn.executions || []), ...(turn.codeExecutions || [])]
+                    const callPurposes = new Set([...(turn.executions || []), ...codeCallsOf(turn)]
                         .map(call => (call.purpose || '').trim()).filter(Boolean));
                     const content = callPurposes.has(explanationContent(turn.content).trim()) ? '' : explanationContent(turn.content);
                     const hasWork = workEntriesOf(turn).length > 0;
                     const hasAgentPart = !!content || hasWork || !!turn.plan?.length || !!turn.form || !!turn.dataOperation
                         || (turn.textKind === 'clarify' && !turn.answered);
                     return <React.Fragment key={turn.id}>
-                        {turn.prompt && userMessage(turn.prompt, `${turn.id}-prompt`, turn.id === firstPromptId)}
-                        <Box ref={turn.id === textTurnId ? selectedRef : undefined} data-conversation-entry={turn.id} sx={{
+                        {turn.prompt && userMessage(turn.prompt, `${turn.id}-prompt`, turn.id === firstPromptId, turn.references)}
+                        <Box ref={turn.id === (anchorId ?? textTurnId) ? selectedRef : undefined} data-conversation-entry={turn.id} sx={{
                             scrollMarginTop: 12,
                         }}>
                             {hasAgentPart && agentMessage(<>
                             {/* The work behind the message first, as in a chat transcript; each line opens its details. */}
-                            <ConversationWorkLog turn={turn} />
+                            <ConversationWorkLog turn={turn} onOpenPath={openSessionPath} />
                             <TerminalMessageContent content={content} variant="document" />
                             {!!turn.plan?.length && <Box sx={{ my: 1, maxWidth: 480 }}>
                                 <RunPlanChecklist items={turn.plan} title={turn.planTitle} defaultExpanded />
                             </Box>}
                             {turn.form?.kind === 'workflow' && <WorkflowFormArtifactView turn={turn} form={turn.form} />}
-                            {((turn.form && turn.form.kind !== 'workflow') || turn.dataOperation || (turn.textKind === 'clarify' && !turn.answered)) && <Button startIcon={<OpenInNewIcon />} sx={artifactButtonSx}
+                            {/* A sign-in request is answered right in the message (design-docs/72). */}
+                            {turn.form?.kind === 'signin' && <Box sx={{ mt: 1, maxWidth: 640 }}>
+                                <SignInFormCard turn={turn} form={turn.form} embedded />
+                            </Box>}
+                            {((turn.form && turn.form.kind !== 'workflow' && turn.form.kind !== 'signin') || turn.dataOperation || (turn.textKind === 'clarify' && !turn.answered)) && <Button startIcon={<OpenInNewIcon />} sx={artifactButtonSx}
                                 onClick={() => dispatch(dfActions.setFocused({ type: 'text', textId: turn.id }))}>
                                 {turn.form?.title || t('conversation.openInteraction', { defaultValue: 'Open interaction' })}
                             </Button>}

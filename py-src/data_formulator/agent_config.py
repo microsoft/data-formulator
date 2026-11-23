@@ -86,16 +86,17 @@ ANALYST_EXECUTION_DEFAULTS = AnalystExecutionConfig()
 # Per-agent reasoning effort
 # ---------------------------------------------------------------------------
 #
-# Pick the lowest tier that produces acceptable quality. Heavy code-generation
-# and multi-step agents stay at ``"low"``; trivial single-turn extractors and
+# Heavy code-generation and multi-step agents send nothing (``None``): the model
+# reasons at its own default, so they benefit from what each model is tuned for,
+# unless the model setup picks a level. Trivial single-turn extractors and
 # classifiers run at ``"minimal"`` (GPT-5) / ``"low"`` (everything else).
 
-AGENT_REASONING_EFFORT: dict[str, ReasoningEffort] = {
-    # ── Heavy: code-gen, multi-step, tool-using ─────────────────────────────
-    "data_transform":      "low",      # generates Python transform scripts
-    "data_rec":            "low",      # chart / transformation recommendation
-    "analyst":             "low",      # unified multi-step exploration + report agent
-    "interactive_explore": "low",      # exploration idea agent
+AGENT_REASONING_EFFORT: dict[str, ReasoningEffort | None] = {
+    # ── Heavy: code-gen, multi-step, tool-using (the model's own default) ───
+    "data_transform":      None,       # generates Python transform scripts
+    "data_rec":            None,       # chart / transformation recommendation
+    "analyst":             None,       # unified multi-step exploration + report agent
+    "interactive_explore": None,       # exploration idea agent
 
     # ── Light: single-turn extractors / classifiers / formatters ────────────
     "data_load":           "minimal",  # one-shot type inference
@@ -105,15 +106,19 @@ AGENT_REASONING_EFFORT: dict[str, ReasoningEffort] = {
     "code_explanation":    "minimal",  # describe derived fields
     "sort_data":           "minimal",  # natural-order sort a small list
     "simple":              "minimal",  # workspace_name
+    "starter_questions":   "low",      # a few suggested questions
 }
 
-DEFAULT_REASONING_EFFORT: ReasoningEffort = "low"
+# Agents not listed reason at the model's own default.
+DEFAULT_REASONING_EFFORT: ReasoningEffort | None = None
 
 _VALID_TIERS: frozenset[str] = frozenset(("none", "minimal", "low", "medium", "high"))
 
 
-def get_reasoning_effort(agent_id: str | None) -> ReasoningEffort:
-    """Return the *configured* tier for ``agent_id``.
+def get_reasoning_effort(agent_id: str | None) -> ReasoningEffort | None:
+    """Return the *configured* tier for ``agent_id`` (``None``: the model's own default).
+
+    ``DF_REASONING_EFFORT_<AGENT_ID>=default`` asks for the model's own default too.
 
     Resolution order:
         1. ``DF_REASONING_EFFORT_<AGENT_ID>`` env var
@@ -129,6 +134,8 @@ def get_reasoning_effort(agent_id: str | None) -> ReasoningEffort:
         env_val = (os.environ.get(env_key) or "").strip().lower()
         if env_val in _VALID_TIERS:
             return env_val  # type: ignore[return-value]
+        if env_val == "default":
+            return None
         if agent_id in AGENT_REASONING_EFFORT:
             return AGENT_REASONING_EFFORT[agent_id]
     return DEFAULT_REASONING_EFFORT
@@ -171,8 +178,8 @@ def _supports_none(model: str | None) -> bool:
     return "codex" in m or "-pro" in m or "/pro" in m
 
 
-def reasoning_effort_for(agent_id: str | None, model: str | None, preference: str | None = None) -> ReasoningEffort:
-    """Resolve the reasoning_effort to actually send to LiteLLM.
+def reasoning_effort_for(agent_id: str | None, model: str | None, preference: str | None = None) -> ReasoningEffort | None:
+    """Resolve the reasoning_effort to actually send to LiteLLM (``None``: send none, the model's default).
 
     - A model setup's thinking level (*preference*) wins when the caller passes it.
     - Reads the configured tier via :func:`get_reasoning_effort`.
@@ -187,6 +194,8 @@ def reasoning_effort_for(agent_id: str | None, model: str | None, preference: st
     effort = get_reasoning_effort(agent_id)
     if preference in MODEL_REASONING_LEVELS:
         return preference  # type: ignore[return-value]
+    if effort is None:
+        return None
     if effort == "minimal":
         if _supports_minimal(model):
             return "minimal"

@@ -16,21 +16,27 @@ import GlobalStyles from '@mui/material/GlobalStyles';
 import { ThemeProvider } from '@mui/material/styles';
 
 import { createDfTheme } from '../../theme';
+import { applyLookVariables, DEFAULT_LOOK } from '../../look';
+import { ink } from '../../tokens';
 import { appConfig, bridge, errorMessage, reportError } from './bridge';
 import * as chart from './chart';
 import * as data from './data';
 import * as icons from './icons';
+import { AppThemeProvider } from './appTheme';
+import { DEFAULT_DENSITY, densityTheme } from './density';
+import { TokenStyles, boardTheme, setBoardInks, useInks, useMeasure, useSize } from './board';
+import { DataTable } from './table';
+import * as controls from './controls';
+import * as kpi from './kpi';
 import { optionalModule } from './optional/register';
 import { ErrorState } from './states';
-import * as ui from './ui';
 
 export const MODULES: Record<string, unknown> = {
     'react': React,
     'react/jsx-runtime': ReactJsxRuntime,
-    '@df/ui': ui,
     '@df/data': { useQuery: data.useQuery, useDistinct: data.useDistinct, useTable: data.useTable,
         useSql: data.useSql, useSourceQuery: data.useSourceQuery },
-    '@df/chart': chart,
+    '@df/chart': { ...chart, ...controls, ...kpi, DataTable, AppTheme: AppThemeProvider, useInks, useSize, useMeasure },
     '@df/format': {
         get format() { return bridge().format; },
         ...Object.fromEntries(['number', 'compact', 'percent', 'delta', 'date'].map(name =>
@@ -41,12 +47,34 @@ export const MODULES: Record<string, unknown> = {
 };
 
 /** Modules in their own bundles, injected only into apps that import them (see optional/). */
-export const OPTIONAL_MODULES = ['d3', 'lodash', '@df/geo'];
+export const OPTIONAL_MODULES = ['d3', 'lodash', '@df/geo', '@mui/icons-material'];
 
 export const ALLOWED_MODULES = [...Object.keys(MODULES), ...OPTIONAL_MODULES];
 
+/** `@mui/material/Box`, `@mui/material/styles`: a path into MUI, as its docs write imports. */
+const MUI_PATH = /^@mui\/material\/([A-Za-z]+)$/;
+
+function muiPath(name: string): unknown {
+    const part = MUI_PATH.exec(name)?.[1];
+    if (!part) return undefined;
+    // `styles`, `colors` and the like are the root's named exports; a component path is its default export.
+    if (/^[a-z]/.test(part)) return MUI;
+    const component = (MUI as Record<string, unknown>)[part];
+    return component === undefined ? undefined : { __esModule: true, default: component };
+}
+
 export function requireModule(name: string): unknown {
     if (Object.prototype.hasOwnProperty.call(MODULES, name)) return MODULES[name];
+    const fromMui = muiPath(name);
+    if (fromMui !== undefined) return fromMui;
+    // `@mui/icons-material/TrendingUp`: one icon, as the default export of its path.
+    const icon = /^@mui\/icons-material\/([A-Za-z0-9]+)$/.exec(name)?.[1];
+    if (icon) {
+        const icons = optionalModule('@mui/icons-material') as Record<string, unknown> | undefined;
+        if (icons?.[icon]) return { __esModule: true, default: icons[icon] };
+        if (!icons) throw new Error('"@mui/icons-material" did not load in this app. Reload the app to try again.');
+        throw new Error(`"${name}" is not an MUI icon.`);
+    }
     if (OPTIONAL_MODULES.includes(name)) {
         const module = optionalModule(name);
         if (module !== undefined) return module;
@@ -89,18 +117,38 @@ export function mount(factory: (require: (name: string) => unknown, module: { ex
         App = () => <MUI.Box sx={{ p: 2 }}><ErrorState error={errorMessage(error)} /></MUI.Box>;
     }
     const AppComponent = App as React.ComponentType;
+    // The host's look: its MUI theme here, and its variables behind the DF tokens the app's components use.
+    const look = appConfig().look ?? DEFAULT_LOOK;
+    applyLookVariables(document.documentElement.style, look);
+    const hostTheme = densityTheme(createDfTheme(appConfig().paletteKey ?? '', look), appConfig().density ?? DEFAULT_DENSITY);
+    setBoardInks(hostTheme);
     const root = createRoot(target);
     root.render(
-        <ThemeProvider theme={createDfTheme(appConfig().paletteKey ?? '')}>
+        <ThemeProvider theme={boardTheme(hostTheme)}>
             <GlobalStyles styles={theme => ({
+                // The scrollbar's colors; a dark AppTheme page sets its own (appTheme.tsx).
+                ':root': { '--df-scrollbar': ink(0.15), '--df-scrollbar-hover': ink(0.3) },
                 'html, body': {
-                    margin: 0, background: '#f6f7f9', color: theme.palette.text.primary,
-                    fontFamily: theme.typography.fontFamily, fontSize: 'var(--df-text-sm, 13px)', lineHeight: 1.5,
+                    margin: 0, background: theme.palette.background.default, color: theme.palette.text.primary,
+                    fontFamily: theme.typography.fontFamily, lineHeight: 1.5,
                     WebkitFontSmoothing: 'antialiased', MozOsxFontSmoothing: 'grayscale',
                 },
+                // MUI sizes its type in rem against a 16 px root; a smaller root shrinks every heading, caption, and label.
+                html: { fontSize: 16 },
+                body: { fontSize: 'var(--df-text-sm, 13px)' },
                 'button, input, select, textarea': { font: 'inherit' },
                 '*, *::before, *::after': { boxSizing: 'border-box' },
+                // DF's own scrollbars (src/scss/App.scss): thin, shown while the pointer is over what scrolls (the only
+                // sign a table has more), darker under the pointer. Chrome and Firefox take the standard properties; Safari the -webkit- ones.
+                '*': { scrollbarWidth: 'thin', scrollbarColor: 'transparent transparent' },
+                '*:hover': { scrollbarColor: 'var(--df-scrollbar) transparent' },
+                '*::-webkit-scrollbar': { width: 6, height: 6 },
+                '*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner': { background: 'transparent' },
+                '*::-webkit-scrollbar-thumb': { background: 'transparent', borderRadius: 3, transition: 'background-color 0.2s ease' },
+                '*:hover::-webkit-scrollbar-thumb': { background: 'var(--df-scrollbar)' },
+                '*:hover::-webkit-scrollbar-thumb:hover': { background: 'var(--df-scrollbar-hover)' },
             })} />
+            <TokenStyles />
             <ErrorBoundary><AppComponent /></ErrorBoundary>
         </ThemeProvider>,
     );
@@ -108,3 +156,7 @@ export function mount(factory: (require: (name: string) => unknown, module: { ex
 }
 
 (window as unknown as { __DF_REACT__?: unknown }).__DF_REACT__ = Object.freeze({ mount, modules: ALLOWED_MODULES });
+// Optional bundles that render React (MUI icons) use these, so the app has one React and one MUI.
+(window as unknown as { __DF_SHARED_MODULES__?: unknown }).__DF_SHARED_MODULES__ = Object.freeze({
+    'react': React, 'react/jsx-runtime': ReactJsxRuntime, '@mui/material': MUI,
+});

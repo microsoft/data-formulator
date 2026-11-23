@@ -8,7 +8,7 @@
  * manager is active. All backends expose the same API contract.
  */
 
-import { CONNECTOR_ACTION_URLS, fetchWithIdentity, getUrls } from './utils';
+import { CONNECTOR_ACTION_URLS, currentStore, fetchWithIdentity, getUrls } from './utils';
 import { apiRequest, ApiRequestError, assertDownloadResponseOk } from './apiClient';
 import { workspaceDB, TableIndexEntry } from './workspaceDB';
 import { INPUT_TABLE_PREVIEW_ROW_LIMIT, replaceInputTablePreviews } from './inputTablePreviewCache';
@@ -19,10 +19,18 @@ import type { ServerConfig } from './dfSlice';
 
 export interface ScheduledRunProvenance {
     scheduleId: string;
+    /** The workflow's name (older runs: their schedule's). */
     scheduleName: string;
+    /** The workflow file it ran (runs made since schedules are part of workflows). */
+    workflow?: string;
     scheduledFor: string;
     forked?: boolean;
+    /** Its workflow was deleted, so no workflow card lists it; session lists show it instead. */
+    workflowGone?: boolean;
 }
+
+/** Whether a session belongs in session lists: not a scheduled run, which its workflow's card lists, unless that workflow is gone. */
+export const listedAsSession = (session: { scheduled_run?: ScheduledRunProvenance }) => !session.scheduled_run || !!session.scheduled_run.workflowGone;
 
 export function createExternalTableReference(reference: Omit<ExternalTableReference, 'id'>): ExternalTableReference {
     return { ...reference, id: `external:${encodeURIComponent(reference.connectorId)}:${encodeURIComponent(reference.tableKey)}` };
@@ -64,6 +72,9 @@ export interface WorkspaceSummary {
     source_ids?: string[];
     read_only?: boolean;
     scheduled_run?: ScheduledRunProvenance;
+    /** The space example the session was opened from (`activeWorkspace.exampleId`). */
+    example_id?: string;
+    starred?: boolean;
 }
 
 export interface WorkspaceFile {
@@ -88,8 +99,7 @@ export interface WorkspaceFilePreview {
 }
 
 async function isEphemeralBackend(): Promise<boolean> {
-    const { store } = await import('./store');
-    return store.getState().serverConfig?.WORKSPACE_BACKEND === 'ephemeral';
+    return (await currentStore()).getState().serverConfig?.WORKSPACE_BACKEND === 'ephemeral';
 }
 
 function createRecoveryState(state: Record<string, unknown>): Record<string, unknown> {
@@ -142,13 +152,24 @@ function _notifyListChanged(): void {
     window.dispatchEvent(new Event(WORKSPACE_LIST_CHANGED));
 }
 
-export function onWorkspaceFilesChanged(cb: () => void): () => void {
-    window.addEventListener(WORKSPACE_FILES_CHANGED, cb);
-    return () => window.removeEventListener(WORKSPACE_FILES_CHANGED, cb);
+/** Tell session lists to refresh after a session was added outside this module (e.g. received by wormhole). */
+export function notifyWorkspaceListChanged(): void {
+    _notifyListChanged();
 }
 
-export function notifyWorkspaceFilesChanged(): void {
-    window.dispatchEvent(new Event(WORKSPACE_FILES_CHANGED));
+/** Listen for changes to the session's files; `added` are files known to exist already, before a re-list. */
+export function onWorkspaceFilesChanged(cb: (added: WorkspaceFile[]) => void): () => void {
+    const listener = (event: Event) => cb((event as CustomEvent<WorkspaceFile[] | undefined>).detail ?? []);
+    window.addEventListener(WORKSPACE_FILES_CHANGED, listener);
+    return () => window.removeEventListener(WORKSPACE_FILES_CHANGED, listener);
+}
+
+/**
+ * Tell file lists the session's files changed. Pass the files a result just added, so lists show them at once:
+ * right after a load the browser's few connections are busy with per-table requests, and a re-list can wait seconds.
+ */
+export function notifyWorkspaceFilesChanged(added: WorkspaceFile[] = []): void {
+    window.dispatchEvent(new CustomEvent<WorkspaceFile[]>(WORKSPACE_FILES_CHANGED, { detail: added }));
 }
 
 type PreparedInputTablePreview = {
@@ -157,6 +178,20 @@ type PreparedInputTablePreview = {
 };
 
 let workspaceLoadGeneration = 0;
+
+// The server's revision of each session's saved state that this tab's copy is based on: set by a load and by each
+// save. A save sends it, and the server refuses one older than what it holds (another tab or window saved since).
+// Kept out of the store on purpose: copies restored from browser storage never carry one, and recording it in state
+// would itself trigger an auto-save.
+const stateRevisions = new Map<string, number>();
+
+/** The server refused a save: this copy of the session is older than the saved one. */
+export class SessionConflictError extends Error {
+    readonly name = 'SessionConflictError';
+    constructor(readonly sessionId: string) {
+        super('This session was saved from another tab or window since this copy was loaded.');
+    }
+}
 
 export class WorkspaceLoadSupersededError extends Error {
     readonly name = 'WorkspaceLoadSupersededError';
@@ -228,6 +263,7 @@ export async function loadWorkspace(id: string): Promise<{ state: Record<string,
             body: JSON.stringify({ id }),
         });
         if (!data.state) return null;
+        if (typeof data.revision === 'number') stateRevisions.set(id, data.revision);
         const state = migrateState(data.state);
         if (data.workflow_run) {
             const workflowPanel = await import('../views/WorkflowPanel');
@@ -296,18 +332,46 @@ export async function updateWorkspaceMeta(id: string, displayName: string): Prom
     _notifyListChanged();
 }
 
-/** Save current workspace state (called by auto-save). */
+/** Star or unstar one of the user's sessions; starred sessions are listed first. */
+export async function setWorkspaceStarred(id: string, starred: boolean): Promise<void> {
+    await apiRequest(getUrls().SESSION_UPDATE_META, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, starred }),
+    });
+    _notifyListChanged();
+}
+
+// Saves from this tab go one at a time, so each is based on the revision the previous one returned.
+let saveQueue: Promise<unknown> = Promise.resolve();
+
+/** Save current workspace state (called by auto-save). Throws SessionConflictError when the server holds a newer copy. */
 export async function saveWorkspaceState(state: Record<string, unknown>): Promise<void> {
-    const { store } = await import('./store');
-    const fullState = store.getState();
+    const fullState = (await currentStore()).getState();
     const ws = fullState.activeWorkspace;
     if (!ws || isWorkspaceReadOnly(ws)) return;
 
-    await apiRequest(getUrls().SESSION_SAVE, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: ws.id, state }),
-    });
+    const previous = saveQueue;
+    let done!: () => void;
+    saveQueue = new Promise<void>(resolve => { done = resolve; });
+    try {
+        await previous.catch(() => undefined);
+        const baseRevision = stateRevisions.get(ws.id);
+        let data: { revision?: number };
+        try {
+            ({ data } = await apiRequest<{ revision?: number }>(getUrls().SESSION_SAVE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: ws.id, state, ...(baseRevision !== undefined ? { base_revision: baseRevision } : {}) }),
+            }));
+        } catch (error) {
+            if (error instanceof ApiRequestError && error.apiError.code === 'SESSION_CONFLICT') throw new SessionConflictError(ws.id);
+            throw error;
+        }
+        if (typeof data?.revision === 'number') stateRevisions.set(ws.id, data.revision);
+    } finally {
+        done();
+    }
     if (fullState.serverConfig?.WORKSPACE_BACKEND === 'ephemeral') {
         await workspaceDB.save(
             ws.id,
@@ -353,7 +417,10 @@ export async function importWorkspace(
         method: 'POST',
         body: formData,
     });
-    return migrateState(data.state);
+    const state = migrateState(data.state);
+    // Input tables keep their preview rows outside the state, so load them as opening a session does.
+    replaceInputTablePreviews(await prepareInputTablePreviews(state, workspaceId));
+    return state;
 }
 
 // ── Table operations ────────────────────────────────────────────────────

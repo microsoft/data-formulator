@@ -11,12 +11,12 @@
  * - Adding the table to Redux state + fetching semantic types
  */
 
-import { createAsyncThunk } from '@reduxjs/toolkit';
+import { createAsyncThunk, miniSerializeError } from '@reduxjs/toolkit';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { Type, mapApiTypeToAppType } from '../data/types';
 import { refineTemporalType } from '../data/utils';
 import { getUrls, CONNECTOR_ACTION_URLS, computeContentHash, SourceTableRef } from './utils';
-import { apiRequest } from './apiClient';
+import { apiRequest, ApiRequestError } from './apiClient';
 import { DataFormulatorState, dfActions, dfSelectors, fetchColumnStats, fetchFieldSemanticType } from './dfSlice';
 import i18n from '../i18n';
 
@@ -297,7 +297,11 @@ export const loadTable = createAsyncThunk<
         }
 
         return { table: finalTable, truncated, originalRowCount, duplicate: false };
-    }
+    },
+    // Keep the backend error code (e.g. TABLE_NOT_FOUND) through unwrap().
+    { serializeError: error => error instanceof ApiRequestError
+        ? { name: error.name, message: error.message, code: error.apiError.code }
+        : miniSerializeError(error) },
 );
 
 /**

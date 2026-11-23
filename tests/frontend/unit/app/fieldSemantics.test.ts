@@ -47,6 +47,12 @@ describe('normalizeFieldAnnotation', () => {
         expect(normalizeFieldAnnotation(['Year'])).toBeUndefined();
     });
 
+    it('keeps colours pinned to values and drops unusable entries', () => {
+        expect(normalizeFieldAnnotation({ semantic_type: 'Category', colors: { Republican: ' #d62728 ', Democratic: '#1f5fbf', ' ': '#000', Other: 3 } }))
+            .toEqual({ semanticType: 'Category', colors: { Republican: '#d62728', Democratic: '#1f5fbf' } });
+        expect(normalizeFieldAnnotation({ semantic_type: 'Category', colors: ['#d62728'] })).toEqual({ semanticType: 'Category' });
+    });
+
     it('keeps usable properties even without a valid type', () => {
         expect(normalizeFieldAnnotation({ semantic_type: 'index', baseline: 100 })).toEqual({ divergingMidpoint: 100 });
     });

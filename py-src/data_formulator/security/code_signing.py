@@ -14,21 +14,19 @@ executed by the sandbox.
 
 Secret lifecycle
 ~~~~~~~~~~~~~~~~
-- **Dev mode** (``--dev``): uses a fixed, deterministic key so that
-  signatures survive reloader restarts and hot-reloads during
-  development.  This is *not* secure for production.
-- **Production**: derives the key from Flask's ``app.secret_key``.
-  For multi-worker deploys (gunicorn) set the ``SECRET_KEY`` env-var
-  so all workers share the same Flask secret.
-- **Explicit override**: set ``DF_CODE_SIGNING_SECRET`` env-var — this
-  takes priority over everything (useful for multi-instance deploys
-  behind a load balancer).
+1. ``DF_CODE_SIGNING_SECRET`` env-var, when set (share it across instances
+   behind a load balancer).
+2. ``FLASK_SECRET_KEY`` env-var, when set: a key derived from it, so
+   deployments that already share the Flask secret keep valid signatures.
+3. Otherwise a random key created once per installation and kept in Data
+   Formulator's home, so signatures survive restarts and reloads.
 """
 
 import hashlib
 import hmac
 import logging
 import os
+import secrets
 
 logger = logging.getLogger(__name__)
 
@@ -36,61 +34,46 @@ logger = logging.getLogger(__name__)
 # Server-side secret
 # ---------------------------------------------------------------------------
 
-# Explicit env-var takes highest priority (for multi-instance deploys).
-_EXPLICIT_SECRET: str | None = os.environ.get("DF_CODE_SIGNING_SECRET") or None
-
-# Fixed key used in dev mode so reloader restarts don't invalidate
-# existing signatures.  NOT suitable for production.
-_DEV_SECRET = b"data-formulator-dev-signing-key"
+_KEY_FILE = ".code-signing-key"
+_process_key: bytes | None = None
 
 
-def _is_dev_mode() -> bool:
-    """Return True if the server was started with ``--dev``."""
+def _installation_key() -> bytes:
+    """A random key created once and kept in Data Formulator's home (mode 0600)."""
+    global _process_key
+    from data_formulator.datalake.workspace import get_data_formulator_home
+
+    path = get_data_formulator_home() / _KEY_FILE
     try:
-        from flask import current_app
-        return current_app.config.get("CLI_ARGS", {}).get("dev", False)
-    except (ImportError, RuntimeError):
-        return False
+        return bytes.fromhex(path.read_text().strip())
+    except (OSError, ValueError):
+        pass
+    key = secrets.token_bytes(32)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w") as handle:
+            handle.write(key.hex())
+        return key
+    except FileExistsError:
+        return bytes.fromhex(path.read_text().strip())
+    except OSError:
+        # Read-only home: sign with a per-process key (signatures won't survive restarts).
+        if _process_key is None:
+            logger.warning("code_signing: cannot store a key in %s; using a per-process key", path.parent)
+            _process_key = key
+        return _process_key
 
 
 def _get_secret() -> bytes:
-    """Return the signing secret.
-
-    Priority:
-    1. ``DF_CODE_SIGNING_SECRET`` env-var  (set once, works everywhere)
-    2. Dev mode → fixed deterministic key (survives reloader restarts)
-    3. Production → derived from Flask ``app.secret_key``
-    4. Fallback for tests / non-Flask callers
-    """
-    if _EXPLICIT_SECRET:
-        return _EXPLICIT_SECRET.encode("utf-8")
-
-    # In dev mode use a fixed key so the reloader doesn't break sigs.
-    if _is_dev_mode():
-        return _DEV_SECRET
-
-    # Production: derive from Flask's secret_key.
-    try:
-        from flask import current_app
-        flask_secret = current_app.secret_key
-        if flask_secret:
-            # Derive a separate key so changing Flask's secret_key for
-            # session purposes doesn't accidentally share material.
-            return hmac.new(
-                b"df-code-signing",
-                str(flask_secret).encode("utf-8"),
-                hashlib.sha256,
-            ).digest()
-    except (ImportError, RuntimeError):
-        # No Flask app context (e.g. unit tests, CLI scripts).
-        pass
-
-    # Last resort — should only happen in tests.
-    logger.warning(
-        "code_signing: no DF_CODE_SIGNING_SECRET and no Flask app context; "
-        "using fallback secret (signatures won't survive restarts)"
-    )
-    return _DEV_SECRET
+    explicit = os.environ.get("DF_CODE_SIGNING_SECRET")
+    if explicit:
+        return explicit.encode("utf-8")
+    flask_secret = os.environ.get("FLASK_SECRET_KEY")
+    if flask_secret:
+        # A separate derived key, so the Flask session secret is not reused as-is.
+        return hmac.new(b"df-code-signing", flask_secret.encode("utf-8"), hashlib.sha256).digest()
+    return _installation_key()
 
 
 # ---------------------------------------------------------------------------

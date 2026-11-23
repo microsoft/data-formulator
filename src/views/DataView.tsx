@@ -22,7 +22,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Type } from '../data/types';
 import { SelectableDataGrid } from './SelectableDataGrid';
 import { formatCellValue, getColumnAlign } from './ViewUtils';
-import { borderColor } from '../app/tokens';
+import { borderColor, ambientShadow, cardRadius, ink, weight } from '../app/tokens';
 import { iconVar, textVar } from '../app/layout';
 import { externalReferenceTitle } from '../app/workspaceService';
 
@@ -97,11 +97,11 @@ export const TableSearchField: FC<{ query: string; onSearch: (query: string) => 
         }}
         sx={{
             width,
-            '& .MuiOutlinedInput-root': { borderRadius: '8px', fontSize: textVar.sm, backgroundColor: 'background.paper' },
+            '& .MuiOutlinedInput-root': { borderRadius: 2, fontSize: textVar.sm, backgroundColor: 'background.paper' },
             '& .MuiOutlinedInput-input': { py: '4px' },
             ...(bare ? {
                 '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                '& .MuiOutlinedInput-root': { borderRadius: '6px', fontSize: textVar.sm, backgroundColor: 'transparent', transition: 'background-color 0.15s' },
+                '& .MuiOutlinedInput-root': { borderRadius: 1.5, fontSize: textVar.sm, backgroundColor: 'transparent', transition: 'background-color 0.15s' },
                 '& .MuiOutlinedInput-root:hover, & .MuiOutlinedInput-root.Mui-focused': { backgroundColor: 'action.hover' },
             } : {}),
         }}
@@ -210,7 +210,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
         return [
             {
                 id: "#rowId", label: "#", minWidth: 56, align: undefined as any, width: 56,
-                format: (value: any) => <Typography fontSize="inherit" color="rgba(0,0,0,0.65)">{value}</Typography>,
+                format: (value: any) => <Typography fontSize="inherit" color={ink(0.65)}>{value}</Typography>,
                 dataType: Type.Number,
                 source: "original" as const,
             },
@@ -219,10 +219,13 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
     }, [targetTable, rowData, conceptShelfItems]);
 
     const grid = (
-        <Box sx={{height: "100%", display: "flex", flexDirection: "column", background: "rgba(0,0,0,0.02)"}}>
+        <Box sx={{height: "100%", display: "flex", flexDirection: "column", background: ink(0.02)}}>
             <Fade in={true} timeout={600} key={targetTable?.id}>
                 <Box sx={{height: '100%'}}>
                     <SelectableDataGrid
+                        // A workspace-backed table keeps the rows it fetched: rewritten in place (same id, new
+                        // content), it starts over with the new rows rather than showing the old ones.
+                        key={targetTable?.virtual ? `${targetTable.id}:${targetTable.contentHash ?? targetTable.virtual.rowCount}` : targetTable?.id}
                         tableId={targetTable?.id || ""}
                         tableName={displayName}
                         rows={rowData}
@@ -250,7 +253,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
         <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1.5, px: 0.5, pt: 1, pb: 1 }}>
             <Box sx={{ minWidth: 0 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontSize: textVar.xl, fontWeight: 600, color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
+                    <Typography sx={{ fontSize: textVar.xl, fontWeight: weight(600), color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
                         {displayName}
                     </Typography>
                     {targetTable?.derive && (
@@ -267,7 +270,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
                             deleteIcon={<ClearIcon sx={{ fontSize: iconVar.sm }} />}
                             sx={{
                                 height: 22, maxWidth: 220, flexShrink: 0,
-                                borderRadius: '6px',
+                                borderRadius: 1.5,
                                 backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.08),
                                 color: 'primary.main',
                                 '& .MuiChip-label': { fontSize: textVar.xs, px: 0.75, overflow: 'hidden', textOverflow: 'ellipsis' },
@@ -315,7 +318,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
         return withHeader(
             <Box sx={{
                 height: '100%', width: '100%', overflow: 'hidden',
-                borderRadius: '8px', border: `1px solid ${borderColor.divider}`,
+                borderRadius: cardRadius('8px'), border: `1px solid ${borderColor.divider}`,
             }}>
                 {grid}
             </Box>
@@ -348,11 +351,11 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
     // no hover glow/elevation — since the title lives outside the card.
     const cardSx = maximized ? { overflow: 'hidden' } : {
         overflow: 'hidden',
-        borderRadius: '8px',
+        borderRadius: cardRadius('8px'),
         border: `1px solid ${borderColor.divider}`,
         ...(showHeaderBar ? {} : {
             transition: 'box-shadow 0.2s ease',
-            '&:hover': { boxShadow: '0 0 8px rgba(25, 118, 210, 0.25)' },
+            '&:hover': { boxShadow: ambientShadow('0 0 8px rgba(25, 118, 210, 0.25)') },
         }),
     };
     const framed = (
@@ -378,7 +381,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
                 {/* Table overlay filling the visualization view. */}
                 <Box sx={{
                     position: 'absolute', inset: 12, zIndex: 1300,
-                    borderRadius: '8px', overflow: 'hidden',
+                    borderRadius: 2, overflow: 'hidden',
                     border: `1px solid ${borderColor.divider}`,
                     boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
                     backgroundColor: 'background.paper',

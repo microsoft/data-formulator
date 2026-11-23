@@ -27,6 +27,7 @@ import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import { Type } from '../data/types';
 import { formatCellValue } from './ViewUtils';
 import { iconVar, textVar } from '../app/layout';
+import { ink, weight } from '../app/tokens';
 
 /** Wire shapes — must match the backend filter vocabulary. */
 export type RangeFilter = {
@@ -135,7 +136,7 @@ export const ColumnFilterPopover: React.FC<ColumnFilterPopoverProps> = ({
                 <Typography
                     variant="subtitle2"
                     sx={{
-                        fontSize: textVar.md, fontWeight: 600, lineHeight: 1.3,
+                        fontSize: textVar.md, fontWeight: weight(600), lineHeight: 1.3,
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     }}
                 >
@@ -155,7 +156,7 @@ export const ColumnFilterPopover: React.FC<ColumnFilterPopoverProps> = ({
                 <Typography
                     variant="overline"
                     color="text.disabled"
-                    sx={{ fontSize: textVar.xxs, lineHeight: 1, fontWeight: 400, letterSpacing: '0.08em' }}
+                    sx={{ fontSize: textVar.xxs, lineHeight: 1, fontWeight: weight(400), letterSpacing: '0.08em' }}
                 >
                     {t('dataGrid.filter.sectionSort')}
                 </Typography>
@@ -184,7 +185,7 @@ export const ColumnFilterPopover: React.FC<ColumnFilterPopoverProps> = ({
                 <Typography
                     variant="overline"
                     color="text.disabled"
-                    sx={{ fontSize: textVar.xxs, lineHeight: 1, fontWeight: 400, letterSpacing: '0.08em' }}
+                    sx={{ fontSize: textVar.xxs, lineHeight: 1, fontWeight: weight(400), letterSpacing: '0.08em' }}
                 >
                     {t('dataGrid.filter.sectionFilter')}
                 </Typography>
@@ -441,7 +442,7 @@ const ChecklistFilterForm: React.FC<ChecklistFormProps> = ({
                 />
                 {includeNullRow && (
                     <ChecklistRow
-                        label={<i style={{ color: 'rgba(0,0,0,0.55)' }}>{t('dataGrid.filter.blank')}</i>}
+                        label={<i style={{ color: ink(0.55) }}>{t('dataGrid.filter.blank')}</i>}
                         count={showCounts ? nullCount : undefined}
                         checked={selected.has(null)}
                         onToggle={() => toggle(null)}

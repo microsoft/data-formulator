@@ -1,0 +1,50 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "past_sessions",
+      "description": "Read the user's other saved sessions, read-only. Without session: find sessions by name and the titles of what they hold. With session: what it holds. With item: read that item. With copy: bring it into this session's scratch/ or as a new table or file here. Only results are shared (tables, charts, reports, files), never a session's conversation or notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Words matched against session names and the titles of their tables, charts and reports. Omit for the most recent sessions."
+          },
+          "session": {
+            "type": "string",
+            "description": "A session id from a previous result, or its name."
+          },
+          "item": {
+            "description": "tables/<name>, charts/<id>, reports/<id> or files/<path>, as past_sessions(session) lists them; or a list of up to 10.",
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" }, "maxItems": 10 }
+            ]
+          },
+          "rows": {
+            "type": "string",
+            "description": "For a table: the rows to read, e.g. \"1-50\"."
+          },
+          "columns": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "For a table: only these columns."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "For a text file or report: the first line to read."
+          },
+          "copy": {
+            "type": "string",
+            "enum": ["scratch", "session"],
+            "description": "scratch: a copy for code under scratch/past/<session>/. session: a new table or file in this session, with provenance naming the session it came from."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  }
+]

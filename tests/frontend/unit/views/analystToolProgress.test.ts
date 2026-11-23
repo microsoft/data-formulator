@@ -27,6 +27,34 @@ describe('formatAnalystToolProgress', () => {
             .toBe('Reading: session/charts/*, session/tables/sales.json');
     });
 
+    it('names the path a file is created at, or the old bare filename', () => {
+        const t = (key: string) => key;
+        expect(formatAnalystToolProgress('create_file', { path: 'scratch/raw.json' }, t)).toContain('scratch/raw.json');
+        expect(formatAnalystToolProgress('create_file', { filename: 'notes.md' }, t)).toContain('notes.md');
+    });
+
+    it('names each read item with the rows or pages it reads', () => {
+        expect(formatAnalystToolProgress('read_file', {
+            files: [{ path: 'session/tables/t.json', rows: '1-50' }, { path: 'files/r.pdf', pages: '3' }],
+        }, (key: string) => key === 'dataThread.readingFile' ? 'Reading' : key))
+            .toBe('Reading: session/tables/t.json (rows 1-50), files/r.pdf (pages 3)');
+    });
+
+    it('shows a session search with its query and scope', () => {
+        expect(formatAnalystToolProgress('search', { query: 'out of school', path: ['session/tables/'] },
+            (key: string) => key === 'dataThread.searchingSession' ? 'Searching the session' : key))
+            .toBe('Searching the session: “out of school” in session/tables/');
+    });
+
+    it('shows a past-session step as a search, a look, or a copy', () => {
+        const t = (key: string) => key.split('.').pop() || key;
+        expect(formatAnalystToolProgress('past_sessions', { query: 'enso' }, t)).toBe('searchingSessions: “enso”');
+        expect(formatAnalystToolProgress('past_sessions', { session: 'ENSO snowfall', item: 'tables/snow' }, t))
+            .toBe('lookingInSession: ENSO snowfall › tables/snow');
+        expect(formatAnalystToolProgress('past_sessions', { session: 's1', item: ['charts/c1'], copy: 'session' }, t))
+            .toBe('copyingFromSession: s1 › charts/c1');
+    });
+
     it('keeps catalog paths compact', () => {
         expect(formatAnalystToolProgress('list_data', {
             source_id: 'mysql:mysql',

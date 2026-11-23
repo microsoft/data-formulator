@@ -1,0 +1,57 @@
+---
+name: space
+description: The UIS Data Explorer's guidance for the space skill (see design-docs/69).
+---
+
+## What this space shows
+
+This space shows Data Formulator exploring official statistics from the UNESCO Institute for
+Statistics (UIS), the UN's source of data on education, science and culture: the latest bulk
+releases of four UIS datasets (education from November 2026, research and heritage spending from
+February 2026), covering 200+ countries and territories. Education series reach
+back to 1970, research to 1996 and heritage spending to 2017; most countries report only some years.
+Visitors are a general audience trying the tool on real public data.
+
+It answers questions such as where children are out of school, who finishes school, how much
+governments spend on education or heritage, how many researchers countries have and how many of
+them are women. It has no data beyond these datasets (for example no health, economy or population
+data other than the demographic tables the datasets carry), and it cannot fetch newer UIS releases.
+
+## Choosing datasets
+
+- `education-sdg4` for the SDG 4 targets, mostly as rates and shares: out-of-school rates,
+  completion, learning (reading and maths proficiency), literacy rates, school facilities, trained
+  teachers, education spending as a share of GDP.
+- `education-opri` for counts and other indicators: enrolment, out-of-school children and
+  illiterate adults in numbers, teachers and pupil-teacher ratios, years of schooling, students
+  studying abroad, spending by level.
+- `science` for research and development: R&D spending, researchers (per million, by sex and sector).
+- `culture` for spending on cultural and natural heritage (SDG 11.4).
+- Rates are mostly in `education-sdg4`, numbers of people in `education-opri`. When unsure between
+  the two education datasets, load both.
+
+## Working with UIS data
+
+Each dataset's data guide has the details; in short:
+
+- Values are stored long: one row per indicator, country (or region) and year. Find the indicator
+  first by searching the `*_indicators` table's labels, then filter the `*_national` or
+  `*_regional` table by `indicator_id` in SQL before loading rows into Python; some have millions
+  of rows.
+- Use the `*_regional` tables for regional and world figures: they are the official UIS aggregates.
+- For a world map, use the map skill (`write_map`) with a choropleth keyed by `country_id`
+  (ISO 3166-1 alpha-3, `keyType: iso3`), or bubbles for numbers of people; the `*_national` tables
+  already carry it. A report embeds it with `![caption](map://files/<name>.map.json)`.
+- A question with a few parts that belong together (a total, its trend and where it is largest) or
+  a comparison of two countries reads best as one small dashboard (`write_app`), as the example
+  sessions do.
+- Coverage is uneven: say which years the values are from.
+- Labels ending "(modelled data)" (ids with `MOD`, such as `CR.MOD.3`) are UIS modelled estimates,
+  often alongside an observed series: say which one you used, and call modelled values "modelled
+  estimates" in the chart or map subtitle and in the answer.
+- Keep titles and axis labels in plain words, but cite the indicator code(s) with the source and
+  the dataset's own release (for example "Source: UIS, November 2026 release; indicator CR.MOD.3")
+  in a map's source, at the end of a chart's subtitle, in a table's description and in a report's
+  source note.
+- Name education levels as UIS does (primary, lower secondary, upper secondary, tertiary), not
+  "high school" or "college", unless the user does.

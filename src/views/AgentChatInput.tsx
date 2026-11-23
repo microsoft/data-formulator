@@ -21,12 +21,14 @@ import {
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import CloseIcon from '@mui/icons-material/Close';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
-import UploadFileIcon from '@mui/icons-material/UploadFile';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import StopIcon from '@mui/icons-material/Stop';
 import { useTranslation } from 'react-i18next';
-import { borderColor, transition, radius } from '../app/tokens';
+import { borderColor, transition, ambientShadow, cardRadius, ink } from '../app/tokens';
+import { inputFocusShadow } from '../app/look';
 import { iconVar, textVar } from '../app/layout';
+import { pastedTextFile } from '../app/pastedText';
+import { FileDropOverlay, useFileDrop } from '../components/FileDrop';
 
 export interface AgentChatInputProps {
     value: string;
@@ -73,6 +75,8 @@ export interface AgentChatInputProps {
      * instead of, or in addition to, the attach affordance.
      */
     leadingSlot?: React.ReactNode;
+    /** Rendered right after the attach button, as in the chat box (e.g. the Tools chip). */
+    trailingSlot?: React.ReactNode;
     /**
      * If false, the attach button is hidden (paste of images still works).
      */
@@ -141,6 +145,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
     minRows,
     maxRows = 8,
     leadingSlot,
+    trailingSlot,
     showAttachButton = true,
     layout = 'inline',
     topSlot,
@@ -186,38 +191,20 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
         });
     };
 
-    const [isDragActive, setIsDragActive] = useState(false);
+    const { active: isDragActive, handlers: dropHandlers } = useFileDrop({ enabled: !inProgress && !disabled, onFiles: processFiles });
 
-    const dragHasFiles = (e: React.DragEvent) =>
-        Array.from(e.dataTransfer?.types ?? []).includes('Files');
-
-    const handleDragOver = (e: React.DragEvent) => {
-        if (!dragHasFiles(e) || inProgress || disabled) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'copy';
-    };
-
-    const handleDragEnter = (e: React.DragEvent) => {
-        if (!dragHasFiles(e) || inProgress || disabled) return;
-        e.preventDefault();
-        setIsDragActive(true);
-    };
-
-    const handleDragLeave = (e: React.DragEvent) => {
-        // Ignore leaves that bubble up from child elements.
-        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-        setIsDragActive(false);
-    };
-
-    const handleDrop = (e: React.DragEvent) => {
-        if (!dragHasFiles(e) || inProgress || disabled) return;
-        e.preventDefault();
-        setIsDragActive(false);
-        const files = e.dataTransfer?.files;
-        if (files && files.length > 0) processFiles(Array.from(files));
-    };
-
+    const pasteCount = useRef(0);
     const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+        // A large text paste is attached as a document when this surface accepts files (see pastedText.ts).
+        if (!e.clipboardData?.files?.length && onNonImageFile) {
+            const pasted = pastedTextFile(e.clipboardData?.getData('text/plain') ?? '', pasteCount.current + 1);
+            if (pasted) {
+                e.preventDefault();
+                pasteCount.current += 1;
+                onNonImageFile(pasted);
+                return;
+            }
+        }
         if (e.clipboardData?.files?.length) {
             const imageFiles = Array.from(e.clipboardData.files).filter(f => f.type.startsWith('image/'));
             if (imageFiles.length > 0) {
@@ -338,23 +325,20 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
     return (
         <Box sx={{ position: 'relative', width: '100%' }}>
             <Box
-                onDrop={handleDrop}
-                onDragOver={handleDragOver}
-                onDragEnter={handleDragEnter}
-                onDragLeave={handleDragLeave}
+                {...dropHandlers}
                 sx={{
                     position: 'relative',
                     border: `1px solid ${borderColor.divider}`,
-                    borderRadius: '12px',
+                    borderRadius: cardRadius('12px'),
                     bgcolor: theme.palette.background.paper,
-                    boxShadow: '0 1px 6px rgba(32, 33, 36, 0.10), 0 1px 2px rgba(32, 33, 36, 0.06)',
+                    boxShadow: ambientShadow('0 1px 6px rgba(32, 33, 36, 0.10), 0 1px 2px rgba(32, 33, 36, 0.06)'),
                     transition: transition.fast,
                     '&:hover': {
-                        boxShadow: '0 2px 10px rgba(32, 33, 36, 0.14), 0 1px 3px rgba(32, 33, 36, 0.08)',
+                        boxShadow: ambientShadow('0 2px 10px rgba(32, 33, 36, 0.14), 0 1px 3px rgba(32, 33, 36, 0.08)'),
                     },
                     '&:focus-within': {
                         borderColor: theme.palette.primary.main,
-                        boxShadow: `0 0 0 2px ${alpha(theme.palette.primary.main, 0.15)}, 0 2px 10px rgba(32, 33, 36, 0.14)`,
+                        boxShadow: inputFocusShadow(theme),
                     },
                     display: 'flex',
                     flexDirection: 'column',
@@ -362,36 +346,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                     ...sx,
                 }}
             >
-                {/* Drag-and-drop overlay — shown while a file is dragged over
-                    the composer. Uses the Data Formulator drop-zone language
-                    (2px dashed primary, tinted fill) inset from the container
-                    edge so it nests cleanly inside the border. Pointer events
-                    are disabled so the drop still lands on the container. */}
-                {isDragActive && (
-                    <Box sx={{
-                        position: 'absolute',
-                        inset: 4,
-                        zIndex: 2,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 1,
-                        pointerEvents: 'none',
-                        border: `2px dashed ${theme.palette.primary.main}`,
-                        borderRadius: radius.md,
-                        // Opaque paper base with a primary wash on top, so the
-                        // placeholder text underneath is fully masked while the
-                        // tint identity is preserved.
-                        bgcolor: theme.palette.background.paper,
-                        backgroundImage: `linear-gradient(${alpha(theme.palette.primary.main, 0.08)}, ${alpha(theme.palette.primary.main, 0.08)})`,
-                        transition: transition.normal,
-                    }}>
-                        <UploadFileIcon sx={{ fontSize: 22, color: 'primary.main' }} />
-                        <Typography variant="body2" sx={{ fontWeight: 500, color: 'primary.main' }}>
-                            {t('dataLoading.dropToAttach', { defaultValue: 'Drop file to attach' })}
-                        </Typography>
-                    </Box>
-                )}
+                <FileDropOverlay active={isDragActive} />
                 {/* Top slot (e.g. data-source chip bar) sits flush with the
                     input area below — no divider, same background. */}
                 {topSlot && (
@@ -415,8 +370,8 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                                     sx={{
                                         position: 'absolute', top: -4, right: -4,
                                         width: 18, height: 18,
-                                        bgcolor: 'rgba(0,0,0,0.55)', color: 'white',
-                                        '&:hover': { bgcolor: 'rgba(0,0,0,0.75)' },
+                                        bgcolor: ink(0.55), color: 'white',
+                                        '&:hover': { bgcolor: ink(0.75) },
                                     }}>
                                     <CloseIcon sx={{ fontSize: iconVar.xs }} />
                                 </IconButton>
@@ -470,7 +425,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                         <Box sx={{ px: 1, pt: 0.5, width: '100%', boxSizing: 'border-box', display: 'flex' }}>
                             {inputField}
                         </Box>
-                        {/* Bottom toolbar: leading slot + attach on the left, send on the right. */}
+                        {/* Bottom toolbar: leading slot, attach, trailing slot on the left; send on the right. */}
                         <Box sx={{
                             display: 'flex',
                             alignItems: 'center',
@@ -480,9 +435,10 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                             pt: 0.25,
                             gap: 0.5,
                         }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                 {leadingSlot}
                                 {attachButton}
+                                {trailingSlot}
                             </Box>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                 {sendButton}
@@ -496,6 +452,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                         {showAttachButton && (
                             <Box sx={{ mb: 0.25 }}>{attachButton}</Box>
                         )}
+                        {trailingSlot}
                         {inputField}
                         <Box sx={{ mb: 0.25 }}>{sendButton}</Box>
                     </Box>
@@ -515,7 +472,7 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                         left: 0,
                         right: 0,
                         zIndex: 20,
-                        borderRadius: '12px',
+                        borderRadius: 3,
                         border: `1px solid ${borderColor.divider}`,
                         bgcolor: theme.palette.background.paper,
                         boxShadow: '0 4px 16px rgba(32, 33, 36, 0.16), 0 2px 6px rgba(32, 33, 36, 0.08)',

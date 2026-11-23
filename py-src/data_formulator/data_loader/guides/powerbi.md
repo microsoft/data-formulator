@@ -1,19 +1,20 @@
 **Example**
 
-Workspace `Sales Analytics` (name or workspace ID from the Power BI URL `.../groups/<id>/...`)
+workspace: `Sales Analytics`
 
-**Credentials**
+**Workspace**
 
-- **Azure default identity** (recommended): run `az login` with an account that
-  can open the models. Your own permissions and row-level security apply.
-- **Service principal**: client ID, secret, and tenant ID of an Entra app added
-  to the workspace. Service principals cannot query models with row-level
-  security or SSO.
+Enter the workspace name, or the ID from its URL (`.../groups/<id>/...`).
 
-**Check**
+**Sign in**
 
-- The account needs **Read** and **Build** permission on each semantic model.
-- A Power BI admin must enable the tenant setting *Dataset Execute Queries REST
-  API* (and *Allow service principals to use Power BI APIs* for service principals).
-- Models hosted in Azure Analysis Services are not supported.
-- Limits: 120 queries per minute per user; results are capped at 10,000 rows.
+- **Azure default identity:** recommended. Run `az login` with an account that can open the models; your permissions and row-level security apply.
+- **Service principal:** the client ID, secret, and tenant ID of an Entra app added to the workspace. It can't query models that use row-level security or SSO.
+
+**Access**
+
+You need **Read** and **Build** on each semantic model. A Power BI admin must enable *Dataset Execute Queries REST API*, plus *Allow service principals to use Power BI APIs* for service principals.
+
+**Limits**
+
+120 queries per minute per user, and up to 10,000 rows per result. Models in Azure Analysis Services aren't supported.

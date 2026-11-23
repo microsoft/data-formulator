@@ -1,22 +1,21 @@
 ---
 name: analysis
-description: Execute sandboxed Python and inspect analysis tables.
+description: Execute sandboxed Python over analysis tables and files.
 always_on: false
 tools:
   - execute_python_script
-  - inspect_source_data
 actions: []
 ---
 
 # Analysis
 
-When inputs need loading, load the `connected_data` skill and follow its Data Access Paths. Python reads
-actual workspace paths, not external reference IDs or connector addresses.
+Python reads actual workspace paths, not external reference IDs or connector addresses.
 Only `compute_ready: true` load outcomes are local computation inputs; follow
 the workspace policy to materialize a working dataset from a virtual outcome.
 
-- `inspect_source_data(table_names)` returns schema, statistics, and sample rows
-  for analysis input tables. Prefer it for basic inspection.
+- `read_file` of a table's `session://tables/<name>` returns schema, statistics, sample
+  rows, and its `data_file`, the path code reads; `search` finds rows by their text (for example a code by its label). Prefer them for
+  basic inspection and look-ups.
 - `execute_python_script(code)` runs general-purpose sandboxed Python for data
   inspection, statistics, transformations, and assumption checks. Use `print()`
   to surface output. The namespace persists within an inspection cycle; do not
@@ -31,11 +30,12 @@ for inspection, statistical tests, and independent verification.
 Follow the workspace data boundaries below. Use data tools for registered tables
 and file tools for durable documents or exports; computation alone does not create a workspace artifact.
 
-Python runs in the workspace root directory. Use exact paths from context and
-assign any resulting DataFrame to the requested output variable. pandas, numpy,
-duckdb, sklearn, scipy, math, datetime, json, statistics, collections, re,
-random, itertools, functools, operator, and time are available. File writes
-and unlisted libraries are forbidden. Network access depends on the deployment
+Python runs at the workspace root (workspace paths below). Use exact paths from
+context, a table's `data_file` as written for its rows, and assign any resulting
+DataFrame to the requested output variable. pandas, numpy, duckdb, sklearn, scipy,
+math, datetime, json, statistics, collections, re, random, itertools, functools,
+operator, and time are available. Code writes only to `scratch/`; unlisted
+libraries are forbidden. Network access depends on the deployment
 (local macOS allows internet but never local services); when it is unavailable,
 acquire remote data with the data-loading tools instead.
 

@@ -42,10 +42,10 @@ def get_ephemeral_root() -> Path:
 
 
 def get_ephemeral_workspaces_root(identity_id: str) -> Path:
-    from data_formulator.sites import site_scope
+    from data_formulator.spaces import space_scope
 
     safe_identity = Workspace._sanitize_identity_id(identity_id)
-    return site_scope(get_ephemeral_root()) / "users" / safe_identity / "workspaces"
+    return space_scope(get_ephemeral_root()) / "users" / safe_identity / "workspaces"
 
 
 def _workspace_updated_at(workspace_dir: Path) -> float:
@@ -77,7 +77,7 @@ def _directory_size(path: Path) -> int:
 
 
 def _workspace_directories(root: Path) -> list[Path]:
-    # Site workspaces (data_formulator.sites) live under root/sites/<site>/users/.
+    # Site workspaces (data_formulator.spaces) live under root/sites/<site>/users/.
     sites_root = root / "sites"
     scopes = [root, *(sorted(p for p in sites_root.iterdir() if p.is_dir()) if sites_root.is_dir() else [])]
     return [
@@ -158,11 +158,11 @@ class EphemeralWorkspaceManager(WorkspaceManager):
     """Standard local workspace manager with ephemeral retention semantics."""
 
     def __init__(self, identity_id: str):
-        from data_formulator.sites import site_scope
+        from data_formulator.spaces import space_scope
 
         cleanup_ephemeral_workspaces()
         self._identity_dir = Workspace._sanitize_identity_id(identity_id)
-        self._scope = site_scope(get_ephemeral_root())
+        self._scope = space_scope(get_ephemeral_root())
         super().__init__(get_ephemeral_workspaces_root(identity_id))
 
     def workspace_was_evicted(self, workspace_id: str) -> bool:
@@ -177,6 +177,9 @@ class EphemeralWorkspaceManager(WorkspaceManager):
             meta_file.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
         except (OSError, json.JSONDecodeError):
             logger.warning("Failed to update ephemeral workspace access time", exc_info=True)
+
+    def mark_accessed(self, workspace_id: str) -> None:
+        self._touch(workspace_id)
 
     def open_workspace(self, workspace_id: str, identity_id: str) -> Workspace:
         workspace = super().open_workspace(workspace_id, identity_id)

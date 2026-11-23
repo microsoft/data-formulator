@@ -1,5 +1,35 @@
 {
   "upload": {
+    "livePick": {
+      "umbrella": "今週は傘が必要？",
+      "umbrellaBusy": "空模様を確認中…",
+      "umbrellaHint": "近くの都市の今週の予報をライブで読み込み、地図で表示",
+      "warmer": "今週はいつもより暖かい？",
+      "warmerBusy": "昔の天気を掘り返し中…",
+      "warmerHint": "近くの都市の今週の予報を、過去 10 年の同じ週と並べて表示",
+      "daylightShorter": "日はどのくらいの速さで短くなっている？",
+      "daylightLonger": "日はどのくらいの速さで長くなっている？",
+      "daylightBusy": "太陽を観察中…",
+      "daylightHint": "今後 4 か月の日照時間を北から南まで",
+      "wiki": "今日、世界は何を読んでいる？",
+      "wikiBusy": "世界の肩越しに読んでいます…",
+      "wikiHint": "昨日最も読まれたウィキペディアの記事と、今週の推移",
+      "countries": "今日、各国では何が読まれている？",
+      "countriesBusy": "世界の読み物をのぞいています…",
+      "countriesHint": "昨日、世界各地で最も読まれたウィキペディアの記事を地図で",
+      "failed": "うまく取得できませんでした。少ししてからもう一度どうぞ。",
+      "failedDetail": "「{{question}}」のライブデータを読み込めませんでした: {{reason}}",
+      "moon": "次の満月はいつ？",
+      "moonBusy": "月を見ています…",
+      "moonHint": "今後 2 か月の月の満ち欠け"
+    },
+    "sessionStart": {
+      "list": "接続済みのソースに何があるか見せて",
+      "scheduledWorkflow": "レポートを作成する定期ワークフローを作りたい",
+      "workflow": "レポートを作成する再利用できるワークフローを作りたい",
+      "connect": "新しいデータソースの接続を手順どおり案内して",
+      "discover": "オンラインでデータを探すツールの設定を手伝って"
+    },
     "title": "データを読み込む",
     "sampleDatasets": "サンプルデータセット",
     "sampleDatasetsDesc": "厳選サンプルデータセット",
@@ -154,6 +184,7 @@
       "cosmosdb": "Cosmos DBコンテナーをクエリ",
       "mongodb": "MongoDBコレクションをクエリ",
       "bigquery": "BigQueryデータセットをクエリ",
+      "snowflake": "Snowflakeテーブルをクエリ",
       "athena": "Amazon Athenaをクエリ",
       "kusto": "Azure Data Explorerをクエリ",
       "superset": "Supersetデータセットを参照",

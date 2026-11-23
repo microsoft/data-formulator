@@ -3,29 +3,44 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from data_formulator.analyst.workspace_inputs import WorkspaceInputManifest
+from data_formulator.analyst import names
+from data_formulator.analyst.workspace_inputs import WorkspaceInputManifest, workspace_table_input
 from data_formulator.datalake.workspace_metadata import MemorySource
 
 
-def _resolve_input(manifest: WorkspaceInputManifest, input_id: str, kind: Any):
-    """Return the manifest input for an exact id, or a unique shortened id, name, or path match."""
+def _resolve_input(manifest: WorkspaceInputManifest, input_id: str, kind: Any, workspace: Any | None = None):
+    """Return the manifest input for an exact id, or a unique shortened id, name, or path match.
+
+    A data input outside the run's scoped tables resolves to the workspace table it names, so a table derived
+    earlier (in this run or before) is a valid input too.
+    """
     items = [item for item in manifest.inputs if item.kind == kind]
+    # A table's session name (session://tables/<name>, or its older session/tables/<name>.json) is its name.
+    if kind == "data" and (table := names.leaf_of(input_id, "tables")) is not None:
+        input_id = table
     exact = next((item for item in items if item.id == input_id), None)
     if exact is not None:
         return exact
     # A name or a session path the agent read also identifies an input.
     matches = [item for item in items if input_id in (
         item.display_name, item.content_hash, item.id.rsplit(":", 1)[0], f"{item.kind}:{item.content_hash}",
-        item.path, f"session/tables/{item.display_name}.json")]
+        item.path, names.table(item.display_name))]
     if len(matches) == 1:
         return matches[0]
-    listed = ", ".join(item.id for item in items[:12]) or "none"
-    raise ValueError(f"Unknown or mismatched input source: {input_id}. Use an exact {kind} input id: {listed}")
+    if not matches and kind == "data":
+        table = workspace_table_input(workspace, input_id)
+        if table is not None:
+            return table
+    if kind == "data":
+        raise ValueError(f"Unknown or mismatched input source: {input_id}. Use a table name or its session://tables/<name>.")
+    listed = ", ".join(item.path or item.id for item in items[:12]) or "none"
+    raise ValueError(f"Unknown or mismatched input source: {input_id}. Use a {kind} input path: {listed}")
 
 
 def normalize_input_sources(
     action: dict[str, Any],
     manifest: WorkspaceInputManifest | None,
+    workspace: Any | None = None,
 ) -> list[dict[str, str]]:
     """Resolve action provenance to exact run-manifest inputs."""
     raw_sources = action.get("input_sources")
@@ -40,6 +55,8 @@ def normalize_input_sources(
         for raw_name in legacy_names:
             name = str(raw_name).strip()
             item = data_by_name.get(name)
+            if manifest is not None and item is None:
+                item = workspace_table_input(workspace, name)
             if manifest is not None and item is None:
                 raise ValueError(f"Unknown legacy input table: {name}")
             normalized.append({
@@ -60,7 +77,7 @@ def normalize_input_sources(
         kind = raw_source.get("kind")
         if not input_id or kind not in {"data", "file"}:
             raise ValueError("Each input source requires a valid id and kind")
-        item = _resolve_input(manifest, input_id, kind) if manifest is not None else None
+        item = _resolve_input(manifest, input_id, kind, workspace) if manifest is not None else None
         if item is not None:
             input_id = item.id
         if input_id in seen:
@@ -77,6 +94,7 @@ def normalize_input_sources(
 def memory_sources(
     raw_sources: Any,
     manifest: WorkspaceInputManifest | None,
+    workspace: Any | None = None,
 ) -> list[MemorySource]:
     """Validate direct inputs and retain their transitive evidence lineage."""
     if not isinstance(raw_sources, list) or not raw_sources:
@@ -92,7 +110,7 @@ def memory_sources(
             raise ValueError("Each input source requires a valid id and kind")
         if manifest is None:
             raise ValueError(f"Unknown or mismatched input source: {input_id}")
-        item = _resolve_input(manifest, input_id, kind)
+        item = _resolve_input(manifest, input_id, kind, workspace)
         input_id = item.id
 
         inherited = item.sources if item.origin == "memory" and item.sources else ()

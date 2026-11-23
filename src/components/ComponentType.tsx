@@ -6,6 +6,7 @@ import { channels, type ChartTemplateDef } from 'flint-chart';
 import { inferTypeFromValueArray, refineTemporalType } from '../data/utils';
 import type { DataOperation, LoadQuery } from '../dataOperations/models';
 import { generateUUID } from '../app/identity';
+import type { SignInSpec } from '../app/accounts';
 
 export type FieldSource = "custom" | "original";
 
@@ -63,10 +64,15 @@ export interface Trigger {
 
 export type Actor = 'user' | 'data-agent' | 'datarec-agent' | 'datatransform-agent';
 
+/** Icons the agent may attach to a data-acquisition option (mirrors OPTION_ICONS in the meta skill). */
+export const CLARIFICATION_OPTION_ICONS = ['search_web', 'connect', 'upload'] as const;
+export type ClarificationOptionIcon = typeof CLARIFICATION_OPTION_ICONS[number];
+
 export interface ClarificationOption {
     label: string;
     /** Opaque backend-owned identifier submitted separately from the label. */
     value?: string;
+    icon?: ClarificationOptionIcon;
 }
 
 export interface ClarificationQuestion {
@@ -104,7 +110,8 @@ export interface ProgressStep {
 /** One step of the checklist plan the analyst writes in its narration. */
 export interface PlanItem {
     text: string;
-    status: 'open' | 'done' | 'dropped';
+    /** `skipped`: still open when the run finished (after one reminder). */
+    status: 'open' | 'done' | 'dropped' | 'skipped';
     note?: string;
     /** Ids of the charts delivered for this step (or 'write_report' / 'write_app' for other results). */
     results?: string[];
@@ -124,6 +131,9 @@ export interface InteractionEntry {
      *  chips in the message bubble (the file bytes live in workspace scratch/,
      *  not here). */
     attachments?: string[];
+    /** Each attachment's path in scratch/, by name, so its chip can show a preview (absent for older messages). */
+    attachmentPaths?: Record<string, string>;
+    references?: ThreadReference[];
     inputTableNames?: string[]; // table names actually used for this derivation step
     clarificationQuestions?: ClarificationQuestion[];
     /** Legacy persisted delegate metadata; new AnalystAgent runs do not emit it. */
@@ -202,6 +212,13 @@ export interface ExternalTableReference {
     queryIntent?: Record<string, unknown>;
 }
 
+/** An artifact a run is writing: the tool writing it, its title once known, and when the writing began (ms). */
+export interface DraftWriting {
+    tool: string;
+    title?: string;
+    startedAt: number;
+}
+
 export interface DraftNode {
     kind: 'draft';
     id: string;
@@ -215,6 +232,8 @@ export interface DraftNode {
         status: DeriveStatus;
         runningPlan?: string; // live agent thought text while running
         progressSteps?: ProgressStep[];
+        /** The artifact (an app or map) the run is writing right now: the draft shows it until it lands (design-docs/58). */
+        writing?: DraftWriting;
         code?: string;
         codeSignature?: string;
         outputVariable?: string;
@@ -230,6 +249,8 @@ export interface ArtifactSetNode {
     parentNodeId: string;
     /** Member item ids in the order they were produced; each member's `parentNodeId` is this set. */
     memberIds: string[];
+    /** What the members are together, when they came in as one thing (a space dataset's title). */
+    label?: string;
     createdAt: number;
 }
 
@@ -266,6 +287,25 @@ export interface TerminalExecution {
     result?: Record<string, unknown>;
 }
 
+/**
+ * One agent tool call as saved on the message that made it: the tool, its arguments and what came
+ * back, with long text capped by the server (`truncated` holds the original sizes). Views show a call
+ * by its tool (design-docs/67). Terminal commands keep their own record (`TerminalExecution`).
+ */
+export interface ToolCall {
+    id: string;
+    tool: string;
+    args: Record<string, unknown>;
+    // MCP calls can wait for the user's approval and be rejected (see McpServers.tsx).
+    status: 'awaiting_approval' | 'running' | 'completed' | 'failed' | 'rejected' | 'interrupted' | 'unknown';
+    output?: string;
+    error?: string;
+    createdAt?: number;
+    durationMs?: number;
+    truncated?: Record<string, number>;
+}
+
+/** A code-running tool call in the shape code views use (see `codeCallsOf`). */
 export interface CodeExecution {
     id: string;
     createdAt?: number;
@@ -279,10 +319,19 @@ export interface CodeExecution {
 
 export interface WorkflowDefinition {
     name: string; overview: string; prompt?: string; source?: unknown; deliverables: string[];
+    /** When it runs unattended; a proposal may leave out the machine's values (timezone, model). */
+    schedule?: Partial<ScheduleConfig> & Pick<ScheduleConfig, 'time' | 'weekdays'>;
     parameters?: { name: string; label: string; type?: 'text' | 'number' | 'boolean' | 'select'; description?: string;
         required?: boolean; default?: string | number | boolean; options?: string[]; allow_custom?: boolean }[];
     steps?: { id: string; instructions: string; description?: string; next?: string;
         checkers?: { id: string; condition: string; when?: 'before' | 'during' | 'after'; on_fail?: string }[] }[];
+}
+
+/** An earlier result a request is about: a chart, table, report or file (by its id). */
+export interface ThreadReference {
+    kind: 'chart' | 'table' | 'report' | 'file';
+    id: string;
+    label: string;
 }
 
 export interface TextTurn {
@@ -305,8 +354,14 @@ export interface TextTurn {
     /** The user's message (design-docs/58): a turn with a prompt and no
      *  content is a user message node; the agent's reply follows as its own node. */
     prompt?: string;
+    /** The message was sent by the app, not typed: a repair of an app that failed when it opened. */
+    auto?: 'app-repair';
     /** Files and images the user attached to `prompt`. */
     attachments?: string[];
+    /** Each attachment's path in scratch/, by name, so its chip can show a preview (absent for older messages). */
+    attachmentPaths?: Record<string, string>;
+    /** Earlier results the user's message is about, shown with it like attachments. */
+    references?: ThreadReference[];
     /** A workflow run's outputs, in the order the run produced them. */
     outputIds?: string[];
     workflow?: {
@@ -344,7 +399,8 @@ export interface TextTurn {
         log?: { id: string; tool: string; text: string; call?: number; step_id?: string; plan_revision?: number; details?: Record<string, string>; input?: Record<string, unknown> }[];
     };
     executions?: TerminalExecution[];
-    codeExecutions?: CodeExecution[];
+    /** Every other tool call of the message, in the order they ran. */
+    toolCalls?: ToolCall[];
     /** clarify only (empty/undefined ⇒ a plain explanation). */
     options?: ClarificationQuestion[];
     /** Display-only immutable loading alternatives for a data-operation pause. */
@@ -366,6 +422,12 @@ export interface TextTurn {
     /** The chart the user was on when this turn was created — canvas provenance
      *  only (focusing the turn keeps this chart on the canvas). NOT positioning. */
     sourceChartId?: string;
+    /**
+     * A run's closing answer: the chart, app or map the run last brought into view. Focusing the answer
+     * shows it, which matters when the run changed an app or map in place: that adds nothing to the thread,
+     * so the nearest item before the answer would be an older table.
+     */
+    canvasTarget?: { type: 'chart'; chartId: string } | { type: 'file'; fileName: string };
     actionId?: string;
     /**
      * §12 opaque resume token — set iff the backend stamped a trajectory on the
@@ -445,27 +507,19 @@ export interface ConnectorFormArtifact extends SetupFormBase {
     };
 }
 
+/** A workflow's `schedule:` block (design-docs/78): when and how the local scheduler runs it unattended. */
 export interface ScheduleConfig {
-    name: string; workflow: string; model_id: string; time: string; timezone: string; weekdays: number[];
-    enabled: boolean; auto_approve: boolean; max_retries: number; catch_up: boolean;
+    model_id: string; time: string; timezone: string; weekdays: number[];
+    enabled?: boolean; auto_approve?: boolean; max_retries?: number; catch_up?: boolean;
     /** Language for the run's reports and messages; unattended runs cannot read the app language. */
     language?: string;
     setup?: { parameters: Record<string, string | number | boolean>; instructions: string };
 }
 
+/** A schedule form from before schedules were part of workflows; old threads still show it. */
 export interface ScheduleFormArtifact extends SetupFormBase {
     kind: 'schedule';
-    schedule: {
-        /** Existing schedule being edited; absent when creating one. */
-        target?: SetupFormTarget;
-        config: Partial<ScheduleConfig>;
-        workflowName?: string;
-        /** Values the agent could not verify; the user resolves them before saving. */
-        issues?: string[];
-        status?: 'pending' | 'saved';
-        savedId?: string;
-        nextAt?: string;
-    };
+    schedule: { config: Partial<ScheduleConfig> & { name?: string }; status?: 'pending' | 'saved' };
 }
 
 export interface SessionsFormArtifact extends SetupFormBase {
@@ -485,22 +539,73 @@ export interface WorkflowFormArtifact extends SetupFormBase {
     workflow: {
         content: string;
         definition: WorkflowDefinition;
-        /** Saved user workflow (by path) this proposal revises. */
-        target?: SetupFormTarget;
-        saved?: { path: string; content_hash: string };
-        /** A schedule proposed with the workflow; saving the workflow also saves it. */
-        schedule?: {
-            config: Partial<ScheduleConfig>;
-            /** Values the agent could not verify; the user resolves them before saving. */
-            issues?: string[];
-            savedId?: string;
-            nextAt?: string;
-        };
+        /** Saved user workflow (by path) this proposal revises, with its current schedule. */
+        target?: SetupFormTarget & { schedule?: ScheduleConfig };
+        /** `scheduled`: the saved file has a schedule. */
+        saved?: { path: string; content_hash: string; scheduled?: boolean };
+        /** Problems in the definition's schedule the agent could not settle; the user resolves them before saving. */
+        scheduleIssues?: string[];
+    };
+}
+
+/** A server the agent proposed to add; the user reviews it, types any secrets, and adds it. */
+export interface McpServerProposal {
+    name: string;
+    transport: 'http' | 'sse' | 'stdio';
+    url?: string;
+    auth?: { type: 'none' | 'header' | 'oauth'; header?: string; client_id?: string; scope?: string };
+    command?: string;
+    args?: string[];
+    cwd?: string;
+    /** Environment variables the local server needs; the user types their values. */
+    envNames?: string[];
+    reason?: string;
+    /** The server's ID once the user added it. */
+    addedId?: string;
+}
+
+export interface McpFormArtifact extends SetupFormBase {
+    kind: 'mcp';
+    mcp: {
+        add: McpServerProposal[];
+        /** Switches for existing servers and tools; applied together with the mode. */
+        changes: { serverId: string; serverName: string; enabled?: boolean; tools?: { name: string; enabled: boolean }[]; reason?: string }[];
+        mode?: 'off' | 'ask' | 'auto';
+        currentMode?: 'off' | 'ask' | 'auto';
+        applied?: boolean;
+    };
+}
+
+/**
+ * The agent's request that the user sign in to a service (design-docs/72): a built-in one, or one the agent wrote a
+ * spec for (where the key goes, how). The agent supplies only the explanation and steps; the card's controls are the
+ * app's. Never holds a token, key or sign-in code.
+ */
+export interface SignInFormArtifact extends SetupFormBase {
+    kind: 'signin';
+    signin: {
+        provider: string;
+        providerName: string;
+        /** The sign-in as proposed and checked by the server (a card read from a saved session checks it again). */
+        spec?: SignInSpec;
+        verified?: boolean;
+        /** A different spec under the name of one the user saved: saving a key replaces it. */
+        replaces?: boolean;
+        reason: 'gated' | 'private' | 'rate_limit' | 'terms' | 'rejected' | 'unauthorized' | 'other';
+        explanation: string;
+        unlocks?: string;
+        /** Steps on the service's own site (links checked by the server, and again by the card). */
+        steps: { text: string; url?: string }[];
+        prefer?: 'reuse' | 'device' | 'token';
+        /** How the user answered: signed in (or was already, and continued), continued without, or replied in the chat instead. */
+        status: 'pending' | 'signed_in' | 'declined' | 'replied';
+        login?: string;
     };
 }
 
 /** Canvas-owning form artifacts. Add future setup form kinds to this union. */
-export type FormArtifact = ConnectorFormArtifact | ScheduleFormArtifact | SessionsFormArtifact | WorkflowFormArtifact;
+export type FormArtifact = ConnectorFormArtifact | ScheduleFormArtifact | SessionsFormArtifact | WorkflowFormArtifact
+    | McpFormArtifact | SignInFormArtifact;
 
 // Data source types for tracking where data originated
 export type DataSourceType = 'paste' | 'file' | 'url' | 'stream' | 'database' | 'example' | 'extract';
@@ -531,6 +636,9 @@ export interface DataSourceConfig {
     
     // Whether this table can be refreshed (backend has connection info)
     canRefresh?: boolean;
+
+    // Set when a refresh found the source table gone; the rows are the copy loaded before
+    missing?: { checkedAt: number; message: string };
 
     // Connector ID (for tables loaded via a DataConnector)
     connectorId?: string;
@@ -572,6 +680,8 @@ export interface FieldSemanticsInfo {
     sortOrder?: any[];
     /** Value a diverging color scale pivots on (Flint `divergingMidpoint`). */
     divergingMidpoint?: number;
+    /** Colours pinned to values of the field wherever it is drawn (Flint `colors`): `{ "Republican": "#d62728" }`. */
+    colors?: Record<string, string>;
     displayName?: string;
     /** What the agent authored; layered over every inference result. Not sent to Flint. */
     authored?: Omit<FieldSemanticsInfo, 'authored'>;

@@ -92,6 +92,7 @@ class TestScratchFileInjection:
         assert "[ATTACHED FILES]" in user
         assert "scratch/sales_a1b2c3d4.xlsx" in user
         assert "execute_python_script" in user
+        assert "read_file" in user and "pasted-text-*" in user
         assert "create_file" in user
         assert "edit_file" in user
         assert "add_to_workspace" not in user

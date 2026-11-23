@@ -1,16 +1,17 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
+import { createAsyncThunk, createSlice, PayloadAction, createSelector, original } from '@reduxjs/toolkit'
 import { shallowEqual } from 'react-redux';
-import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, DraftNode, InteractionEntry, DeriveStatus, TextTurn, TerminalExecution, CodeExecution, InputTable, TableSemanticsInfo, LoadedTableNode, ProgressStep } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, DraftNode, InteractionEntry, DeriveStatus, TextTurn, DraftWriting, TerminalExecution, ToolCall, InputTable, TableSemanticsInfo, LoadedTableNode, ProgressStep } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
-import { ArtifactSetNode, DictTable, FileNode, ReplacedArtifact, ExternalTableReference, ComputationInputSource, createConversationRootId, isConversationRootId } from "../components/ComponentType";
+import { ArtifactSetNode, DictTable, FileNode, ReplacedArtifact, ExternalTableReference, ComputationInputSource, ThreadReference, createConversationRootId, isConversationRootId } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
 import { vlAdaptChart, vlRecommendEncodings } from 'flint-chart';
 import { DF_STATE_VERSION, migrateState } from './stateMigrations';
 import { applyAuthoredSemantics, mergeInferredSemantics, normalizeFieldAnnotation } from './fieldSemantics';
+import { registerCategoryColors, sessionPins, type CategoryColorRegistry, type CategoryRegistration, type SessionCategoryColors } from './categoryColors';
 import { getDataTable } from '../views/ChartUtils';
 import { getUrls, computeContentHash } from './utils';
 import { apiRequest, ApiRequestError } from './apiClient';
@@ -22,8 +23,9 @@ import { Identity, getBrowserId } from './identity';
 import { REHYDRATE } from 'redux-persist';
 import { setInputTablePreview } from './inputTablePreviewCache';
 import { materializeInputTablePreview, materializeTables } from './tableResolution';
-import { buildThreadGraph } from './threadGraph';
-import type { SiteConfig } from '../sites/types';
+import { buildThreadGraph, conversationNodeIds, threadChatNodeIds, threadOfNode } from './threadGraph';
+import type { SpaceConfig } from '../spaces/types';
+import { splitFrontMatter, type ReportGenre } from '../views/reportBlocks';
 
 enableMapSet();
 
@@ -74,19 +76,32 @@ export interface SSEMessage {
 export interface ServerConfig {
     APP_NAME?: string;
     APP_TAGLINE?: string;
-    /** Set when this hostname serves a site profile (py-src/data_formulator/sites). */
-    SITE?: SiteConfig;
-    /** Demos visitors can open on this server (installed, or installable from their page). */
-    DEMOS?: { id: string; name: string }[];
-    /** The standard app's name (APP_NAME is the demo's name on a demo page). */
+    /** Set when this hostname serves a space profile (py-src/data_formulator/spaces). */
+    SPACE?: SpaceConfig;
+    /** Spaces visitors can open on this server (installed, or installable from their page). */
+    SPACES?: { id: string; name: string }[];
+    /** The standard app's name (APP_NAME is the space's name on a space page). */
     STANDARD_APP_NAME?: string;
-    /** The demo `/` opens (`DF_SITE`), if any. */
-    DEFAULT_DEMO?: string | null;
+    /** The space `/` opens (`DF_SPACE`), if any. */
+    DEFAULT_SPACE?: string | null;
     MANAGED_MODE?: boolean;
     CAN_CONFIGURE?: boolean;
+    /** The terminal's effective mode: off when unavailable or switched off, else TOOLS_MODE. */
     TERMINAL_MODE?: 'off' | 'ask' | 'auto';
     TERMINAL_AVAILABLE?: boolean;
     TERMINAL_CONFIG_LOCKED?: boolean;
+    TERMINAL_ENABLED?: boolean;
+    /** The approval mode the agent's tools (terminal, MCP servers) share. */
+    TOOLS_MODE?: 'off' | 'ask' | 'auto';
+    MCP_AVAILABLE?: boolean;
+    /** How many of the user's MCP servers are switched on. */
+    MCP_SERVERS_ON?: number;
+    /** The agent's browser can run here (single-user local mode). */
+    BROWSER_AVAILABLE?: boolean;
+    /** The user opted in to the browser (off by default). */
+    BROWSER_ENABLED?: boolean;
+    /** The browser's effective mode: off when unavailable or switched off, else TOOLS_MODE. */
+    BROWSER_MODE?: 'off' | 'ask' | 'auto';
     DISABLE_DISPLAY_KEYS: boolean;
     DISABLE_DATA_CONNECTORS: boolean;
     DISABLE_CUSTOM_MODELS: boolean;
@@ -96,6 +111,10 @@ export interface ServerConfig {
     DATA_FORMULATOR_HOME?: string;
     DEV_MODE: boolean;
     WORKSPACE_BACKEND: 'local' | 'azure_blob' | 'ephemeral';
+    /** The installed Data Formulator's version, e.g. "0.8.0b1" ("" when not installed as a package). */
+    VERSION?: string;
+    /** Shares can go on the web by link and QR code (hosted servers; see data_formulator/shares.py). */
+    SHARE_LINKS?: boolean;
     AUTH_PROVIDER?: string;
     AUTH_INFO?: {
         action: 'frontend' | 'redirect' | 'transparent' | 'none';
@@ -121,6 +140,10 @@ export interface ServerConfig {
     IDENTITY?: { type: string; id: string };
     CREDENTIAL_VAULT_ENABLED?: boolean;
     IS_LOCAL_MODE?: boolean;
+    /** Sessions can be sent and received with Magic Wormhole codes (local mode only). */
+    SESSION_WORMHOLE_AVAILABLE?: boolean;
+    /** Whether this deployment offers workflows and schedules (local or managed mode). */
+    WORKFLOWS_AVAILABLE?: boolean;
 }
 
 export interface ModelConfig {
@@ -143,7 +166,8 @@ export interface ModelConfig {
 
 
 export type FocusedId = 
-    | { type: 'conversation'; tableId: string; nodeIds?: string[]; /** The thread's label, when opened from its header. */ label?: string }
+    | { type: 'conversation'; tableId: string; nodeIds?: string[]; /** The thread's label, when opened from its header. */ label?: string;
+        /** The message to bring into view (opened from that message). */ anchorId?: string }
     | { type: 'table'; tableId: string }
     | { type: 'reference'; referenceId: string }
     | { type: 'chart'; chartId: string }
@@ -155,43 +179,40 @@ export type FocusedId =
     | undefined;
 
 /**
- * A tab over the canvas (design: browser-like). Whatever the canvas shows gets a tab; results an
- * agent run adds get one too, `unseen` until the user visits them. Pinned tabs come first and stay.
+ * A tab over the canvas (design: like VS Code's preview tabs). Reports, apps and maps open a tab that
+ * stays, including ones an agent run adds (`unseen` until the user visits them). Anything else (a chart,
+ * a table, a file, a message's view) gets a provisional "preview" tab only while the canvas shows it; it
+ * goes when the user moves on, unless they keep it (double-click, `pinned`), after which it stays like a
+ * report until closed. `addedAt`/`viewedAt` order the tabs for the cap.
  */
-/**
- * `pinned`: set when the user pins (true) or unpins (false) by dragging across the divider; unset,
- * the tab follows `autoPinned`. `addedAt`/`viewedAt` order the recent tabs.
- */
-export type CanvasTab = { key: string; target: Exclude<NonNullable<FocusedId>, { type: 'draft' } | { type: 'reference' }>;
+export type CanvasTab = { key: string; target: Exclude<NonNullable<FocusedId>, { type: 'reference' }>;
     pinned?: boolean; unseen?: boolean; addedAt?: number; viewedAt?: number };
 export const MAX_CANVAS_TABS = 40;
-/** Recent (unpinned) tabs kept by default; the strip shows as many as fill its width. */
+/** Tabs shown before the strip has measured its width; after that it shows as many as fit. */
 export const RECENT_CANVAS_TABS = 5;
 
-/** Reports and apps keep their place without the user pinning them. */
-export const autoPinned = (target: CanvasTab['target'], _textTurns: TextTurn[]): boolean => {
+/** Reports, apps and maps keep their tab without the user pinning them. */
+export const autoPinned = (target: CanvasTab['target']): boolean => {
     if (target.type === 'report') return true;
-    if (target.type === 'file') return /\.(html?|app\.jsx)$/i.test(target.fileName);
+    if (target.type === 'file') return /\.(html?|app\.jsx|map\.json)$/i.test(target.fileName);
     return false;
 };
-export const isCanvasTabPinned = (tab: CanvasTab, textTurns: TextTurn[]): boolean => tab.pinned ?? autoPinned(tab.target, textTurns);
+/** Whether a tab stays when the canvas moves on (otherwise it is the provisional preview tab). */
+export const isCanvasTabPinned = (tab: CanvasTab): boolean => !!tab.pinned || autoPinned(tab.target);
 
 /**
- * Split tabs into the strip's zones: pinned (list order), then a window of the last `slots` unpinned
- * tabs (new ones join on the right), and history: the ones that scrolled off the left, nearest first.
- * The active tab always shows; if it is further left, it takes the window's last place until the
- * strip moves it to the end.
+ * Split tabs into the strip's zones: a window of the last `slots` tabs (new ones join on the right),
+ * and history: the ones that scrolled off the left, nearest first. The active tab always shows; if
+ * it is further left, it takes the window's last place until the strip moves it to the end.
  */
-export const arrangeCanvasTabs = (tabs: CanvasTab[], textTurns: TextTurn[], activeKey: string | undefined, slots = RECENT_CANVAS_TABS) => {
-    const pinned = tabs.filter(tab => isCanvasTabPinned(tab, textTurns));
-    const unpinned = tabs.filter(tab => !isCanvasTabPinned(tab, textTurns));
-    const count = Math.max(0, slots);
-    let recent = count ? unpinned.slice(-count) : [];
-    const active = unpinned.find(tab => tab.key === activeKey);
-    const activeOutside = !!active && count > 0 && !recent.includes(active);
-    if (activeOutside) recent = [...unpinned.filter(tab => tab !== active).slice(-(count - 1)), active!].slice(-count);
-    const shown = new Set(recent);
-    return { pinned, recent, history: unpinned.filter(tab => !shown.has(tab)).reverse(), activeOutside };
+export const arrangeCanvasTabs = (tabs: CanvasTab[], activeKey: string | undefined, slots = RECENT_CANVAS_TABS) => {
+    const count = Math.max(1, slots);
+    let visible = tabs.slice(-count);
+    const active = tabs.find(tab => tab.key === activeKey);
+    const activeOutside = !!active && !visible.includes(active);
+    if (activeOutside) visible = [...tabs.filter(tab => tab !== active).slice(-(count - 1)), active!].slice(-count);
+    const shown = new Set(visible);
+    return { visible, history: tabs.filter(tab => !shown.has(tab)).reverse(), activeOutside };
 };
 
 /** A strictly increasing time for tab ordering (two updates in one millisecond still order). */
@@ -212,42 +233,53 @@ export const canvasTabKey = (target: NonNullable<FocusedId>): string => {
     }
 };
 
-const isTabTarget = (target: FocusedId): target is CanvasTab['target'] =>
-    !!target && target.type !== 'draft' && target.type !== 'reference';
+const isTabTarget = (target: FocusedId): target is CanvasTab['target'] => !!target && target.type !== 'reference';
+
+/** A sign-in request is answered above the chat box, under the agent's message, not on the canvas (design-docs/72). */
+const isSignIn = (turn: TextTurn) => turn.form?.kind === 'signin';
 
 /** A message with a view of its own (design-docs/58, rule 2); other messages show in the chat, beside what the canvas shows. */
-export const textTurnOwnsCanvas = (turn: TextTurn | undefined): boolean => !!turn && !!(turn.dataOperation || turn.form || turn.workflow
+export const textTurnOwnsCanvas = (turn: TextTurn | undefined): boolean => !!turn && !!(turn.dataOperation
+    || (turn.form && !isSignIn(turn)) || turn.workflow
     || (turn.textKind === 'explain' && turn.presentation === 'long_response'));
 
-/** Whether a saved tab still opens something: a message's tab only while the message has a view of its own. */
-const keepsCanvasTab = (tab: CanvasTab, textTurns: TextTurn[]): boolean =>
-    tab.target.type !== 'text' || textTurnOwnsCanvas(textTurns.find(turn => turn.id === (tab.target as { textId: string }).textId));
+/** A run's open end has a view of its own while it writes an app or map: the artifact taking shape (design-docs/58, rule 2). */
+export const draftOwnsCanvas = (draft: DraftNode | undefined): boolean => !!draft?.derive.writing;
 
 /**
- * Charts, loaded tables and the other artifacts open tabs; a derived table, a step on the way, doesn't,
- * and neither does a message the chat shows (an answer, a question), only one with a view of its own.
+ * Whether a saved tab still opens something: a message's tab only while the message has a view of its own; a run's
+ * open end never (a reload ends the run).
+ */
+const keepsCanvasTab = (tab: CanvasTab, textTurns: TextTurn[]): boolean => tab.target.type !== 'draft'
+    && (tab.target.type !== 'text' || textTurnOwnsCanvas(textTurns.find(turn => turn.id === (tab.target as { textId: string }).textId)));
+
+/**
+ * Whatever the canvas shows can have a tab, except a message the chat shows (an answer, a question) or a run's
+ * open end; only one with a view of its own opens one.
  */
 const opensCanvasTab = (state: DataFormulatorState, target: CanvasTab['target']): boolean => {
-    if (target.type === 'table') return !state.derivedTables.some(table => table.id === target.tableId);
     if (target.type === 'text') return textTurnOwnsCanvas(state.textTurns.find(turn => turn.id === target.textId));
+    if (target.type === 'draft') return draftOwnsCanvas(state.draftNodes.find(draft => draft.id === target.draftId));
     return true;
 };
 
 /**
- * Add a tab (at the end) unless one is open; an open tab keeps its place (the strip, which knows
- * what it shows, brings one back from its "…" history). Past the cap, the least recently seen
- * unpinned, inactive tab goes.
+ * Add a tab at `index` (default: the end) unless one is open; an open tab keeps its place (the strip,
+ * which knows what it shows, brings one back from its "…" history). Past the cap, the least recently
+ * seen inactive tab goes.
  */
-const ensureCanvasTab = (state: DataFormulatorState, target: CanvasTab['target'], unseen: boolean): CanvasTab => {
+const ensureCanvasTab = (state: DataFormulatorState, target: CanvasTab['target'], unseen: boolean, index = -1): CanvasTab => {
     const key = canvasTabKey(target);
     const existing = state.canvasTabs.find(item => item.key === key);
     if (existing) {
         existing.target = target;
         return existing;
     }
-    state.canvasTabs.push({ key, target, addedAt: tabClock(state), ...(unseen ? { unseen: true } : {}) });
+    const tab: CanvasTab = { key, target, addedAt: tabClock(state), ...(unseen ? { unseen: true } : {}) };
+    if (index >= 0 && index < state.canvasTabs.length) state.canvasTabs.splice(index, 0, tab);
+    else state.canvasTabs.push(tab);
     while (state.canvasTabs.length > MAX_CANVAS_TABS) {
-        const { history } = arrangeCanvasTabs(state.canvasTabs, state.textTurns, state.canvasTabActive);
+        const { history } = arrangeCanvasTabs(state.canvasTabs, state.canvasTabActive);
         const drop = history.filter(item => item.key !== key).at(-1);
         if (!drop) break;
         state.canvasTabs = state.canvasTabs.filter(item => item.key !== drop.key);
@@ -255,9 +287,46 @@ const ensureCanvasTab = (state: DataFormulatorState, target: CanvasTab['target']
     return state.canvasTabs.find(item => item.key === key)!;
 };
 
+/** A message the chat shows in full; one that waits on the user (a question, a form, a data step) or a run opens on its own. */
+export const chatShowsTurn = (turn: TextTurn | undefined): boolean => !!turn && !turn.dataOperation
+    && (!turn.form || (isSignIn(turn) && !!turn.answered)) && !turn.workflow
+    && !(turn.textKind === 'clarify' && !turn.answered && !!turn.options?.length);
+
+/**
+ * With a chat open, it stays open: a message it shows is brought into view there (in its own thread's chat if it is
+ * on another thread), and a run's newest result (`follow`) is too, if the chat shows it, rather than replacing the
+ * chat. Returns whether the focus stayed on the chat.
+ */
+const stayInChat = (state: DataFormulatorState, target: FocusedId, follow: boolean): boolean => {
+    const chat = state.focusedId;
+    if (chat?.type !== 'conversation' || !target || target.type === 'conversation') return false;
+    // The graph comes from the state before this action, which did not change it, so the memoized one serves.
+    const graph = selectThreadGraph(original(state) ?? state);
+    if (target.type === 'text') {
+        const turn = state.textTurns.find(item => item.id === target.textId);
+        if (!turn || !chatShowsTurn(turn)) return false;
+        const thread = threadOfNode(graph, turn.id);
+        if (thread && thread.key !== chat.tableId) {
+            state.focusedId = { type: 'conversation', tableId: thread.key, nodeIds: threadChatNodeIds(graph, thread), anchorId: turn.id };
+        } else {
+            chat.anchorId = turn.id;
+        }
+        return true;
+    }
+    if (!follow) return false;
+    const anchorId = target.type === 'table' ? target.tableId
+        : target.type === 'chart' ? collectAllCharts(state).find(chart => chart.id === target.chartId)?.tableRef
+        : target.type === 'reference' ? state.loadedTableNodes.find(node => node.id === target.referenceId)?.tableId
+        : undefined;
+    const shown = conversationNodeIds(graph, chat.tableId, chat.nodeIds) ?? [];
+    if (anchorId && shown.some(id => id === anchorId || graph.nodes.get(id)?.tableId === anchorId)) chat.anchorId = anchorId;
+    return true;
+};
+
 export const explanationContent = (content: string) => content;
 
 export const DEFAULT_ROW_LIMIT = 2_000_000;
+export const DEFAULT_CHART_THEME_ID = 'datawrapper';
 
 export interface ClientConfig {
     formulateTimeoutSeconds: number;
@@ -266,7 +335,27 @@ export interface ClientConfig {
     maxStretchFactor: number; // max per-axis stretch multiplier for chart sizing (default 1.5)
     frontendRowLimit: number; // max rows to keep in browser when loading locally (non-virtual)
     paletteKey: string; // active color palette key from tokens.ts
+    // Flint theme applied to newly created charts; '' = Flint default.
+    // Missing (configs saved before this setting existed) means DEFAULT_CHART_THEME_ID.
+    defaultChartThemeId?: string;
 }
+
+/**
+ * The theme new charts start with, or undefined for Flint's own defaults. A space's own theme (`spaceThemeId`)
+ * takes the place of the app's default, but not of a theme the user chose.
+ */
+export const resolveDefaultChartTheme = (config: Partial<ClientConfig> | undefined, spaceThemeId?: string): string | undefined => {
+    const themeId = config?.defaultChartThemeId ?? DEFAULT_CHART_THEME_ID;
+    if (spaceThemeId && themeId === DEFAULT_CHART_THEME_ID) return spaceThemeId;
+    return themeId || undefined;
+};
+
+/** The space's own chart theme id (a space's `chart_theme`), if it has one. */
+export const spaceChartThemeId = (state: Pick<DataFormulatorState, 'serverConfig'>): string | undefined =>
+    state.serverConfig?.SPACE?.chart_theme?.id;
+
+const withDefaultChartTheme = (chart: Chart, config: ClientConfig, spaceThemeId?: string): Chart =>
+    chart.themeId === undefined ? { ...chart, themeId: resolveDefaultChartTheme(config, spaceThemeId) } : chart;
 
 export interface GeneratedReport {
     id: string;
@@ -297,6 +386,12 @@ export interface GeneratedReport {
         startedAt?: number;   // epoch ms when the tool call started
         durationMs?: number;  // wall time once the step is done
     }[];
+    /** The report's genre from its front matter (`style:`), kept once edits turn the content into HTML. */
+    style?: ReportGenre;
+    /** The reader's settings for this report, set only where they depart from the defaults:
+     *  typeface (`serif`; legacy `academic` reads as serif) and density. */
+    theme?: string;
+    density?: 'compact' | 'comfortable';
 }
 
 export interface DataFormulatorState {
@@ -324,7 +419,11 @@ export interface DataFormulatorState {
     artifactSets: ArtifactSetNode[];
     externalTableReferences: ExternalTableReference[];
     workspaceItemOrder: string[];
+    /** The title of the dataset the session was opened from (a space starter), shown in the folded workspace card. */
+    workspaceTitle: string | null;
     tableSemantics: TableSemanticsInfo[];
+    /** The session's category colours: which palette slot each value of a kind of field has taken (categoryColors.ts). */
+    categoryColors: CategoryColorRegistry;
     draftNodes: DraftNode[];
     charts: Chart[];
     
@@ -351,6 +450,8 @@ export interface DataFormulatorState {
     /** Table loads awaiting their first row; drives "loading" vs "empty" copy. */
     tableLoadsInFlight: number;
     pendingTableLoads: { id: string; names: string[]; progress?: { current: number; total: number; name: string } }[];
+    /** Session tables whose data the workspace does not hold (see workspaceConsistency.ts). Transient. */
+    tablesMissingData: string[];
 
     /**
      * Thumbnail PNG data URLs keyed by chart id. Stored in a separate slice
@@ -384,7 +485,16 @@ export interface DataFormulatorState {
 
     /** Seeded prompt for the analyst (data-thread) chat, e.g. from the landing box. */
     /** A request to send to the agent; `displayText` is a short label shown in the thread instead of `text`. */
-    analystChatPending: { text: string; displayText?: string; images: string[]; attachments: string[]; intent?: 'workflow-authoring' } | null;
+    analystChatPending: { text: string; displayText?: string; images: string[]; attachments: string[]; intent?: 'workflow-authoring';
+        /** Sent by the app on the user's behalf to repair an app the agent just wrote; shown as a step, not a message. */
+        auto?: 'app-repair' } | null;
+    /** A new workflow run was requested but the server has not reported its state yet. Transient. */
+    workflowStarting: boolean;
+    /**
+     * Apps the agent wrote in this browser session that are repaired automatically if they fail when
+     * they open, by file name, with the repairs already requested. Transient.
+     */
+    appAutoFixes: Record<string, number>;
     /**
      * Monotonic counter bumped whenever a connector is created/changed from a
      * surface that is not the sidebar itself (e.g. the inline connection form
@@ -409,7 +519,8 @@ export interface DataFormulatorState {
     sessionLoadingLabel: string;
 
     /** Questions to continue an example session with, offered once when it opens; not saved. */
-    exampleFollowUps?: { title: string; questions: string[] };
+    /** Questions offered above the chat when a session opens; `intro` replaces the default "follow-up" lead-in. */
+    exampleFollowUps?: { title: string; questions: string[]; intro?: string };
 
     // Active workspace (null = show workspace picker)
     // id: stable identifier (folder name), displayName: user-facing name (can be renamed)
@@ -421,7 +532,9 @@ export interface DataFormulatorState {
         /** The name auto-naming last set and the sources it covered; a different displayName means the user renamed it. */
         autoName?: { name: string; sources: string[] };
         /** Another tab took over editing this session; this tab is view-only until it takes it back. */
-        openElsewhere?: boolean } | null;
+        openElsewhere?: boolean;
+        /** The space example (`<dataset id>/<story id>`) the session was opened from; opening it again offers this session. */
+        exampleId?: string } | null;
 
     /** Backend-synchronized count of persisted non-table files in the active workspace. */
     workspaceFileCount: number;
@@ -430,7 +543,7 @@ export interface DataFormulatorState {
     dataSourceSidebarOpen: boolean;
 
     /** Which data source sidebar tab is active. Persisted so it survives session refresh. */
-    dataSourceSidebarTab: 'sources' | 'sessions' | 'knowledge' | 'schedules';
+    dataSourceSidebarTab: 'sources' | 'sessions' | 'workflows';
 
     /**
      * One-shot signal asking the sidebar to focus a specific connector
@@ -468,7 +581,9 @@ const initialState: DataFormulatorState = {
     artifactSets: [],
     externalTableReferences: [],
     workspaceItemOrder: [],
+    workspaceTitle: null,
     tableSemantics: [],
+    categoryColors: {},
     draftNodes: [],
     charts: [],
 
@@ -489,6 +604,7 @@ const initialState: DataFormulatorState = {
     chartSynthesisInProgress: [],
     tableLoadsInFlight: 0,
     pendingTableLoads: [],
+    tablesMissingData: [],
     chartThumbnails: {},
     displayRowsTick: 0,
 
@@ -510,6 +626,7 @@ const initialState: DataFormulatorState = {
         maxStretchFactor: 1.5,
         frontendRowLimit: DEFAULT_ROW_LIMIT,
         paletteKey: 'fluent',
+        defaultChartThemeId: DEFAULT_CHART_THEME_ID,
     },
 
     dataLoaderConnectParams: {},
@@ -518,6 +635,8 @@ const initialState: DataFormulatorState = {
     cleanInProgress: false,
 
     analystChatPending: null,
+    workflowStarting: false,
+    appAutoFixes: {},
     connectorRefreshRequest: 0,
     agentHandoffRequest: null,
 
@@ -1107,7 +1226,7 @@ const interruptTurnProgress = (turn: TextTurn): TextTurn => ({
     ...turn,
     progressSteps: interruptProgressSteps(turn.progressSteps),
     executions: turn.executions?.map(execution => execution.status === 'running' ? { ...execution, status: 'interrupted' } : execution),
-    codeExecutions: turn.codeExecutions?.map(execution => execution.status === 'running' ? { ...execution, status: 'interrupted' } : execution),
+    toolCalls: turn.toolCalls?.map(call => call.status === 'running' ? { ...call, status: 'interrupted' } : call),
 });
 
 /** A run cut off by the reload takes the focus, so its retry is at hand. */
@@ -1196,6 +1315,9 @@ export const dataFormulatorSlice = createSlice({
         },
         finishTableLoad: (state, action: PayloadAction<string>) => {
             state.pendingTableLoads = state.pendingTableLoads.filter(item => item.id !== action.payload);
+        },
+        setTablesMissingData: (state, action: PayloadAction<string[]>) => {
+            state.tablesMissingData = action.payload;
         },
         removeExternalTableReference: (state, action: PayloadAction<string>) => {
             if (state.activeWorkspace?.readOnly) return;
@@ -1296,7 +1418,9 @@ export const dataFormulatorSlice = createSlice({
                 externalTableReferences: saved.externalTableReferences || [],
                 workspaceItemOrder: Array.isArray(saved.workspaceItemOrder)
                     ? saved.workspaceItemOrder.filter((key: unknown) => typeof key === 'string') : [],
+                workspaceTitle: typeof saved.workspaceTitle === 'string' && saved.workspaceTitle.trim() ? saved.workspaceTitle : null,
                 tableSemantics: saved.tableSemantics || [],
+                categoryColors: saved.categoryColors && typeof saved.categoryColors === 'object' ? saved.categoryColors : {},
                 draftNodes: (saved.draftNodes || []).map((node: DraftNode) => {
                     // Mark any running/clarifying drafts as interrupted (SSE connection lost)
                     if (node.derive?.status === 'running' || node.derive?.status === 'clarifying') {
@@ -1305,6 +1429,7 @@ export const dataFormulatorSlice = createSlice({
                             derive: {
                                 ...node.derive,
                                 status: 'interrupted' as const,
+                                writing: undefined,
                                 progressSteps: interruptProgressSteps(node.derive.progressSteps),
                                 trigger: {
                                     ...node.derive.trigger,
@@ -1336,8 +1461,9 @@ export const dataFormulatorSlice = createSlice({
                 conceptShelfItems: saved.conceptShelfItems || [],
                 focusedDataCleanBlockId: saved.focusedDataCleanBlockId || undefined,
                 focusedId: focusAfterInterruption(saved.draftNodes, saved.focusedId || undefined),
+                // Only tabs that stay come back, plus the preview tab of what the canvas showed.
                 canvasTabs: Array.isArray(saved.canvasTabs) ? saved.canvasTabs.filter((tab: CanvasTab) => tab && typeof tab.key === 'string' && isTabTarget(tab.target)
-                    && keepsCanvasTab(tab, saved.textTurns || [])) : [],
+                    && keepsCanvasTab(tab, saved.textTurns || []) && (isCanvasTabPinned(tab) || tab.key === saved.canvasTabActive)) : [],
                 canvasTabActive: typeof saved.canvasTabActive === 'string' ? saved.canvasTabActive : undefined,
                 canvasFollow: false,
                 config: { ...initialState.config, ...savedConfig },
@@ -1352,7 +1478,10 @@ export const dataFormulatorSlice = createSlice({
                 viewMode: saved.viewMode || 'editor',
                 chartSynthesisInProgress: [],
                 tableLoadsInFlight: 0,
+                workflowStarting: false,
+                appAutoFixes: {},
                 pendingTableLoads: [],
+                tablesMissingData: [],
                 cleanInProgress: false,
                 connectorRefreshRequest: 0,
                 agentHandoffRequest: null,
@@ -1583,6 +1712,15 @@ export const dataFormulatorSlice = createSlice({
                 replaceStoredTable(state, { ...t, rows: newRows, metadata: newMetadata, source: updatedSource, contentHash: newContentHash, virtual: updatedVirtual });
             }
         },
+        setTableSourceMissing: (state, action: PayloadAction<{tableId: string, missing: {checkedAt: number, message: string} | null}>) => {
+            // Mark (or clear) a loaded table whose source table no longer exists; its rows are kept.
+            const { tableId, missing } = action.payload;
+            for (const t of collectAllTables(state)) {
+                if (t.id !== tableId || !t.source || (!missing && !t.source.missing)) continue;
+                const { missing: _previous, ...rest } = t.source;
+                replaceStoredTable(state, { ...t, source: missing ? { ...rest, missing } : rest });
+            }
+        },
         updateTableSource: (state, action: PayloadAction<{tableId: string, source: DataSourceConfig}>) => {
             // Update the source configuration of a table
             let tableId = action.payload.tableId;
@@ -1696,7 +1834,7 @@ export const dataFormulatorSlice = createSlice({
             let chartType = action.payload.chartType;
             const tables = collectAllTables(state);
             let tableId = action.payload.tableId || tables[0].id;
-            let freshChart = generateFreshChart(tableId, chartType, "user") as Chart;
+            let freshChart = withDefaultChartTheme(generateFreshChart(tableId, chartType, "user"), state.config, spaceChartThemeId(state));
             
             // Auto-populate encodings based on table metadata
             let table = tables.find(t => t.id === tableId);
@@ -1715,11 +1853,11 @@ export const dataFormulatorSlice = createSlice({
             state.focusedId = { type: 'chart', chartId: freshChart.id };
         },
         addChart: (state, action: PayloadAction<Chart>) => {
-            let chart = action.payload;
+            let chart = withDefaultChartTheme(action.payload, state.config, spaceChartThemeId(state));
             state.charts = [chart, ...state.charts];
         },
         addAndFocusChart: (state, action: PayloadAction<Chart>) => {
-            let chart = action.payload;
+            let chart = withDefaultChartTheme(action.payload, state.config, spaceChartThemeId(state));
             state.charts = [chart, ...state.charts];
             state.focusedId = { type: 'chart', chartId: chart.id };
         },
@@ -1861,6 +1999,10 @@ export const dataFormulatorSlice = createSlice({
             const chart = collectAllCharts(state).find(c => c.id === action.payload.chartId);
             if (!chart) return;
             chart.themeId = action.payload.themeId;
+        },
+        registerCategoryColors: (state, action: PayloadAction<CategoryRegistration>) => {
+            const next = registerCategoryColors(state.categoryColors ?? {}, action.payload);
+            if (next !== state.categoryColors) state.categoryColors = next;
         },
         updateChartEncoding: (state, action: PayloadAction<{chartId: string, channel: Channel, encoding: EncodingItem}>) => {
             let chartId = action.payload.chartId;
@@ -2049,7 +2191,16 @@ export const dataFormulatorSlice = createSlice({
             const draft = state.draftNodes.find(d => d.id === action.payload.nodeId);
             if (draft?.derive) {
                 draft.derive.status = action.payload.status;
+                // A run that stopped is no longer writing anything.
+                if (action.payload.status !== 'running' && action.payload.status !== 'clarifying') delete draft.derive.writing;
             }
+        },
+        /** The artifact a run's open end is writing (or, with none, that it has stopped: the artifact landed or failed). */
+        setDraftWriting: (state, action: PayloadAction<{ draftId: string; writing?: DraftWriting }>) => {
+            const draft = state.draftNodes.find(d => d.id === action.payload.draftId);
+            if (!draft?.derive) return;
+            if (action.payload.writing) draft.derive.writing = action.payload.writing;
+            else delete draft.derive.writing;
         },
         promoteDraft: (state, action: PayloadAction<{ draftId: string; rows: any[]; names: string[]; metadata: any; code: string; codeSignature?: string; outputVariable?: string; dialog?: any[]; explanation?: any; virtual: { tableId: string; rowCount: number }; description?: string; source?: DataSourceConfig }>) => {
             const { draftId, rows, names, metadata, code, codeSignature, outputVariable, dialog, explanation, virtual, description, source } = action.payload;
@@ -2088,19 +2239,19 @@ export const dataFormulatorSlice = createSlice({
             draft.derive.progressSteps = [];
         },
         /** Add or update one tool call on an agent message (tool calls are sub-items of the message, design-docs/58 rule 4). */
-        upsertTurnExecution: (state, action: PayloadAction<{ turnId: string; execution?: TerminalExecution; codeExecution?: CodeExecution }>) => {
+        upsertTurnExecution: (state, action: PayloadAction<{ turnId: string; execution?: TerminalExecution; toolCall?: ToolCall }>) => {
             const turn = state.textTurns.find(item => item.id === action.payload.turnId);
             if (!turn) return;
-            const { execution, codeExecution } = action.payload;
+            const { execution, toolCall } = action.payload;
             if (execution) {
                 const list = turn.executions || [];
                 const index = list.findIndex(item => item.id === execution.id);
                 turn.executions = index >= 0 ? list.map((item, i) => i === index ? { ...item, ...execution } : item) : [...list, execution];
             }
-            if (codeExecution) {
-                const list = turn.codeExecutions || [];
-                const index = list.findIndex(item => item.id === codeExecution.id);
-                turn.codeExecutions = index >= 0 ? list.map((item, i) => i === index ? { ...item, ...codeExecution } : item) : [...list, codeExecution];
+            if (toolCall) {
+                const list = turn.toolCalls || [];
+                const index = list.findIndex(item => item.id === toolCall.id);
+                turn.toolCalls = index >= 0 ? list.map((item, i) => i === index ? { ...item, ...toolCall } : item) : [...list, toolCall];
             }
         },
         // A run's open end; anything that followed it (from older sessions) rises to its parent.
@@ -2169,57 +2320,48 @@ export const dataFormulatorSlice = createSlice({
         setDisplayedMessageIndex: (state, action: PayloadAction<number>) => {
             state.displayedMessageIdx = action.payload
         },
-        /** An agent run shows its newest result: like setFocused, but the result's tab stays unseen. */
+        /** An agent run shows its newest result: like setFocused, but a report's or app's new tab stays unseen. */
         followFocused: (state, action: PayloadAction<NonNullable<FocusedId>>) => {
             const payload = action.payload;
+            if (isTabTarget(payload) && autoPinned(payload)) ensureCanvasTab(state, payload, true);
+            if (stayInChat(state, payload, true)) { state.canvasFollow = true; return; }
             state.focusedId = payload;
             state.canvasFollow = true;
             if (payload.type === 'chart' && state.viewMode === 'report') state.viewMode = 'editor';
             if (payload.type === 'report') state.viewMode = 'report';
-            if (isTabTarget(payload) && opensCanvasTab(state, payload)) ensureCanvasTab(state, payload, true);
-        },
-        /** A result an agent run added while the user was elsewhere: a new, unseen tab, not focused. */
-        noteCanvasResult: (state, action: PayloadAction<NonNullable<FocusedId>>) => {
-            if (isTabTarget(action.payload) && opensCanvasTab(state, action.payload)) ensureCanvasTab(state, action.payload, true);
         },
         /**
-         * The canvas now shows `target`. It gets a tab (derived tables excepted) and becomes active. When the user moved focus,
-         * both the tab they left and the one they opened count as seen.
+         * A result an agent run added while the user was elsewhere: a report, app or map gets a new,
+         * unseen tab (not focused); a chart or table gets none until the user opens it.
+         */
+        noteCanvasResult: (state, action: PayloadAction<NonNullable<FocusedId>>) => {
+            if (isTabTarget(action.payload) && autoPinned(action.payload)) ensureCanvasTab(state, action.payload, true);
+        },
+        /**
+         * The canvas now shows `target`. It gets a tab and becomes active; the previous preview tab (one
+         * not kept) goes, and a new preview tab takes its place. When the user moved focus, both the tab
+         * they left and the one they opened count as seen.
          */
         syncCanvasTab: (state, action: PayloadAction<FocusedId>) => {
             const target = action.payload;
-            if (!isTabTarget(target)) { state.canvasTabActive = undefined; return; }
-            // A derived table shows without a tab of its own (unless it already has one).
-            if (!opensCanvasTab(state, target) && !state.canvasTabs.some(item => item.key === canvasTabKey(target))) {
-                state.canvasTabActive = undefined;
-                return;
-            }
+            const shown = isTabTarget(target) && opensCanvasTab(state, target) ? target : undefined;
+            const key = shown ? canvasTabKey(shown) : undefined;
             const byUser = !state.canvasFollow;
             if (byUser) {
                 const left = state.canvasTabs.find(item => item.key === state.canvasTabActive);
                 if (left) delete left.unseen;
             }
-            const tab = ensureCanvasTab(state, target, !byUser);
+            const previewIndex = state.canvasTabs.findIndex(tab => !isCanvasTabPinned(tab) && tab.key !== key);
+            state.canvasTabs = state.canvasTabs.filter(tab => isCanvasTabPinned(tab) || tab.key === key);
+            if (!shown) { state.canvasTabActive = undefined; return; }
+            const tab = ensureCanvasTab(state, shown, !byUser && autoPinned(shown), previewIndex);
             if (byUser) { delete tab.unseen; tab.viewedAt = tabClock(state); }
             state.canvasTabActive = tab.key;
         },
-        /**
-         * Pin or unpin a tab (an explicit choice, so an auto-pinned report stays unpinned once unpinned);
-         * it goes before `beforeKey`, after `afterKey`, or last.
-         */
-        placeCanvasTab: (state, action: PayloadAction<{ key: string; pinned: boolean; beforeKey?: string; afterKey?: string }>) => {
-            const { key, pinned, beforeKey, afterKey } = action.payload;
-            const index = state.canvasTabs.findIndex(tab => tab.key === key);
-            if (index < 0) return;
-            const [tab] = state.canvasTabs.splice(index, 1);
-            tab.pinned = pinned;
-            // Unpinned, it joins the recent tabs as just seen, so it doesn't rotate straight out.
-            if (!pinned) tab.viewedAt = tabClock(state);
-            const before = beforeKey ? state.canvasTabs.findIndex(item => item.key === beforeKey) : -1;
-            const after = afterKey ? state.canvasTabs.findIndex(item => item.key === afterKey) : -1;
-            if (before >= 0) state.canvasTabs.splice(before, 0, tab);
-            else if (after >= 0) state.canvasTabs.splice(after + 1, 0, tab);
-            else state.canvasTabs.push(tab);
+        /** Keep a preview tab (double-click): it stays, like a report's, until closed. */
+        pinCanvasTab: (state, action: PayloadAction<string>) => {
+            const tab = state.canvasTabs.find(item => item.key === action.payload);
+            if (tab) tab.pinned = true;
         },
         /** Drag a tab to another tab's place (it takes that slot; the others shift). */
         moveCanvasTab: (state, action: PayloadAction<{ key: string; toKey: string }>) => {
@@ -2241,14 +2383,9 @@ export const dataFormulatorSlice = createSlice({
             state.canvasTabs = state.canvasTabs.filter(tab => !keys.has(tab.key));
             if (state.canvasTabActive && keys.has(state.canvasTabActive)) state.canvasTabActive = undefined;
         },
-        setCanvasTabPinned: (state, action: PayloadAction<{ key: string; pinned: boolean }>) => {
-            const tab = state.canvasTabs.find(item => item.key === action.payload.key);
-            if (!tab) return;
-            // Explicit either way, so an automatically pinned report can be unpinned.
-            tab.pinned = action.payload.pinned;
-        },
         setFocused: (state, action: PayloadAction<FocusedId>) => {
             const payload = action.payload;
+            if (stayInChat(state, payload, false)) { state.canvasFollow = false; return; }
             state.focusedId = payload;
             state.canvasFollow = false;
 
@@ -2334,12 +2471,33 @@ export const dataFormulatorSlice = createSlice({
         },
         queueAnalystTask: (
             state,
-            action: PayloadAction<{ text: string; displayText?: string; images: string[]; attachments: string[]; intent?: 'workflow-authoring' }>,
+            action: PayloadAction<{ text: string; displayText?: string; images: string[]; attachments: string[]; intent?: 'workflow-authoring';
+                auto?: 'app-repair' }>,
         ) => {
             state.analystChatPending = action.payload;
         },
+        /** The agent wrote this app: repair it automatically if it fails when it opens. */
+        watchAgentApp: (state, action: PayloadAction<string>) => {
+            state.appAutoFixes ??= {};
+            state.appAutoFixes[action.payload] ??= 0;
+        },
+        /** An automatic repair of the app was requested. */
+        countAppAutoFix: (state, action: PayloadAction<string>) => {
+            state.appAutoFixes ??= {};
+            state.appAutoFixes[action.payload] = (state.appAutoFixes[action.payload] ?? 0) + 1;
+        },
+        /** The app opened without errors: later errors are the user's to report. */
+        releaseAgentApp: (state, action: PayloadAction<string>) => {
+            if (state.appAutoFixes) delete state.appAutoFixes[action.payload];
+        },
         clearAnalystChatPending: (state) => {
             state.analystChatPending = null;
+        },
+        setWorkflowStarting: (state, action: PayloadAction<boolean>) => {
+            state.workflowStarting = action.payload;
+        },
+        setWorkspaceTitle: (state, action: PayloadAction<string | null>) => {
+            state.workspaceTitle = action.payload?.trim() || null;
         },
         requestConnectorRefresh: (state) => {
             state.connectorRefreshRequest = (state.connectorRefreshRequest ?? 0) + 1;
@@ -2441,11 +2599,18 @@ export const dataFormulatorSlice = createSlice({
                 parentTurn.answered = false;
             }
             if (turn) repairThreadEdges(state, [turn]);
-            // Fallback focus (design-docs/42): the source chart it came from,
-            // else its thread-parent table (walk parentNodeId), else nothing.
+            // Fallback focus (design-docs/42): the nearest report or file above it in its
+            // thread (a summary after a report goes back to the report), else the source
+            // chart it came from, else its thread-parent table, else nothing.
             if (wasFocused && turn) {
                 const allCharts = collectAllCharts(state);
-                if (turn.sourceChartId && allCharts.some(c => c.id === turn.sourceChartId)) {
+                const result = threadGraphOf(state).resultAbove(turn.parentNodeId);
+                const resultFile = result?.kind === 'file' ? state.fileNodes.find(item => item.id === result.id) : undefined;
+                const above: DataFormulatorState['focusedId'] = result?.kind === 'report' ? { type: 'report', reportId: result.id }
+                    : resultFile ? { type: 'file', fileName: resultFile.path } : undefined;
+                if (above) {
+                    state.focusedId = above;
+                } else if (turn.sourceChartId && allCharts.some(c => c.id === turn.sourceChartId)) {
                     state.focusedId = { type: 'chart', chartId: turn.sourceChartId };
                 } else {
                     const parentTableId = threadGraphOf(state).tableOf(turn.parentNodeId);
@@ -2502,6 +2667,8 @@ export const dataFormulatorSlice = createSlice({
             const report = state.generatedReports.find(r => r.id === id);
             if (report) {
                 report.content = content;
+                const genre = splitFrontMatter(content).style;
+                if (genre) report.style = genre;
                 if (title) report.title = title;
                 if (status) report.status = status;
                 // Re-anchor the report to the latest table produced during the
@@ -2516,6 +2683,15 @@ export const dataFormulatorSlice = createSlice({
                     report.inspectionSteps = undefined;
                 }
                 report.updatedAt = Date.now();
+            }
+        },
+        /** Change a report's reading settings; a key given as undefined returns it to the default. */
+        updateGeneratedReportLook: (state, action: PayloadAction<{ id: string } & Partial<Pick<GeneratedReport, 'theme' | 'density'>>>) => {
+            const { id, ...look } = action.payload;
+            const report = state.generatedReports.find(r => r.id === id);
+            if (!report) return;
+            for (const key of ['theme', 'density'] as const) {
+                if (key in look) (report as any)[key] = look[key];
             }
         },
         updateGeneratedReportProgress: (state, action: PayloadAction<{ id: string; kind: 'start' | 'end'; label?: string; doneLabel?: string; charts?: { chartType: string; name: string }[] }>) => {
@@ -2573,6 +2749,7 @@ export const dataFormulatorSlice = createSlice({
                                 ...node.derive,
                                 status: 'interrupted' as const,
                                 runningPlan: undefined,
+                                writing: undefined,
                                 progressSteps: interruptProgressSteps(node.derive.progressSteps),
                                 trigger: {
                                     ...node.derive.trigger,
@@ -2607,6 +2784,9 @@ export const dataFormulatorSlice = createSlice({
             // in store.ts).
             incoming.cleanInProgress = false;
             incoming.pendingTableLoads = [];
+            incoming.tablesMissingData = [];
+            incoming.workflowStarting = false;
+            incoming.appAutoFixes = {};
             delete incoming.dataLoadingChatMessages;
             delete incoming.dataLoadingChatPending;
             delete incoming.dataLoadingChatInProgress;
@@ -2692,9 +2872,13 @@ export const dataFormulatorSlice = createSlice({
                 ...state.testedModels.filter(t => !globalIds.has(t.id)),
             ];
 
-            // Auto-select the first global model when nothing is selected.
-            if (state.selectedModelId == undefined && models.length > 0) {
-                state.selectedModelId = models[0].id;
+            // Select the first model when nothing is selected, or when the remembered selection is gone
+            // (removed or disabled in configuration, or no longer in the server's model list); otherwise
+            // the toolbar would ask to select a model while requests silently use the first one.
+            const available = state.serverConfig.DISABLE_CUSTOM_MODELS ? models : [...models, ...state.models];
+            if (available.length > 0 && !available.some(m => m.id === state.selectedModelId)) {
+                state.selectedModelId = available[0].id;
+                try { localStorage.setItem('df_selected_model', available[0].id); } catch { /* localStorage unavailable */ }
             }
         })
         .addCase(fetchGlobalModelList.rejected, (state, action) => {
@@ -3023,8 +3207,9 @@ export const dfSelectors = {
             (state: DataFormulatorState) => state.loadedTableNodes,
             (state: DataFormulatorState) => state.fileNodes,
             selectThreadGraph,
+            (state: DataFormulatorState) => state.draftNodes,
         ],
-        (focusedId, textTurns, userCharts, triggerCharts, tables, loadedTableNodes, fileNodes, graph): FocusedId => {
+        (focusedId, textTurns, userCharts, triggerCharts, tables, loadedTableNodes, fileNodes, graph, draftNodes): FocusedId => {
             if (focusedId?.type === 'reference') {
                 const node = loadedTableNodes.find(item => item.id === focusedId.referenceId);
                 if (node) return node.external ? { type: 'external-table', referenceId: node.tableId } : { type: 'table', tableId: node.tableId };
@@ -3032,12 +3217,18 @@ export const dfSelectors = {
                 return file ? { type: 'file', fileName: file.path } : undefined;
             }
             if (focusedId?.type !== 'text' && focusedId?.type !== 'draft') return focusedId;
+            if (focusedId.type === 'draft' && draftOwnsCanvas(draftNodes.find(draft => draft.id === focusedId.draftId))) return focusedId;
             const startId = focusedId.type === 'text' ? focusedId.textId : focusedId.draftId;
             const turn = textTurns.find(item => item.id === startId);
             // A message with its own view shows it while focused (design-docs/58, rule 2).
             if (turn && textTurnOwnsCanvas(turn)) return { type: 'text', textId: turn.id };
-            // Anything else shows the nearest earlier item; a chart the user was on stays in view within its table.
+            // A run's answer shows what the run last brought into view, while it still exists: an app or map
+            // changed in place adds nothing to the thread, so the nearest item could be an older table.
             const allCharts = [...userCharts, ...triggerCharts];
+            const shown = turn?.canvasTarget;
+            if (shown?.type === 'chart' && allCharts.some(chart => chart.id === shown.chartId)) return shown;
+            if (shown?.type === 'file' && fileNodes.some(file => file.path === shown.fileName)) return shown;
+            // Anything else shows the nearest earlier item; a chart the user was on stays in view within its table.
             const tableCanvas = (tableId: string): FocusedId => {
                 const sourceChart = turn?.sourceChartId ? allCharts.find(chart => chart.id === turn.sourceChartId) : undefined;
                 if (sourceChart?.tableRef === tableId) return { type: 'chart', chartId: sourceChart.id };
@@ -3067,12 +3258,27 @@ export const dfSelectors = {
                     case 'artifact-set':
                         return itemCanvas(graph.membersOf(itemId)[0], seen);
                     case 'report':
-                        // Reports open in the report view; the editor canvas keeps the item before it.
-                        return itemCanvas(graph.nearestItem(itemId, { includeSelf: false }), seen);
+                        return { type: 'report', reportId: itemId };
                     default:
                         return undefined;
                 }
             };
+            // A message about an earlier result adds the request at its thread's end, so the nearest item is
+            // whatever came last. Until the run brings a new item, its answer or failure keeps the result asked
+            // about in view.
+            const referenceCanvas = (reference: ThreadReference): FocusedId => {
+                if (reference.kind === 'chart') return allCharts.some(chart => chart.id === reference.id) ? { type: 'chart', chartId: reference.id } : undefined;
+                if (reference.kind === 'table') return tables.some(table => table.id === reference.id) ? { type: 'table', tableId: reference.id } : undefined;
+                return itemCanvas(reference.id);
+            };
+            for (const id of graph.ancestors(startId, { includeSelf: true })) {
+                if (graph.isItem(id)) break;
+                const reference = textTurns.find(item => item.id === id)?.references?.[0];
+                if (!reference) continue;
+                const referenced = referenceCanvas(reference);
+                if (referenced) return referenced;
+                break;
+            }
             const canvas = itemCanvas(graph.nearestItem(startId));
             if (canvas || !turn?.sourceChartId) return canvas;
             // A conversation with no item before it keeps the chart it was asked from.
@@ -3109,6 +3315,12 @@ export const dfSelectors = {
         (state: DataFormulatorState): string | undefined =>
             state.chartThumbnails?.[chartId],
 
+    /** The session's category colours: the registry and every pinned colour in its tables' fields. */
+    getSessionCategoryColors: createSelector(
+        [(state: DataFormulatorState) => state.categoryColors, (state: DataFormulatorState) => state.tableSemantics],
+        (registry, tableSemantics): SessionCategoryColors => ({ registry: registry ?? {}, pins: sessionPins(tableSemantics ?? []) }),
+    ),
+
     replaceChart: (state: DataFormulatorState, chart: Chart) => {
         if (state.charts.find(c => c.id == chart.id)) {
             // chart is from charts
@@ -3132,8 +3344,8 @@ export const dfSelectors = {
     getFocusNodeId: createSelector(
         [(state: DataFormulatorState) => state.focusedId, (state: DataFormulatorState) => state.fileNodes,
          (state: DataFormulatorState) => state.loadedTableNodes, (state: DataFormulatorState) => state.charts,
-         selectTriggerCharts, selectAllTables],
-        (focusedId, fileNodes, loadedTableNodes, userCharts, triggerCharts, tables): string | undefined => {
+         selectTriggerCharts, selectAllTables, selectThreadGraph],
+        (focusedId, fileNodes, loadedTableNodes, userCharts, triggerCharts, tables, graph): string | undefined => {
             const charts = [...userCharts, ...triggerCharts];
             if (!focusedId) return undefined;
             switch (focusedId.type) {
@@ -3144,7 +3356,8 @@ export const dfSelectors = {
                 case 'file': return fileNodes.find(node => node.path === focusedId.fileName)?.id;
                 case 'external-table':
                     return [...loadedTableNodes].reverse().find(node => node.external && node.tableId === focusedId.referenceId)?.id;
-                case 'conversation': return focusedId.nodeIds?.at(-1);
+                // The chat's latest node, as the thread stands now: a follow-up from the chat continues it.
+                case 'conversation': return conversationNodeIds(graph, focusedId.tableId, focusedId.nodeIds)?.at(-1);
                 case 'table':
                 case 'chart': {
                     const tableId = focusedId.type === 'table' ? focusedId.tableId : charts.find(chart => chart.id === focusedId.chartId)?.tableRef;

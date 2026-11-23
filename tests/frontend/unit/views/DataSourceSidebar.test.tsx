@@ -1,9 +1,9 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { DataSourceSidebar } from '../../../../src/views/DataSourceSidebar';
+import { clearSidebarPanelLists, DataSourceSidebar } from '../../../../src/views/DataSourceSidebar';
 import { apiRequest } from '../../../../src/app/apiClient';
-import { listWorkspaces } from '../../../../src/app/workspaceService';
+import { listWorkspaces, setWorkspaceStarred } from '../../../../src/app/workspaceService';
 import { loadTable } from '../../../../src/app/tableThunks';
 
 const { dispatch, mockState } = vi.hoisted(() => ({
@@ -11,7 +11,7 @@ const { dispatch, mockState } = vi.hoisted(() => ({
     mockState: {
         dataSourceSidebarOpen: true,
         dataSourceSidebarTab: 'sources',
-        serverConfig: { DISABLE_DATA_CONNECTORS: false },
+        serverConfig: { DISABLE_DATA_CONNECTORS: false, WORKFLOWS_AVAILABLE: true },
         activeWorkspace: null,
         identity: { type: 'browser', id: 'test-browser' },
         inputTables: [],
@@ -60,7 +60,7 @@ vi.mock('../../../../src/app/dfSlice', () => ({
 
 vi.mock('../../../../src/app/sessionThunks', () => ({
     generateWorkspaceId: () => 'session_test',
-    leaveSession: () => ({ type: 'session/leave' }),
+    startNewSession: () => ({ type: 'session/new' }),
     renameSession: (id: string, name: string) => ({ type: 'session/rename', payload: { id, name } }),
     openSession: (id: string, name: string) => ({ type: 'session/open', payload: { id, name } }),
 }));
@@ -96,6 +96,7 @@ vi.mock('../../../../src/app/workspaceService', async importOriginal => ({
     listWorkspaces: vi.fn(() => Promise.resolve([])),
     loadWorkspace: vi.fn(),
     deleteWorkspace: vi.fn(),
+    setWorkspaceStarred: vi.fn(() => Promise.resolve()),
     onWorkspaceListChanged: vi.fn(() => () => {}),
 }));
 
@@ -122,9 +123,11 @@ vi.mock('../../../../src/views/WorkflowPanel', () => ({
 describe('DataSourceSidebar', () => {
     beforeEach(() => {
         dispatch.mockReset();
+        clearSidebarPanelLists();
         mockState.dataSourceSidebarTab = 'sources';
         mockState.serverConfig.DISABLE_DATA_CONNECTORS = false;
-        delete (mockState.serverConfig as { SITE?: unknown }).SITE;
+        mockState.serverConfig.WORKFLOWS_AVAILABLE = true;
+        delete (mockState.serverConfig as { SPACE?: unknown }).SPACE;
         vi.stubGlobal('ResizeObserver', class {
             observe() {}
             unobserve() {}
@@ -198,11 +201,11 @@ describe('DataSourceSidebar', () => {
         vi.useFakeTimers();
         try {
             render(<DataSourceSidebar />);
-            const button = screen.getByRole('button', { name: 'knowledge.workflows' });
-            fireEvent.mouseOver(button.querySelector('[data-workflow-gears]')!);
+            const button = screen.getByRole('button', { name: 'workflow.title' });
+            fireEvent.mouseOver(button.querySelector('[data-workflow-icon]')!);
             await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
             expect(screen.getAllByRole('tooltip')).toHaveLength(1);
-            expect(screen.getByRole('tooltip')).toHaveTextContent('knowledge.workflows');
+            expect(screen.getByRole('tooltip')).toHaveTextContent('workflow.title');
         } finally {
             vi.useRealTimers();
         }
@@ -435,15 +438,68 @@ describe('DataSourceSidebar', () => {
         expect(await screen.findByLabelText('Disconnect', { selector: 'button' })).toBeEnabled();
     });
 
-    it('leaves the session for the landing page and closes the unpinned sidebar', async () => {
+    it('starts a blank session and closes the unpinned sidebar', async () => {
         mockState.dataSourceSidebarTab = 'sessions';
         render(<DataSourceSidebar />);
 
-        fireEvent.click(await screen.findByRole('button', { name: 'New session' }));
+        // The sessions panel's New and the rail's + both start one.
+        const [rail, panel] = await screen.findAllByRole('button', { name: 'New session' });
+        fireEvent.click(panel);
 
         expect(dispatch).toHaveBeenCalledWith({ type: 'sidebar/setOpen', payload: false });
-        expect(dispatch).toHaveBeenCalledWith({ type: 'session/leave' });
+        expect(dispatch).toHaveBeenCalledWith({ type: 'session/new' });
+        dispatch.mockClear();
+        fireEvent.click(rail);
+        expect(dispatch).toHaveBeenCalledWith({ type: 'sidebar/setOpen', payload: false });
+        expect(dispatch).toHaveBeenCalledWith({ type: 'session/new' });
         expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'workspace/reset' }));
+    });
+
+    it('shows a quiet spinner rather than an empty list while sessions load, then reopens with the last list', async () => {
+        mockState.dataSourceSidebarTab = 'sessions';
+        let resolveList!: (list: any[]) => void;
+        vi.mocked(listWorkspaces).mockReturnValue(new Promise(resolve => { resolveList = resolve; }));
+        const view = render(<DataSourceSidebar />);
+
+        expect(screen.getByRole('progressbar', { name: 'Loading...' })).toBeInTheDocument();
+        expect(screen.queryByText('No saved sessions')).toBeNull();
+        await act(async () => resolveList([{ id: 'gas', display_name: 'Gas prices', created_at: null, saved_at: null }]));
+        expect(screen.getByText('Gas prices')).toBeInTheDocument();
+        view.unmount();
+
+        vi.mocked(listWorkspaces).mockReturnValue(new Promise(() => {}));
+        render(<DataSourceSidebar />);
+        expect(screen.getByText('Gas prices')).toBeInTheDocument();
+        expect(screen.queryByRole('progressbar')).toBeNull();
+    });
+
+    it('renders long session lists a page at a time in the sidebar and the all-sessions dialog', async () => {
+        mockState.dataSourceSidebarTab = 'sessions';
+        let reveal: (() => void) | undefined;
+        vi.stubGlobal('IntersectionObserver', class {
+            constructor(private callback: IntersectionObserverCallback) {}
+            observe() { reveal = () => this.callback([{ isIntersecting: true } as IntersectionObserverEntry], this as any); }
+            disconnect() {}
+        });
+        vi.mocked(listWorkspaces).mockResolvedValue(Array.from({ length: 100 }, (_, index) => (
+            { id: `s${index}`, display_name: `Session ${index}`, created_at: null, saved_at: null })));
+        try {
+            render(<DataSourceSidebar />);
+            await screen.findByText('Session 0');
+            expect(screen.getByText('Session 39')).toBeInTheDocument();
+            expect(screen.queryByText('Session 40')).toBeNull();
+            act(() => reveal!());
+            expect(screen.getByText('Session 79')).toBeInTheDocument();
+
+            fireEvent.click(screen.getByRole('button', { name: 'View all sessions' }));
+            const dialog = await screen.findByRole('dialog', { name: 'Sessions' });
+            expect(within(dialog).getByText('Session 35')).toBeInTheDocument();
+            expect(within(dialog).queryByText('Session 36')).toBeNull();
+            fireEvent.change(within(dialog).getByRole('textbox', { name: 'Search sessions' }), { target: { value: 'Session 99' } });
+            expect(within(dialog).getByText('Session 99')).toBeInTheDocument();
+        } finally {
+            vi.unstubAllGlobals();
+        }
     });
 
     it('opens all sessions in a searchable dialog and opens one from there', async () => {
@@ -463,6 +519,42 @@ describe('DataSourceSidebar', () => {
 
         await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Sessions' })).toBeNull());
         expect(dispatch).toHaveBeenCalledWith({ type: 'session/open', payload: { id: 'movies', name: 'Movies' } });
+    });
+
+    it('stars a session from the More menu into a Starred group above the dated list', async () => {
+        mockState.dataSourceSidebarTab = 'sessions';
+        vi.mocked(listWorkspaces).mockResolvedValue([
+            { id: 'gas', display_name: 'Gas prices', created_at: '2026-08-15T10:00:00Z', saved_at: null },
+            { id: 'movies', display_name: 'Movies', created_at: '2026-08-01T10:00:00Z', saved_at: null },
+        ]);
+        render(<DataSourceSidebar />);
+
+        await screen.findByText('Movies');
+        expect(screen.queryByRole('heading', { name: 'workspace.starred' })).toBeNull();
+        fireEvent.click(screen.getAllByRole('button', { name: 'More actions', hidden: true })[1]);
+        fireEvent.click(await screen.findByRole('menuitem', { name: 'workspace.star' }));
+
+        await waitFor(() => expect(setWorkspaceStarred).toHaveBeenCalledWith('movies', true));
+        const header = await screen.findByRole('heading', { name: 'workspace.starred' });
+        expect(header.compareDocumentPosition(screen.getByText('Movies')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(screen.getByText('Movies').compareDocumentPosition(screen.getByText('Gas prices')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('filters the all-sessions dialog to starred sessions', async () => {
+        mockState.dataSourceSidebarTab = 'sessions';
+        vi.mocked(listWorkspaces).mockResolvedValue([
+            { id: 'gas', display_name: 'Gas prices', created_at: null, saved_at: null, starred: true },
+            { id: 'movies', display_name: 'Movies', created_at: null, saved_at: null },
+        ]);
+        render(<DataSourceSidebar />);
+
+        await screen.findByText('Movies');
+        fireEvent.click(screen.getByRole('button', { name: 'View all sessions' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Sessions' });
+        expect(within(dialog).getByText('Movies')).toBeInTheDocument();
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Starred only' }));
+        expect(within(dialog).queryByText('Movies')).toBeNull();
+        expect(within(dialog).getByText('Gas prices')).toBeInTheDocument();
     });
 
     it('renames a session from the More menu and keeps the field focused', async () => {
@@ -575,18 +667,20 @@ describe('DataSourceSidebar', () => {
     });
 
     it.each([
-        { demo: false, rail: ['Upload data', 'Saved workspaces', 'Data connectors', 'knowledge.workflows', 'Schedules'] },
-        { demo: true, rail: ['Upload data', 'Saved workspaces'] },
-    ])('offers data connectors, workflows and schedules only outside demos (demo: $demo)', async ({ demo, rail }) => {
-        // A tab remembered from before must not reopen a hidden panel on a demo.
+        { space: false, workflows: true, rail: ['New session', 'Saved workspaces', 'Data connectors', 'workflow.title'] },
+        { space: true, workflows: true, rail: ['New session', 'Saved workspaces', 'Data connectors', 'workflow.title'] },
+        { space: false, workflows: false, rail: ['New session', 'Saved workspaces', 'Data connectors'] },
+    ])('starts new sessions and offers data connectors and workflows (with their schedules) in spaces too, and workflows only where available (space: $space, workflows: $workflows)', async ({ space, workflows, rail }) => {
+        // The Schedules tab is gone (schedules are part of workflows): remembered, it opens Workflows, or Sessions where those are hidden.
         mockState.dataSourceSidebarTab = 'schedules';
-        if (demo) Object.assign(mockState.serverConfig, { SITE: { id: 'unesco', name: 'UIS', starters: [] } });
+        mockState.serverConfig.WORKFLOWS_AVAILABLE = workflows;
+        if (space) Object.assign(mockState.serverConfig, { SPACE: { id: 'unesco', name: 'UIS', starters: [] } });
         render(<DataSourceSidebar />);
 
-        const railButtons = ['Upload data', 'Saved workspaces', 'Data connectors', 'knowledge.workflows', 'Schedules']
-            .filter(name => screen.queryByRole('button', { name }));
+        const railButtons = ['New session', 'Saved workspaces', 'Data connectors', 'workflow.title', 'Schedules']
+            .filter(name => screen.queryAllByRole('button', { name }).length);
         expect(railButtons).toEqual(rail);
-        if (demo) {
+        if (!workflows) {
             expect(await screen.findByRole('button', { name: 'Sort sessions' })).toBeInTheDocument();
         } else {
             expect(screen.queryByRole('button', { name: 'Sort sessions' })).not.toBeInTheDocument();

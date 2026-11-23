@@ -10,6 +10,7 @@ import ErrorOutline from '@mui/icons-material/ErrorOutline';
 
 import type { Row } from './bridge';
 import type { QueryResult } from './data';
+import { weight } from '../../tokens';
 
 /**
  * Return the previous reference while the value is structurally unchanged, so
@@ -47,11 +48,11 @@ export function ErrorState({ error, height = 120, label = 'Data unavailable' }: 
             p: 2, textAlign: 'center', color: 'text.disabled', bgcolor: 'rgba(0, 0, 0, 0.025)',
             border: '1px dashed rgba(0, 0, 0, 0.15)', borderRadius: 2,
         }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: 'var(--df-text-sm)', fontWeight: 500, color: 'text.secondary' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: 'var(--df-text-sm)', fontWeight: weight(500), color: 'text.secondary' }}>
                 <ErrorOutline sx={{ fontSize: '1.15em' }} />{label}
             </Box>
             <Box sx={{
-                maxWidth: 480, fontSize: 'var(--df-text-xs)', lineHeight: 1.45, overflowWrap: 'anywhere',
+                maxWidth: 480, fontSize: 'max(12px, var(--df-text-xs))', lineHeight: 1.45, overflowWrap: 'anywhere',
                 display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
             }}>{error}</Box>
         </Box>
@@ -64,15 +65,20 @@ export interface QueryViewProps<T extends Row = Row> {
     /** Shown when the query returns no rows. */
     empty?: React.ReactNode;
     height?: number;
+    /** Pass on the room its container gives it, for a chart drawn with `height="fill"`. */
+    fill?: boolean;
 }
 
+/** A filling box in a flex column takes the rest of it; in a box with a set height, all of it. */
+export const FILL_SX = { flex: '1 1 auto', alignSelf: 'stretch', height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' } as const;
+
 /** Render a query's rows, with loading, empty, and error states handled. */
-export function QueryView<T extends Row = Row>({ query, children, empty, height = 120 }: QueryViewProps<T>) {
+export function QueryView<T extends Row = Row>({ query, children, empty, height = 120, fill }: QueryViewProps<T>) {
     if (query.error) return <ErrorState error={query.error} height={height} />;
     if (query.loading && query.rows.length === 0) return <Loading height={height} />;
     if (!query.loading && query.rows.length === 0) return <Empty height={height}>{empty}</Empty>;
     return (
-        <Box aria-busy={query.loading || undefined} sx={{ opacity: query.loading ? 0.55 : 1, transition: 'opacity 0.2s ease', minWidth: 0 }}>
+        <Box aria-busy={query.loading || undefined} sx={{ opacity: query.loading ? 0.55 : 1, transition: 'opacity 0.2s ease', minWidth: 0, ...(fill ? FILL_SX : {}) }}>
             {children(query.rows)}
         </Box>
     );

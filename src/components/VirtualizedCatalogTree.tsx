@@ -33,6 +33,7 @@ import { useLayout } from '../app/LayoutProvider';
 import type { CatalogTreeNode } from './CatalogTree';
 import { CountBadge } from './CatalogTree';
 import { metadataTooltipSlotProps } from './ItemCard';
+import { weight } from '../app/tokens';
 
 // ─── Flattened row representation ────────────────────────────────────────────
 
@@ -281,7 +282,7 @@ function CatalogRowInner({ row, style, data }: { row: FlatRow; style?: React.CSS
                         pl: `${rowPadLeft(depth)}px`, pr: 0.5,
                         display: 'flex', alignItems: 'center', gap: `${ITEM_LABEL_GAP}px`, minWidth: 0,
                         height: '100%',
-                        borderRadius: '6px',
+                        borderRadius: 1.5,
                         cursor: 'pointer',
                         '&:hover': { backgroundColor: theme.palette.action.hover },
                         '& .catalog-hover-action': { display: 'none' },
@@ -290,7 +291,7 @@ function CatalogRowInner({ row, style, data }: { row: FlatRow; style?: React.CSS
                             '&:hover .cat-slot-glyph': { display: 'none' },
                             '&:hover .cat-slot-check': { display: 'flex' },
                         } : {}),
-                        ...(isSelected ? { backgroundColor: theme.palette.action.selected, fontWeight: 500 } : {}),
+                        ...(isSelected ? { backgroundColor: theme.palette.action.selected, fontWeight: weight(500) } : {}),
                     }}
                 >
                     {/* Single leading glyph (slot) — chevron for namespaces,

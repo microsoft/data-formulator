@@ -38,6 +38,10 @@ class _RemoteLoader:
     def crash(self):
         os._exit(7)
 
+    def missing(self):
+        from data_formulator.data_loader.external_data_loader import SourceTableMissing
+        raise SourceTableMissing("gone")
+
     def block(self, marker):
         Path(marker).touch()
         Event().wait(60)
@@ -55,6 +59,28 @@ def test_query_worker_reuses_process_with_fresh_loaders_and_owned_results():
     assert worker._process is None
     assert first.column("owner").to_pylist() == ["first"]
     assert second.column("owner").to_pylist() == ["second"]
+
+
+@pytest.mark.slow
+def test_query_worker_runs_plugin_loaders_imported_from_a_file(tmp_path, monkeypatch):
+    import importlib.util
+    import sys
+
+    plugin = tmp_path / "fixture_data_loader.py"
+    plugin.write_text(
+        "import os\nimport pyarrow as pa\n"
+        "class FixtureLoader:\n"
+        "    QUERY_EXECUTION = 'remote_file_scan'\n"
+        "    def __init__(self, params):\n        self.params = params\n"
+        "    def query_data_as_arrow(self):\n        return pa.table({'pid': [os.getpid()]})\n"
+    )
+    spec = importlib.util.spec_from_file_location("df_plugin_fixture", plugin)
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, "df_plugin_fixture", module)
+    spec.loader.exec_module(module)
+    with query_worker_scope(Event()):
+        result = execute_source_query(module.FixtureLoader({}), "query_data_as_arrow")
+    assert result.column("pid")[0].as_py() != os.getpid()
 
 
 @pytest.mark.slow
@@ -516,15 +542,45 @@ def test_query_failure_preserves_registered_source_and_reports_failure(tmp_path)
 @pytest.mark.parametrize(("error", "message"), [
     (RuntimeError("Out of Memory Error: failed to allocate data of size 4.0 KiB (493.7 MiB/488.2 MiB used)"),
      "Recent events could not be loaded: the source query ran out of memory. Load fewer rows or columns, or aggregate in the query."),
-    (RuntimeError("internal connector detail"), "Recent events could not be loaded."),
+    (RuntimeError("connector rejected the filter"), "Recent events could not be loaded: connector rejected the filter"),
 ])
-def test_query_failure_explains_running_out_of_memory_only(tmp_path, error, message):
+def test_query_failure_explains_why_it_failed(tmp_path, error, message):
     workspace = Workspace("test-user", root_dir=tmp_path)
     step = ConnectorQueryStep(source_id="warehouse", table_key="Events", display_name="Recent events",
                               source_table="Events", query=LoadQuery(limit=10))
     result = DataOperationExecutor(workspace, lambda _: _Loader(error=error)).execute(_operation(step))
     assert result.failed_steps[0].error.message == message
 
+
+def test_load_of_a_table_the_source_says_is_gone_drops_it_from_catalog_and_references(tmp_path, monkeypatch):
+    from data_formulator.data_loader.external_data_loader import SourceTableMissing
+    from data_formulator.datalake.catalog_cache import load_catalog, save_catalog
+
+    monkeypatch.setenv("DATA_FORMULATOR_HOME", str(tmp_path))
+    workspace = Workspace("test-user", root_dir=tmp_path)
+    save_catalog(workspace.user_home, "warehouse", [
+        {"name": "Events", "table_key": "Events", "path": ["Events"], "metadata": {}},
+        {"name": "Orders", "table_key": "Orders", "path": ["Orders"], "metadata": {}},
+    ])
+    step = ConnectorQueryStep(source_id="warehouse", table_key="Events", display_name="Recent events",
+                              source_table="Events", query=LoadQuery(limit=10))
+    loader = _Loader(error=SourceTableMissing("Table Events no longer exists."))
+
+    result = DataOperationExecutor(workspace, lambda _: loader).execute(_operation(step))
+
+    assert result.failed_steps[0].error.message == (
+        "Recent events could not be loaded: Table Events no longer exists. It was removed from the catalog.")
+    assert not result.result_references
+    assert [table["table_key"] for table in load_catalog(workspace.user_home, "warehouse")] == ["Orders"]
+
+
+@pytest.mark.slow
+def test_query_worker_keeps_missing_table_errors():
+    from data_formulator.data_loader.external_data_loader import SourceTableMissing
+
+    with query_worker_scope(Event()):
+        with pytest.raises(SourceTableMissing, match="gone"):
+            execute_source_query(_RemoteLoader(), "missing")
 
 def test_native_kql_diagnostic_reaches_failed_step(tmp_path):
     from unittest.mock import Mock

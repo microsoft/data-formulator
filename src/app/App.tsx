@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { FC, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ScrollFadeEdge, useScrollFade } from '../components/ScrollFade';
 import '../scss/App.scss';
 
@@ -12,7 +12,11 @@ import {
     dfSelectors,
     fetchGlobalModelList,
     DEFAULT_ROW_LIMIT,
+    DEFAULT_CHART_THEME_ID,
+    resolveDefaultChartTheme,
+    spaceChartThemeId,
 } from './dfSlice'
+import { setSpaceTheme, type SavedTheme } from './savedThemes';
 import { getBrowserId, generateUUID } from './identity';
 import type { AuthInfo } from './oidcConfig';
 import { OidcCallback } from './OidcCallback';
@@ -20,7 +24,7 @@ import { AuthButton } from './AuthButton';
 import { IdentityMigrationDialog } from './IdentityMigrationDialog';
 
 import { red, purple, blue, brown, yellow, orange, } from '@mui/material/colors';
-import { palettes, defaultPaletteKey, paletteKeys } from './tokens';
+import { palettes, defaultPaletteKey, paletteKeys, ink, paper, weight } from './tokens';
 
 import _ from 'lodash';
 
@@ -49,7 +53,6 @@ import {
     InputLabel,
     ListItemIcon,
     ListItemText,
-    CircularProgress,
     LinearProgress,
     GlobalStyles,
 } from '@mui/material';
@@ -57,15 +60,19 @@ import {
 
 import MuiAppBar from '@mui/material/AppBar';
 import { styled, ThemeProvider, useTheme } from '@mui/material/styles';
-import LogoutIcon from '@mui/icons-material/Logout';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ClearIcon from '@mui/icons-material/Clear';
 
 import { DataFormulatorFC } from '../views/DataFormulator';
+import { themeIconUrl, useThemeChoices } from '../views/ChartThemePicker';
 import { LayoutProvider, useLayout, type DensityPreference } from './LayoutProvider';
 import { createDfTheme } from './theme';
+import { applyLookVariables, DEFAULT_LOOK, LOOK_NAMES, LOOKS, saveLook, useLook, type Look } from './look';
+import { setChartInk } from './savedThemes';
 import { MIN_SUPPORTED } from './layout';
 import { useAutoSave } from './useAutoSave';
+import { SESSION_PARAM } from './sessionTabs';
+import { useWorkspaceConsistency } from './workspaceConsistency';
 import { useWorkspaceAutoName } from './useWorkspaceAutoName';
 
 import GridViewIcon from '@mui/icons-material/GridView';
@@ -84,6 +91,7 @@ import {
 } from "react-router-dom";
 import { ConfigurationView } from '../views/ConfigurationView';
 import { MessageSnackbar } from '../views/MessageSnackbar';
+import { SessionWormhole } from '../views/SessionWormhole';
 import { ChartRenderService } from '../views/ChartRenderService';
 import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from './store';
@@ -92,17 +100,16 @@ import { AnvilLoader } from '../components/AnvilLoader';
 import { ModelSelectionButton } from '../views/ModelSelectionDialog';
 import { LogViewerDialog } from '../views/LogViewerDialog';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import { SessionMenu, SessionShareButton, useSessionShareItems } from '../views/SessionMenu';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
 import SaveIcon from '@mui/icons-material/Save';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import { getUrls } from './utils';
-import { APP_PATH, DEMO_ID } from './demo';
-import { AppSwitcher, destinationItems, useAppDestinations, type AppDestination } from './AppSwitcher';
+import { APP_PATH, SPACE_ID, spacePath } from './space';
+import { AppSwitcher, PathSlash, destinationItems, useAppDestinations, type AppDestination } from './AppSwitcher';
 import { apiRequest } from './apiClient';
-import { listWorkspaces, deleteWorkspace, onWorkspaceListChanged } from './workspaceService';
-import { leaveSession, openSession } from './sessionThunks';
+import { leaveSession } from './sessionThunks';
 import store, { persistor } from './store';
 import { useSessionTabs } from './useSessionTabs';
 import { UnifiedDataUploadDialog } from '../views/UnifiedDataUploadDialog';
@@ -123,7 +130,7 @@ import { syncVegaLocale } from '../i18n/vega-locale';
 import { iconVar, textVar } from './layout';
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
-    color: 'black',
+    color: ink(1),
     backgroundColor: "transparent",
     //borderBottom: "1px solid #C3C3C3",
     boxShadow: "none",
@@ -147,7 +154,7 @@ const TopNavButton: FC<{ to: string; label: string; selected: boolean }> = ({ to
             textDecoration: 'none',
             textTransform: 'none',
             fontSize: textVar.md,
-            fontWeight: 400,
+            fontWeight: weight(400),
             border: 'none',
             borderRadius: 0,
             px: 1.5,
@@ -155,10 +162,10 @@ const TopNavButton: FC<{ to: string; label: string; selected: boolean }> = ({ to
             minWidth: 'auto',
             cursor: selected ? 'default' : 'pointer',
             color: selected ? 'text.primary' : 'text.secondary',
-            backgroundColor: selected ? 'rgba(0, 0, 0, 0.08)' : 'transparent',
+            backgroundColor: selected ? ink(0.08) : 'transparent',
             '&:hover': {
                 color: 'text.primary',
-                backgroundColor: selected ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+                backgroundColor: selected ? ink(0.08) : ink(0.04),
             },
         }}
     >
@@ -197,6 +204,9 @@ const LANGUAGE_LABELS: Record<string, string> = {
     ko: '한국어',
     fr: 'FR',
     de: 'DE',
+    es: 'ES',
+    pt: 'PT',
+    ru: 'RU',
 };
 
 const LanguageSwitcher: React.FC = () => {
@@ -221,7 +231,7 @@ const LanguageSwitcher: React.FC = () => {
                     px: 0.75,
                     color: 'text.secondary',
                     fontSize: textVar.sm,
-                    fontWeight: 400,
+                    fontWeight: weight(400),
                     textTransform: 'none',
                     '& .MuiButton-endIcon': { ml: 0.25 },
                 }}
@@ -274,6 +284,40 @@ const useIsNarrow = (ref: React.RefObject<HTMLElement | null>, threshold: number
         return () => ro.disconnect();
     }, [ref, threshold]);
     return narrow;
+};
+
+/**
+ * Whether the header's path fits with "Data Formulator" spelled out (in a space). It adds back what the path leaves
+ * out or cuts short (the words while they are hidden, and each name's hidden ellipsis up to its maximum width), so
+ * hiding the words to make room does not bring them straight back.
+ */
+const usePathSpelledOut = (toolbar: React.RefObject<HTMLElement | null>, path: React.RefObject<HTMLElement | null>,
+    actions: React.RefObject<HTMLElement | null>, active: boolean) => {
+    const [spellOut, setSpellOut] = useState(true);
+    const productWidth = useRef(0);
+    useEffect(() => {
+        if (!active || typeof ResizeObserver === 'undefined') { setSpellOut(true); return; }
+        const GAP = 16;
+        const update = () => {
+            const bar = toolbar.current?.getBoundingClientRect();
+            const element = path.current;
+            if (!bar || !element) return;
+            const product = element.querySelector<HTMLElement>('[data-path-product]');
+            if (product) productWidth.current = product.offsetWidth;
+            const cut = [...element.querySelectorAll<HTMLElement>('h1, p')].reduce((sum, text) => {
+                const max = parseFloat(getComputedStyle(text).maxWidth);
+                return sum + Math.max(0, Math.min(text.scrollWidth, Number.isFinite(max) ? max : text.scrollWidth) - text.clientWidth);
+            }, 0);
+            const needed = element.getBoundingClientRect().width + cut + (product ? 0 : productWidth.current);
+            const right = actions.current?.getBoundingClientRect().left ?? bar.right;
+            setSpellOut(element.getBoundingClientRect().left + needed + GAP <= right);
+        };
+        update();
+        const observer = new ResizeObserver(update);
+        for (const element of [toolbar.current, path.current, actions.current]) if (element) observer.observe(element);
+        return () => observer.disconnect();
+    }, [toolbar, path, actions, active]);
+    return spellOut;
 };
 
 const menuItemSx = { fontSize: textVar.md, minHeight: 34, py: 0.5 };
@@ -329,11 +373,11 @@ const PageNavMenu: React.FC<{ isAdministrationPage: boolean; appName: string; de
                     minWidth: 0,
                     px: 0.75,
                     gap: 0.25,
-                    '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                    '&:hover': { backgroundColor: ink(0.04) },
                 }}
             >
                 <Box sx={{ minWidth: 0, textAlign: 'left', maxWidth: { xs: 160, sm: 320 } }}>
-                    <Typography noWrap component="h1" title={appName} sx={{ fontSize: textVar.xl, fontWeight: 400, lineHeight: 1.2, letterSpacing: 0 }}>
+                    <Typography noWrap component="h1" title={appName} sx={{ fontSize: textVar.xl, fontWeight: weight(400), lineHeight: 1.2, letterSpacing: 0 }}>
                         {appName}
                     </Typography>
                 </Box>
@@ -406,7 +450,7 @@ const ToolbarOverflowMenu: React.FC<{
                     sx={{
                         p: 0.5,
                         color: 'text.secondary',
-                        '&:hover': { color: 'text.primary', backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                        '&:hover': { color: 'text.primary', backgroundColor: ink(0.04) },
                     }}
                 >
                     <MoreVertIcon fontSize="small" />
@@ -469,207 +513,13 @@ const TableMenu: React.FC = () => {
 };
 
 
-const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({open, onClose}) => {
-    const [workspaces, setWorkspaces] = useState<{id: string, display_name: string, saved_at: string}[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [listLoading, setListLoading] = useState(false);
-    const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-    const dispatch = useDispatch<AppDispatch>();
-    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
-    const { t } = useTranslation();
-
-    const fetchWsList = useCallback(async () => {
-        setListLoading(true);
-        try {
-            const sessions = await listWorkspaces();
-            setWorkspaces(sessions as any);
-        } catch (e) { /* ignore */ }
-        setListLoading(false);
-    }, []);
-
-    useEffect(() => {
-        if (!open) return;
-        fetchWsList();
-    }, [open, fetchWsList]);
-
-    useEffect(() => {
-        if (!open) return;
-        return onWorkspaceListChanged(fetchWsList);
-    }, [open, fetchWsList]);
-
-    const handleOpen = async (wsId: string) => {
-        if (activeWorkspace?.id === wsId) { onClose(); return; }
-        const wsEntry = workspaces.find(w => w.id === wsId);
-        setLoading(true);
-        onClose();
-        if (await dispatch(openSession(wsId, wsEntry?.display_name))) {
-            const displayName = store.getState().activeWorkspace?.displayName || wsId;
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: t('workspace.openedSession', { name: displayName }) }));
-        }
-        setLoading(false);
-    };
-
-    const handleCreate = () => {
-        onClose();
-        void dispatch(leaveSession());
-    };
-
-    const handleDelete = async (workspaceId: string) => {
-        try {
-            await deleteWorkspace(workspaceId);
-            setWorkspaces(prev => prev.filter(s => s.id !== workspaceId));
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: t('workspace.deletedSession', { name: workspaceId }) }));
-        } catch (e) { /* ignore */ }
-        setConfirmDelete(null);
-    };
-
-    return (
-        <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-            <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                {t('workspace.sessions')}
-                <Tooltip title={t('workspace.refreshList')}>
-                    <IconButton size="small" onClick={fetchWsList} disabled={listLoading} sx={{ color: 'text.secondary' }}>
-                        {listLoading ? <CircularProgress size={18} /> : <RefreshIcon fontSize="small" />}
-                    </IconButton>
-                </Tooltip>
-            </DialogTitle>
-            <DialogContent sx={{ px: 1 }}>
-                {listLoading && workspaces.length === 0 ? (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4, gap: 1.5 }}>
-                        <CircularProgress size={28} />
-                        <Typography variant="body2" color="text.secondary">{t('workspace.loadingSessions')}</Typography>
-                    </Box>
-                ) : (
-                    <>
-                        {/* New session — same row style as session items */}
-                        <Box
-                            sx={{
-                                display: 'flex', alignItems: 'center',
-                                px: 1.5, py: 1, mx: 0, my: 0.5, borderRadius: 1, cursor: 'pointer',
-                                '&:hover': { backgroundColor: 'action.hover' },
-                                transition: 'background-color 0.15s',
-                            }}
-                            onClick={handleCreate}
-                        >
-                            <Typography variant="body2" color="primary" sx={{ fontWeight: 500 }}>
-                                {t('workspace.newSession')}
-                            </Typography>
-                        </Box>
-                        {workspaces.length > 0 && <Divider sx={{ my: 0.5 }} />}
-                        {workspaces.map(s => (
-                        <Box
-                            key={s.id}
-                            sx={{
-                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                px: 1.5, py: 1, mx: 0, my: 0.5, borderRadius: 1, cursor: 'pointer',
-                                backgroundColor: activeWorkspace?.id === s.id ? 'action.selected' : 'transparent',
-                                '&:hover': { backgroundColor: activeWorkspace?.id === s.id ? 'action.selected' : 'action.hover' },
-                                transition: 'background-color 0.15s',
-                            }}
-                            onClick={() => handleOpen(s.id)}
-                        >
-                            <Box sx={{ flex: 1, minWidth: 0 }}>
-                                <Typography variant="body2" fontWeight={activeWorkspace?.id === s.id ? 'bold' : 'normal'} noWrap>
-                                    {s.display_name} {activeWorkspace?.id === s.id ? t('workspace.active') : ''}
-                                </Typography>
-                                {s.saved_at && (
-                                    <Typography variant="caption" color="text.secondary">
-                                        {new Date(s.saved_at).toLocaleString()}
-                                    </Typography>
-                                )}
-                            </Box>
-                            {activeWorkspace?.id !== s.id && (
-                                confirmDelete === s.id ? (
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }} onClick={e => e.stopPropagation()}>
-                                        <Button size="small" color="error" sx={{ minWidth: 0, fontSize: textVar.xs, textTransform: 'none' }}
-                                            onClick={() => handleDelete(s.id)}>{t('workspace.delete')}</Button>
-                                        <Button size="small" sx={{ minWidth: 0, fontSize: textVar.xs, textTransform: 'none' }}
-                                            onClick={() => setConfirmDelete(null)}>{t('workspace.cancel')}</Button>
-                                    </Box>
-                                ) : (
-                                    <Tooltip title={t('workspace.deleteSession')}>
-                                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); setConfirmDelete(s.id); }} sx={{ color: 'text.secondary' }}>
-                                            <ClearIcon fontSize="small" />
-                                        </IconButton>
-                                    </Tooltip>
-                                )
-                            )}
-                        </Box>
-                    ))
-                    }
-                    </>
-                )}
-            </DialogContent>
-            <DialogActions>
-                <Button onClick={onClose}>{t('workspace.close')}</Button>
-            </DialogActions>
-        </Dialog>
-    );
-};
-
-const WorkspaceMenu: React.FC = () => {
-    const [pickerOpen, setPickerOpen] = useState(false);
-    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
-    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
-    const { t } = useTranslation();
-    const diskPersistenceDisabled = false; // all backends support workspace switching
-
-    console.log('Rendering WorkspaceMenu, activeWorkspace:', activeWorkspace, 'serverConfig:', serverConfig); // Debug log for rendering and state
-    console.log(serverConfig); // Debug log for serverConfig
-    console.log(activeWorkspace); // Debug log for activeWorkspace
-
-    if (!activeWorkspace) return null;
-
-    return (
-        <>
-            <Tooltip title={t('workspace.sessionTooltip', { name: activeWorkspace?.id || '' })} placement="bottom">
-                <ButtonBase
-                    disableRipple
-                    onClick={() => !diskPersistenceDisabled && setPickerOpen(true)}
-                    sx={{ 
-                        display: 'flex', alignItems: 'center', gap: 0.5, textAlign: 'left',
-                        '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' },
-                        // Shrinks with a narrow toolbar so long session names truncate instead of overlapping.
-                        minWidth: 0, maxWidth: '100%',
-                        cursor: 'pointer',
-                        px: 1,
-                        py: 0.25,
-                        borderRadius: 1,
-                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.04)' },
-                        '&:hover .ws-chevron': { opacity: 1 },
-                    }}
-                >
-                    <Typography noWrap sx={{ 
-                        fontSize: textVar.lg, 
-                        fontWeight: 500, 
-                        color: 'text.primary',
-                        minWidth: 0,
-                        maxWidth: 280,
-                        letterSpacing: '0.01em',
-                    }}>
-                        {activeWorkspace?.displayName || activeWorkspace?.id}
-                    </Typography>
-                    <KeyboardArrowDownIcon className="ws-chevron" sx={{ fontSize: iconVar.md, color: 'text.secondary', opacity: 0.4, transition: 'opacity 0.15s' }} />
-                </ButtonBase>
-            </Tooltip>
-            <WorkspacePickerDialog open={pickerOpen} onClose={() => setPickerOpen(false)} />
-        </>
-    );
-};
-
-// Exit the current session and return to the front-page (no workspace).
-const useExitSession = () => {
-    const dispatch = useDispatch<AppDispatch>();
-    return useCallback(() => dispatch(leaveSession()), [dispatch]);
-};
-
-/** `/`: the standard app, or the server's default demo (`DF_SITE`), which loads as its own page. */
+/** `/`: the standard app, or the server's default space (`DF_SPACE`), which loads as its own page. */
 const HomePage: React.FC = () => {
-    const defaultDemo = useSelector((state: DataFormulatorState) => state.serverConfig.DEFAULT_DEMO);
-    const redirect = !DEMO_ID && !!defaultDemo;
+    const defaultSpace = useSelector((state: DataFormulatorState) => state.serverConfig.DEFAULT_SPACE);
+    const redirect = !SPACE_ID && !!defaultSpace;
     useEffect(() => {
-        if (redirect) window.location.replace(`/demo/${defaultDemo}${window.location.search}${window.location.hash}`);
-    }, [redirect, defaultDemo]);
+        if (redirect) window.location.replace(`${spacePath(defaultSpace!)}${window.location.search}${window.location.hash}`);
+    }, [redirect, defaultSpace]);
     return redirect ? null : <DataFormulatorFC />;
 };
 
@@ -689,39 +539,13 @@ const useGoHome = (onAppPage: boolean) => {
     }, [dispatch, navigate, onAppPage]);
 };
 
-const ExitSessionButton: React.FC = () => {
-    const { t } = useTranslation();
-    const handleExit = useExitSession();
-
-    return (
-        <Tooltip title={t('workspace.exitSessionTooltip', { defaultValue: 'Exit session and return to the workspace picker' })} placement="bottom">
-            <Button
-                size="small"
-                variant="text"
-                onClick={handleExit}
-                startIcon={<LogoutIcon sx={{ fontSize: iconVar.md }} />}
-                sx={{
-                    textTransform: 'none',
-                    fontSize: textVar.md,
-                    fontWeight: 400,
-                    px: 1.5,
-                    py: 0.5,
-                    minWidth: 'auto',
-                    lineHeight: 1.5,
-                    color: 'text.secondary',
-                    '&:hover': { color: 'text.primary', backgroundColor: 'rgba(0, 0, 0, 0.04)' },
-                }}
-            >
-                {t('workspace.exit', { defaultValue: 'Exit' })}
-            </Button>
-        </Tooltip>
-    );
-};
 
 /**
  * Settings dialog. Renders its own icon-button trigger by default; the
  * compact toolbar hides the trigger and drives `open` from its overflow menu.
  */
+const FLINT_DEFAULT_THEME_VALUE = '__flint_default__';
+
 const ConfigDialog: React.FC<{
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
@@ -748,6 +572,13 @@ const ConfigDialog: React.FC<{
     const [paletteKey, setPaletteKey] = useState(
         (config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey
     );
+    // The look, like the display size, is this browser's preference, not the session's.
+    const savedLook = useLook();
+    const [look, setLook] = useState<Look>(savedLook);
+    const spaceThemeId = useSelector(spaceChartThemeId);
+    const configChartThemeId = resolveDefaultChartTheme(config, spaceThemeId) ?? '';
+    const [defaultChartThemeId, setDefaultChartThemeId] = useState(configChartThemeId);
+    const themeChoices = useThemeChoices();
     // UI size is a per-browser preference: Auto follows the window width, the others pin it.
     const { densityPreference, setDensityPreference } = useLayout();
     const [displaySize, setDisplaySize] = useState<DensityPreference>(densityPreference);
@@ -758,6 +589,8 @@ const ConfigDialog: React.FC<{
                       maxStretchFactor !== config.maxStretchFactor ||
                       frontendRowLimit !== config.frontendRowLimit ||
                       paletteKey !== ((config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey) ||
+                      defaultChartThemeId !== configChartThemeId ||
+                      look !== savedLook ||
                       displaySize !== densityPreference;
 
     return (
@@ -771,7 +604,7 @@ const ConfigDialog: React.FC<{
                     sx={{
                         p: 0.5,
                         color: 'text.secondary',
-                        '&:hover': { color: 'text.primary', backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                        '&:hover': { color: 'text.primary', backgroundColor: ink(0.04) },
                     }}
                 >
                     <SettingsOutlinedIcon fontSize="small" />
@@ -780,7 +613,7 @@ const ConfigDialog: React.FC<{
             )}
             <Dialog onClose={() => setOpen(false)} open={open}>
                 <DialogTitle sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, px: 3, py: 2 }}>
-                    <Typography component="span" sx={{ fontSize: textVar.xl, fontWeight: 600, flex: 1 }}>
+                    <Typography component="span" sx={{ fontSize: textVar.xl, fontWeight: weight(600), flex: 1 }}>
                         {t('app.settings')}
                     </Typography>
                 </DialogTitle>
@@ -816,8 +649,8 @@ const ConfigDialog: React.FC<{
                                     return (
                                         <MenuItem key={key} value={key} sx={{ py: 0.5 }}>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 1.5 }}>
-                                                <Box sx={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: p.primary.main, border: '1px solid rgba(0,0,0,0.1)' }} />
-                                                <Box sx={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: p.custom.main, border: '1px solid rgba(0,0,0,0.1)' }} />
+                                                <Box sx={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: p.primary.main, border: `1px solid ${ink(0.1)}` }} />
+                                                <Box sx={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: p.custom.main, border: `1px solid ${ink(0.1)}` }} />
                                             </Box>
                                             <ListItemText primary={p.name} slotProps={{ primary: { sx: { fontSize: textVar.md } } }} />
                                         </MenuItem>
@@ -825,6 +658,44 @@ const ConfigDialog: React.FC<{
                                 })}
                             </Select>
                         </FormControl>
+                        <FormControl fullWidth size="small">
+                            <InputLabel id="chart-theme-select-label" sx={{ fontSize: textVar.md }}>{t('config.defaultChartTheme')}</InputLabel>
+                            <Select
+                                labelId="chart-theme-select-label"
+                                value={defaultChartThemeId || FLINT_DEFAULT_THEME_VALUE}
+                                label={t('config.defaultChartTheme')}
+                                onChange={(e) => setDefaultChartThemeId(e.target.value === FLINT_DEFAULT_THEME_VALUE ? '' : e.target.value)}
+                                sx={{ fontSize: textVar.md }}
+                                MenuProps={{ slotProps: { paper: { sx: { maxHeight: 320 } } } }}
+                            >
+                                {themeChoices.map(choice => (
+                                    <MenuItem key={choice.id ?? FLINT_DEFAULT_THEME_VALUE} value={choice.id ?? FLINT_DEFAULT_THEME_VALUE}
+                                        title={choice.description} sx={{ py: 0.5 }}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Box component="img" src={themeIconUrl(choice.icon)} alt="" sx={{ width: 14, height: 14, display: 'block' }} />
+                                            <Typography sx={{ fontSize: textVar.md }}>{choice.label}</Typography>
+                                        </Box>
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                                {t('config.defaultChartThemeHint')}
+                            </Typography>
+                        </FormControl>
+                        <Box>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography id="contrast-label" sx={{ flex: 1, fontSize: textVar.md }}>{t('config.contrast')}</Typography>
+                                <ToggleButtonGroup size="small" exclusive value={look} aria-labelledby="contrast-label"
+                                    onChange={(_, value: Look | null) => value && setLook(value)}
+                                    sx={{ '& .MuiToggleButton-root': { py: 0.25, px: 1.25, fontSize: textVar.sm, textTransform: 'none' } }}>
+                                    {LOOK_NAMES.map(name => <ToggleButton key={name} value={name}>
+                                        {t(`config.contrast${name[0].toUpperCase()}${name.slice(1)}`)}</ToggleButton>)}
+                                </ToggleButtonGroup>
+                            </Box>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                                {t('config.contrastHint')}
+                            </Typography>
+                        </Box>
                         <FormControl fullWidth size="small">
                             <InputLabel id="display-size-label" sx={{ fontSize: textVar.md }}>{t('config.displaySize')}</InputLabel>
                             <Select
@@ -996,6 +867,8 @@ const ConfigDialog: React.FC<{
                         setMaxStretchFactor(2.0);
                         setFrontendRowLimit(rowLimitDefault);
                         setPaletteKey(defaultPaletteKey);
+                        setLook(DEFAULT_LOOK);
+                        setDefaultChartThemeId(spaceThemeId ?? DEFAULT_CHART_THEME_ID);
                         setDisplaySize('auto');
                     }}>{t('session.resetToDefault')}</Button>
                     <Button onClick={() => setOpen(false)}>{t('app.cancel')}</Button>
@@ -1007,7 +880,8 @@ const ConfigDialog: React.FC<{
                             || isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5
                             || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > rowLimitMax}
                         onClick={() => {
-                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey}));
+                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey, defaultChartThemeId}));
+                            saveLook(look);
                             setDensityPreference(displaySize);
                             setOpen(false);
                         }}
@@ -1032,7 +906,7 @@ const ErrorBoundaryFallback: React.FC = () => {
     const stack = typeof routeError?.stack === 'string' ? routeError.stack : '';
     const mutedActionSx = {
         minWidth: 0, px: 0.5,
-        color: 'text.disabled', fontSize: '0.7rem', fontWeight: 400,
+        color: 'text.disabled', fontSize: '0.7rem', fontWeight: weight(400),
         textTransform: 'none',
         '&:hover': { color: 'text.secondary', backgroundColor: 'transparent' },
     } as const;
@@ -1070,7 +944,7 @@ const ErrorBoundaryFallback: React.FC = () => {
                             onClick={() => setLogsOpen(true)}
                             sx={mutedActionSx}
                         >
-                            View backend log
+                            Open console
                         </Button>
                     )}
                 </Box>
@@ -1129,6 +1003,8 @@ const AppShell: FC = () => {
     useSessionTabs();
     // Auto-persist session state to the active workspace (debounced)
     useAutoSave();
+    // Flag session tables whose data the workspace does not hold
+    useWorkspaceConsistency();
     // Auto-name workspace after first table + model are available
     useWorkspaceAutoName();
     const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
@@ -1151,9 +1027,12 @@ const AppShell: FC = () => {
     const isCompactToolbar = useIsNarrow(toolbarRef, COMPACT_TOOLBAR_WIDTH);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [logsOpen, setLogsOpen] = useState(false);
-    const exitSession = useExitSession();
     const goHome = useGoHome(isAppPage);
     const destinations = useAppDestinations();
+    const shareItems = useSessionShareItems();
+    const pathRef = useRef<HTMLDivElement | null>(null);
+    const actionsRef = useRef<HTMLDivElement | null>(null);
+    const spellOut = usePathSpelledOut(toolbarRef, pathRef, actionsRef, !!SPACE_ID && !isCompactToolbar);
     const inSession = isAppPage && inWorkspaceSession;
     const shellScrollRef = useRef<HTMLDivElement | null>(null);
     const { moreAbove, moreBelow, moreLeft, moreRight, update: updateShellFade } = useScrollFade(shellScrollRef, location.pathname);
@@ -1165,7 +1044,7 @@ const AppShell: FC = () => {
         <Box sx={{ position: 'absolute', inset: 0 }}>
         <Box ref={shellScrollRef} onScroll={updateShellFade} sx={{
             position: 'absolute',
-            backgroundColor: 'rgba(255, 255, 255, 0.3)',
+            backgroundColor: paper(0.3),
             top: 0,
             left: 0,
             right: 0,
@@ -1195,12 +1074,12 @@ const AppShell: FC = () => {
                         // A click that moves a pixel would otherwise drag the link or logo, or select the name, and not click.
                         userSelect: 'none',
                     }} onDragStart={(event) => event.preventDefault()}>
+                        {/* The path's first part. In a space it is Data Formulator, the standard app (its own page); in the
+                            standard app, its front page. */}
                         <Box
-                            component={RouterLink}
-                            to={APP_PATH}
-                            onClick={goHome}
-                            aria-label={t('appBar.home', { defaultValue: 'Home' })}
-                            title={t('appBar.home', { defaultValue: 'Home' })}
+                            {...(SPACE_ID ? { component: 'a', href: '/app' } : { component: RouterLink, to: APP_PATH, onClick: goHome })}
+                            aria-label={SPACE_ID ? 'Data Formulator' : t('appBar.home', { defaultValue: 'Home' })}
+                            title={SPACE_ID ? 'Data Formulator' : t('appBar.home', { defaultValue: 'Home' })}
                             sx={{ width: 40, minWidth: 40, height: 36, display: 'flex', justifyContent: 'center', alignItems: 'center' }}
                         >
                             <Box component="img" sx={{ height: 20, display: 'block', transform: 'translateY(-2px)' }} alt="" src={dfLogo} />
@@ -1210,22 +1089,22 @@ const AppShell: FC = () => {
                                 <PageNavMenu isAdministrationPage={isAdministrationPage} appName={appName}
                                     destinations={destinations} onGoHome={goHome} />
                             ) : destinations.length > 0 ? (
-                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} compact />
+                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} compact last={!inSession} logo={serverConfig.SPACE?.logo} />
                             ) : (
                                 <Button component={RouterLink} to={APP_PATH} onClick={goHome} color="inherit"
-                                    sx={{ textTransform: 'none', minWidth: 0, px: 0.75, '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' } }}>
+                                    sx={{ textTransform: 'none', minWidth: 0, px: 0.75, '&:hover': { backgroundColor: ink(0.04) } }}>
                                     <Typography noWrap component="h1" title={appName}
-                                        sx={{ maxWidth: { xs: 160, sm: 320 }, fontSize: textVar.xl, fontWeight: 400, lineHeight: 1.2, letterSpacing: 0 }}>
+                                        sx={{ maxWidth: { xs: 160, sm: 320 }, fontSize: textVar.xl, fontWeight: weight(400), lineHeight: 1.2, letterSpacing: 0 }}>
                                         {appName}
                                     </Typography>
                                 </Button>
                             )
                         ) : (
                         // Brand and page links share a text baseline, whatever the font's metrics.
-                        <Box sx={{ display: 'flex', alignItems: 'baseline', minWidth: 0 }}>
+                        <Box ref={pathRef} sx={{ display: 'flex', alignItems: 'baseline', minWidth: 0 }}>
                         {destinations.length > 0 ? (
                             <Box sx={{ display: { xs: 'none', sm: 'block' }, minWidth: 0 }}>
-                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} />
+                                <AppSwitcher appName={appName} destinations={destinations} onGoHome={goHome} last={!inSession} logo={serverConfig.SPACE?.logo} spellOut={spellOut} />
                             </Box>
                         ) : (
                         <Button component={RouterLink} to={APP_PATH} onClick={goHome} sx={{
@@ -1240,12 +1119,18 @@ const AppShell: FC = () => {
                             }
                         }} color="inherit">
                             <Box sx={{ minWidth: 0, maxWidth: 360, textAlign: 'left', display: { xs: 'none', sm: 'block' } }}>
-                                <Typography noWrap component="h1" title={appName} sx={{ fontWeight: 400, lineHeight: 1.2, letterSpacing: 0 }}>
+                                <Typography noWrap component="h1" title={appName} sx={{ fontWeight: weight(400), lineHeight: 1.2, letterSpacing: 0 }}>
                                     {appName}
                                 </Typography>
                             </Box>
                         </Button>
                         )}
+                        {/* The open session ends the path: "Data Formulator / <space> / <session>"; its ⌄ switches
+                            sessions (the only ⌄ in the path is its last part's). */}
+                        {inSession && <Box sx={{ display: 'flex', alignItems: 'center', alignSelf: 'center', minWidth: 0 }}>
+                            <PathSlash />
+                            <SessionMenu />
+                        </Box>}
                         {canAdminister && (
                             <Box
                                 sx={{
@@ -1261,19 +1146,12 @@ const AppShell: FC = () => {
                         )}
                         </Box>
                         )}
-                        {/* Workspace name — session indicator/switcher. Centered
-                            absolutely when there is room, otherwise it flows
-                            between the nav menu and the trailing actions. */}
-                        {inSession && (
-                            isCompactToolbar ? (
-                                <Box sx={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', mx: 1 }}>
-                                    <WorkspaceMenu />
-                                </Box>
-                            ) : (
-                                <Box sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center' }}>
-                                    <WorkspaceMenu />
-                                </Box>
-                            )
+                        {/* A narrow toolbar keeps only the current level's name before it; the session follows. */}
+                        {inSession && isCompactToolbar && (
+                            <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center' }}>
+                                <PathSlash compact />
+                                <SessionMenu />
+                            </Box>
                         )}
                         {isAppPage && isCompactToolbar && (
                             <Box sx={{ display: 'flex', ml: 'auto', alignItems: 'center', gap: 0.5 }}>
@@ -1292,7 +1170,7 @@ const AppShell: FC = () => {
                                         },
                                         ...(serverConfig.IS_LOCAL_MODE ? [{
                                             key: 'logs',
-                                            label: t('logs.viewLogs', { defaultValue: 'View backend log' }),
+                                            label: t('logs.viewLogs', { defaultValue: 'Open console' }),
                                             icon: <TerminalOutlinedIcon fontSize="small" />,
                                             onClick: () => setLogsOpen(true),
                                         }] : []),
@@ -1302,18 +1180,13 @@ const AppShell: FC = () => {
                                             icon: <GitHubIcon fontSize="small" />,
                                             href: EXTERNAL_LINKS.github,
                                         },
-                                        ...(inSession ? [{
-                                            key: 'exit',
-                                            label: t('workspace.exit', { defaultValue: 'Exit' }),
-                                            icon: <LogoutIcon fontSize="small" />,
-                                            onClick: () => { exitSession(); },
-                                        }] : []),
+                                        ...(inSession ? shareItems : []),
                                     ]}
                                 />
                             </Box>
                         )}
                         {isAppPage && !isCompactToolbar && (
-                            <Box sx={{ display: 'flex', ml: 'auto', alignItems: 'center', gap: 0.75 }}>
+                            <Box ref={actionsRef} sx={{ display: 'flex', ml: 'auto', alignItems: 'center', gap: 0.75 }}>
                                 <ModelSelectionButton />
                                 <Divider orientation="vertical" variant="middle" flexItem sx={{ my: 1 }} />
                                 <LanguageSwitcher />
@@ -1331,19 +1204,14 @@ const AppShell: FC = () => {
                                             sx={{
                                                 p: 0.5,
                                                 color: 'text.secondary',
-                                                '&:hover': { color: 'text.primary', backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                                                '&:hover': { color: 'text.primary', backgroundColor: ink(0.04) },
                                             }}
                                         >
                                             <GitHubIcon fontSize="small" />
                                         </IconButton>
                                     </Tooltip>
+                                    {inSession && <SessionShareButton />}
                                 </Box>
-                                {inSession && (
-                                    <>
-                                        <Divider orientation="vertical" variant="middle" flexItem sx={{ my: 1 }} />
-                                        <ExitSessionButton />
-                                    </>
-                                )}
                             </Box>
                         )}
                         <AuthButton />
@@ -1353,6 +1221,7 @@ const AppShell: FC = () => {
                     <Outlet />
                 </Box>
                 <MessageSnackbar />
+                <SessionWormhole />
                 <ChartRenderService />
             </Box>
         </Box>
@@ -1367,6 +1236,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     const { t, i18n } = useTranslation();
     const rawPaletteKey = useSelector((state: DataFormulatorState) => state.config.paletteKey);
     const activePaletteKey = (rawPaletteKey && palettes[rawPaletteKey]) ? rawPaletteKey : defaultPaletteKey;
+    const look = useLook();
 
     const [configLoaded, setConfigLoaded] = useState(false);
     const [startupLogsOpen, setStartupLogsOpen] = useState(false);
@@ -1389,6 +1259,10 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 setConfigLoaded(true);
             });
     }, []);
+
+    // A space's own chart theme is used by id like a saved theme.
+    const spaceTheme = useSelector((state: DataFormulatorState) => state.serverConfig.SPACE?.chart_theme);
+    useEffect(() => { setSpaceTheme(spaceTheme as SavedTheme | undefined); }, [spaceTheme]);
 
     // Validate persisted workspace still exists on the backend
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
@@ -1523,12 +1397,37 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         dispatch(fetchGlobalModelList());
     }, []);
 
-    let theme = createDfTheme(activePaletteKey);
+    useLayoutEffect(() => {
+        applyLookVariables(document.documentElement.style, look);
+        setChartInk(LOOKS[look].chartInk);
+    }, [look]);
+
+    let theme = createDfTheme(activePaletteKey, look);
 
     const router = useMemo(() => createBrowserRouter([
         {
             path: "/auth/callback",
             element: <OidcCallback />,
+        },
+        {
+            path: "/dev",
+            lazy: () => import('../views/DevPage').then(module => ({ Component: module.default })),
+        },
+        {
+            path: "/dev/maps",
+            lazy: () => import('../maps/MapGallery').then(module => ({ Component: module.default })),
+        },
+        {
+            path: "/dev/samples",
+            lazy: () => import('../views/DevSamplesPage').then(module => ({ Component: module.default })),
+        },
+        {
+            path: "/dev/design",
+            lazy: () => import('../views/DevDesignPage').then(module => ({ Component: module.default })),
+        },
+        {
+            path: "/dev/look",
+            lazy: () => import('../components/look/LookGallery').then(module => ({ Component: module.default })),
         },
         {
             path: "/",
@@ -1563,7 +1462,9 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     return (
         <ThemeProvider theme={theme}>
             {/* Plain elements (buttons, links, spans outside Typography) take the theme font, not the browser serif. */}
-            <GlobalStyles styles={theme => ({ 'html, body': { fontFamily: theme.typography.fontFamily } })} />
+            <GlobalStyles styles={theme => ({ 'html, body': { fontFamily: theme.typography.fontFamily, fontWeight: weight(400),
+                // A dark palette paints the page and asks the browser for dark controls and scrollbars.
+                ...(theme.palette.mode === 'dark' ? { backgroundColor: theme.palette.background.default, color: theme.palette.text.primary, colorScheme: 'dark' } : {}) } })} />
             <LayoutProvider>
                 {configLoaded && authChecked ? (
                     <RouterProvider router={router} />
@@ -1580,12 +1481,12 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                                     sx={{
                                         color: 'text.disabled',
                                         fontSize: '0.7rem',
-                                        fontWeight: 400,
+                                        fontWeight: weight(400),
                                         fontFamily: 'inherit',
                                         '&:hover': { color: 'text.secondary' },
                                     }}
                                 >
-                                    View backend log
+                                    Open console
                                 </Link>
                             ) : undefined}
                         />

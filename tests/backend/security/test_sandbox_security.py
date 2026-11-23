@@ -89,6 +89,59 @@ class TestLocalSandboxAuditRegressions:
         with open(target) as stream:
             assert stream.read() == "unchanged"
 
+    def test_code_writes_and_rewrites_its_scratch_folder(self, run_code, workspace):
+        """scratch/ is the one folder code writes to (design-docs/73)."""
+        os.makedirs(os.path.join(workspace._path, "scratch"), exist_ok=True)
+        result = run_code(
+            "import os, json, pandas as pd\n"
+            "pd.DataFrame({'a': [1, 2]}).to_csv('scratch/x.csv', index=False)\n"
+            "os.makedirs('scratch/sub', exist_ok=True)\n"
+            "json.dump({'k': 1}, open('scratch/sub/y.json', 'w'))\n"
+            "os.replace('scratch/x.csv', 'scratch/sub/x.csv')\n"
+            "os.remove('scratch/sub/y.json')\n"
+            "out = pd.read_csv('scratch/sub/x.csv')['a'].tolist()")
+        assert result["status"] == "ok", result
+        assert result["allowed_objects"]["out"] == [1, 2]
+
+    @pytest.mark.parametrize("code", [
+        "open('notes.txt', 'w').write('x')",                       # workspace root
+        "os.makedirs('files', exist_ok=True); open('files/x.md', 'w').write('x')",
+        "open('scratch/../escape.txt', 'w').write('x')",
+        "open('/tmp/df-escape.txt', 'w').write('x')",
+        "open(SIBLING + '/scratch/x.txt', 'w').write('x')",         # another workspace's scratch
+        "open('scratch/link/x.txt', 'w').write('x')",               # a symlink out of scratch
+        "os.replace('scratch/keep.txt', 'moved.txt')",
+        "os.remove('canary.txt')",
+    ])
+    def test_writes_outside_scratch_are_denied(self, run_code, workspace, tmp_path, code):
+        sibling = tmp_path.parent / (tmp_path.name + "-sibling")
+        (sibling / "scratch").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "scratch").mkdir(exist_ok=True)
+        (tmp_path / "scratch" / "keep.txt").write_text("keep")
+        (tmp_path / "canary.txt").write_text("keep")
+        if not (tmp_path / "scratch" / "link").exists():
+            (tmp_path / "scratch" / "link").symlink_to(sibling, target_is_directory=True)
+        result = run_code(f"import os\nSIBLING = {str(sibling)!r}\n{code}")
+        assert result["status"] == "error", result
+        assert "forbidden" in result["error_message"]
+        assert (tmp_path / "scratch" / "keep.txt").read_text() == "keep"
+        assert (tmp_path / "canary.txt").read_text() == "keep"
+        assert not list((sibling / "scratch").iterdir()) and not os.path.exists("/tmp/df-escape.txt")
+        assert not (tmp_path / "notes.txt").exists() and not (tmp_path / "moved.txt").exists()
+
+    def test_write_denial_says_where_code_can_write(self, run_code, workspace):
+        result = run_code("open('notes.txt', 'w').write('x')")
+        assert "scratch/" in result["error_message"]
+
+    def test_temp_files_and_time_zones_work(self, run_code):
+        result = run_code(
+            "import tempfile, pandas as pd\n"
+            "with tempfile.NamedTemporaryFile('w', suffix='.txt') as f:\n"
+            "    f.write('x')\n"
+            "out = str(pd.Timestamp('2026-01-01 12:00', tz='America/New_York').tz_convert('UTC'))")
+        assert result["status"] == "ok", result
+        assert result["allowed_objects"]["out"] == "2026-01-01 17:00:00+00:00"
+
     @pytest.mark.parametrize("path_kind", [
         "absolute", "bytes", "relative",
         pytest.param("symlink", marks=pytest.mark.skipif(
@@ -254,6 +307,41 @@ finally:
         assert "OSError" in result["error_message"]
         assert "forbidden" in result["error_message"]
 
+    @pytest.mark.parametrize("operation", [
+        "os.remove(a)", "os.unlink(a)", "os.rename(a, b)", "os.replace(a, b)",
+        "os.symlink(a, b)", "os.link(a, b)", "os.truncate(a, 0)", "os.chmod(a, 0o777)",
+        "os.rmdir(d)",
+    ])
+    def test_destructive_filesystem_operations_denied(self, run_code, workspace, operation):
+        target = os.path.join(workspace._path, "keep.txt")
+        folder = os.path.join(workspace._path, "keep-dir")
+        os.makedirs(folder, exist_ok=True)
+        with open(target, "w") as stream:
+            stream.write("unchanged")
+        other = os.path.join(workspace._path, "other.txt")
+        before = sorted(os.listdir(workspace._path))
+        result = run_code(f"import os\na, b, d = {target!r}, {other!r}, {folder!r}\n{operation}")
+        assert result["status"] == "error", result
+        assert "forbidden" in result["error_message"]
+        assert sorted(os.listdir(workspace._path)) == before
+        with open(target) as stream:
+            assert stream.read() == "unchanged"
+
+    def test_windows_process_creation_event_denied(self, run_code):
+        result = run_code("import sys\nsys.audit('_winapi.CreateProcess')")
+        assert result["status"] == "error", result
+        assert "forbidden" in result["error_message"]
+
+    def test_ambient_cloud_identity_is_not_inherited(self, run_code, monkeypatch):
+        leaked = {"IDENTITY_HEADER": "h", "IDENTITY_ENDPOINT": "http://127.0.0.1:1/msi/token",
+                  "MSI_ENDPOINT": "m", "MSI_SECRET": "s", "AZURE_CLIENT_ID": "c",
+                  "AWS_ACCESS_KEY_ID": "a", "GOOGLE_CLOUD_PROJECT": "g"}
+        for key, value in leaked.items():
+            monkeypatch.setenv(key, value)
+        result = run_code(f"import os\nout = sorted(k for k in {sorted(leaked)!r} if k in os.environ)")
+        assert result["status"] == "ok", result
+        assert result["allowed_objects"]["out"] == []
+
 
 # ===================================================================
 # LocalSandbox — file-write restrictions
@@ -393,8 +481,27 @@ class TestDockerSandboxConfinement:
         result = sandbox.run_python_code(code + "import pandas as pd\noutput_df = pd.DataFrame()\n", workspace, "output_df")
         assert result["status"] == "error"
 
+    def test_scratch_is_the_writable_workspace_folder(self, sandbox, workspace):
+        os.makedirs(os.path.join(workspace._path, "scratch"), exist_ok=True)
+        code = ("import pandas as pd\npd.DataFrame({'v': [1]}).to_csv('scratch/x.csv', index=False)\n"
+                "output_df = pd.read_csv('scratch/x.csv')\n")
+        result = sandbox.run_python_code(code, workspace, "output_df")
+        assert result["status"] == "ok", result
+        assert os.path.isfile(os.path.join(workspace._path, "scratch", "x.csv"))
+        denied = sandbox.run_python_code("import pandas as pd\nopen('evil.txt', 'w')\noutput_df = pd.DataFrame()\n",
+                                         workspace, "output_df")
+        assert denied["status"] == "error"
+        assert not os.path.exists(os.path.join(workspace._path, "evil.txt"))
+
     def test_tmp_is_writable_but_private(self, sandbox, workspace):
         code = "import pandas as pd\nopen('/tmp/x', 'w').write('ok')\noutput_df = pd.DataFrame({'v': [open('/tmp/x').read()]})\n"
         result = sandbox.run_python_code(code, workspace, "output_df")
         assert result["status"] == "ok", result
         assert result["content"]["v"].tolist() == ["ok"]
+
+
+def test_docker_mounts_only_scratch_writable(tmp_path):
+    (tmp_path / "scratch").mkdir()
+    command = " ".join(docker_run_command("img", str(tmp_path), "/out", "/run.py"))
+    assert f"{tmp_path}:/sandbox/workdir:ro" in command
+    assert f"{tmp_path / 'scratch'}:/sandbox/workdir/scratch:rw" in command

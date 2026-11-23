@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "title": "What governments spend on heritage",
+  "subtitle": "Government spending on cultural and natural heritage per person, constant 2017 purchasing-power dollars; latest figure, 2020–2024",
+  "source": "UIS, February 2026 release; indicator HEXPCSTPPPCAP.HER.PU",
+  "template": "choropleth",
+  "data": {
+    "table": "public_heritage_spending"
+  },
+  "encoding": {
+    "region": "country_id",
+    "color": "per_person",
+    "tooltip": [
+      "country",
+      "per_person",
+      "latest_year"
+    ]
+  },
+  "properties": {
+    "geography": "world",
+    "keyType": "iso3"
+  },
+  "fields": {
+    "country_id": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+    },
+    "country": {
+      "semanticType": "Country",
+      "displayName": "Country"
+    },
+    "latest_year": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+    },
+    "per_person": {
+      "semanticType": "Price",
+      "unit": "PPP$ per person",
+      "displayName": "Public heritage spending per person"
+    }
+  },
+  "view": {
+    "style": "light"
+  }
+}

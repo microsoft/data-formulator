@@ -29,8 +29,10 @@ _ACTION_MOVES = {
 }
 _INTERACT_MOVES = {"connector": "connect", "schedule": "schedule", "sessions": "session", "workflow": "workflow",
                    "data_operation": "load", "terminal": "terminal", "question": "ask"}
-SEARCH_TOOLS = {"find_data", "summarize_data_sources", "list_data", "describe_data", "probe_data",
-                "list_connectors"}
+# Catalog discovery: search covers sources/ by default and list_files browses it (design-docs/66);
+# the older discovery tools stay so earlier runs grade the same.
+SEARCH_TOOLS = {"search", "list_files", "find_data", "summarize_data_sources", "list_data", "describe_data",
+                "probe_data", "list_connectors"}
 
 
 def _detail(step: Step) -> str:
@@ -47,9 +49,12 @@ def move_of(step: Step | None) -> str:
     name = step.name
     if name.startswith("interact:"):
         return _INTERACT_MOVES.get(name.split(":", 1)[1], "ask")
+    detail = _detail(step)
+    # A workflow's schedule is part of its definition (design-docs/78); propose_schedule is kept for earlier runs.
+    if name == "propose_workflow" and '"schedule"' in detail:
+        return "schedule"
     if name in _ACTION_MOVES:
         return _ACTION_MOVES[name]
-    detail = _detail(step)
     if name in ("create_data", "update_data"):
         return "data"
     if name in ("create_file", "edit_file"):

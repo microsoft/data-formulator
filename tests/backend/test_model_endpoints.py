@@ -9,6 +9,7 @@ import pytest
 from flask import Flask
 
 from data_formulator.error_handler import register_error_handlers
+from data_formulator.auth import github_device_flow
 from data_formulator.routes import model_endpoints
 
 
@@ -30,6 +31,9 @@ def connection_api(monkeypatch, tmp_path):
     monkeypatch.setattr(model_endpoints, "get_identity_id", lambda: identity[0])
     monkeypatch.setattr(model_endpoints, "is_local_mode", lambda: True)
     monkeypatch.setattr(model_endpoints, "get_data_formulator_home", lambda: tmp_path)
+    # The vault and lock the GitHub sign-in flow shares with other connections.
+    monkeypatch.setattr(github_device_flow, "get_credential_vault", lambda: vault)
+    monkeypatch.setattr(github_device_flow, "get_data_formulator_home", lambda: tmp_path)
     return app.test_client(), identity, stored
 
 
@@ -60,7 +64,7 @@ def test_copilot_managed_endpoint_works_with_custom_url_allowlist(connection_api
     client_constructor.reset_mock()
     with pytest.raises(model_endpoints.AppError, match="Invalid model connection configuration"):
         get_client({**config, "api_base": "https://api.openai.com/v1"})
-    with pytest.raises(model_endpoints.AppError, match="allowlist"):
+    with pytest.raises(model_endpoints.AppError, match="metadata"):
         get_client({**config, "api_base": "http://169.254.169.254/latest/meta-data/"})
     stored[(identity[0], model_endpoints._COPILOT_CONNECTION_KEY)]["api_base"] = "https://api.githubcopilot.com.attacker.invalid"
     with pytest.raises(model_endpoints.AppError, match="Invalid GitHub Copilot API host"):

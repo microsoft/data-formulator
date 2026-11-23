@@ -15,6 +15,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from data_formulator.analyst import names as item_names
+
 logger = logging.getLogger(__name__)
 
 MAX_TARGETS = 50
@@ -36,6 +38,11 @@ def _names(item: dict[str, Any]) -> set[str]:
 
 
 def _resolve(target: str, inventory: dict[str, list[dict[str, Any]]]) -> tuple[str, dict[str, Any]] | None:
+    # A session name (session://charts/<id>, or its older session/charts/<id>.json) names the item by its id.
+    if item_names.is_session(target):
+        folder = item_names.folder_of(target)
+        if folder in ("tables", "charts", "references"):
+            target = item_names.leaf_of(target, folder) or target
     # Ids win over display names, which can repeat.
     for exact in (True, False):
         for kind in ("tables", "charts", "references"):
@@ -63,14 +70,14 @@ def _apps(ctx: Any) -> list[tuple[str, set[str], set[str]]]:
         return []
     apps = []
     try:
-        from data_formulator.analyst.skills.html_app.skill import read_html_manifest, read_react_manifest
+        from data_formulator.analyst.skills.html_app.skill import APP_FILE_SUFFIXES, read_app_manifest
         for item in workspace.list_workspace_files():
             lower = item.name.lower()
-            if not (lower.endswith(".app.jsx") or lower.endswith(".html")):
+            if not lower.endswith(APP_FILE_SUFFIXES):
                 continue
             _, content = workspace.read_workspace_file(item.name)
             text = content.decode("utf-8", errors="replace")
-            manifest = read_react_manifest(text) if lower.endswith(".app.jsx") else read_html_manifest(text)
+            manifest = read_app_manifest(item.name, text)
             if manifest:
                 apps.append((f"files/{item.name}", {str(name) for name in manifest.get("tables") or []},
                              {str(source) for source in manifest.get("sources") or []}))
@@ -162,13 +169,19 @@ def plan_deletion(targets: Any, ctx: Any) -> dict[str, list[dict[str, Any]]]:
     blockers = []
     def kept(ids: list[str]) -> list[str]:
         return [tables[i].get("name") or i if i in tables else i for i in ids if i not in deleted_tables]
+    table_reason = {node_id: why for node_id, why in deleted_tables.items() if why}
     for node_id in deleted_tables:
         table = tables[node_id]
         label = table.get("name") or node_id
         for name in kept(table.get("computed_into") or []):
             blockers.append(f"the table {name} was computed from {label}")
+        made_from = table.get("reports_made_from") or []
+        for report in made_from:
+            blockers.append(f"the report {report} was made from {label} and would be deleted with it"
+                            + (f"; {label} goes because nothing would be left built on it" if table_reason.get(node_id) else ""))
         for report in table.get("reports") or []:
-            blockers.append(f"the report {report} uses {label}")
+            if report not in made_from:
+                blockers.append(f"the report {report} uses {label}")
     for chart_id in deleted_charts:
         for report in charts[chart_id].get("reports") or []:
             blockers.append(f"the report {report} shows the chart {charts[chart_id].get('name') or chart_id}")
@@ -188,7 +201,9 @@ def plan_deletion(targets: Any, ctx: Any) -> dict[str, list[dict[str, Any]]]:
     if blockers:
         raise ValueError("Nothing was deleted: " + "; ".join(dict.fromkeys(blockers)) + ". Deleting it would break "
                          "what depends on it. Tables computed from an item can be deleted with it if the user wants "
-                         "them gone too; reports and apps must be changed or removed by the user first.")
+                         "them gone too. A report that shows a chart or table can be edited first (edit_file) to drop "
+                         "it, when the user wants that; a report made from a table goes with that table, so only the user "
+                         "can remove it (or keep the item). Apps are changed by rewriting them.")
 
     def table_entry(node_id: str) -> dict[str, Any]:
         table = tables[node_id]

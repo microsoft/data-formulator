@@ -9,21 +9,49 @@
  * from the title.
  */
 
-import React, { createContext, useContext } from 'react';
+import React, { createContext, useCallback, useContext, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Box, ButtonBase, IconButton, TextField, Tooltip, TooltipProps, Typography } from '@mui/material';
+import { alpha, Box, ButtonBase, IconButton, TextField, Tooltip, TooltipProps, Typography, type Theme } from '@mui/material';
+import StarRoundedIcon from '@mui/icons-material/StarRounded';
+import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded';
 import { iconVar, textVar } from '../app/layout';
-import { sidebarRowActionSx, sidebarRowDangerActionSx, sidebarRowMetaSx, sidebarRowSx, sidebarRowTitleSx } from '../app/tokens';
+import { sidebarRowActionSx, sidebarRowDangerActionSx, sidebarRowMetaSx, sidebarRowSx, sidebarRowTitleSx, ambientShadow, hoverLift, borderColor, ink, weight } from '../app/tokens';
+import { lineColor } from '../app/look';
+
 
 // Transform and shadow only, so hovering never reflows neighbouring cards.
 export const cardHoverSx = {
     transition: 'box-shadow 90ms ease, transform 90ms ease, border-color 90ms ease',
-    '&:hover': { borderColor: 'rgba(0, 0, 0, 0.18)', boxShadow: '0 2px 8px rgba(32, 33, 36, 0.08)', transform: 'translateY(-1px)' },
+    '&:hover': { borderColor: borderColor.view, boxShadow: ambientShadow('0 2px 8px rgba(32, 33, 36, 0.08)'), transform: hoverLift(1) },
     '@media (prefers-reduced-motion: reduce)': { transition: 'none', '&:hover': { transform: 'none' } },
 } as const;
 
+/** The landing page's example cards (sessions and workflows): a raised surface that lifts onto the accent border. */
+export const exampleCardSx = (disabled = false) => ({
+    position: 'relative', display: 'flex', minWidth: 0,
+    border: '1px solid', borderColor: (theme: Theme) => lineColor(theme, 0.18), borderRadius: 1,
+    bgcolor: 'background.paper',
+    boxShadow: ambientShadow('0 1px 3px rgba(32, 33, 36, 0.06)'),
+    transition: 'box-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1), border-color 150ms ease',
+    ...(disabled ? {} : { '&:hover': { transform: hoverLift(2), borderColor: 'primary.light', boxShadow: ambientShadow('0 4px 12px rgba(32, 33, 36, 0.12)') } }),
+    '@media (prefers-reduced-motion: reduce)': { '&:hover': { transform: 'none' } },
+} as const);
+
+/** The example card's whole-card button. */
+export const exampleCardButtonSx = {
+    display: 'flex', alignItems: 'stretch', flex: 1, width: '100%', minWidth: 0, textAlign: 'left', borderRadius: 'inherit',
+    '&.Mui-disabled': { opacity: 0.6 }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' },
+} as const;
+
+export const exampleCardTitleSx = { minWidth: 0, fontSize: textVar.md, fontWeight: weight(400), lineHeight: 1.4, color: 'text.primary', overflowWrap: 'anywhere' } as const;
+
+export const exampleCardDescriptionSx = {
+    mt: 0.25, fontSize: textVar.xs, lineHeight: 1.5, color: 'text.secondary', overflowWrap: 'anywhere',
+    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+} as const;
+
 /** Filled background shared by run chips and metadata chips. */
-export const mutedChipBg = 'rgba(0, 0, 0, 0.045)';
+export const mutedChipBg = ink(0.045);
 
 /** An inert metadata chip: optional icon plus short text. */
 export const MetaChip: React.FC<{ icon?: React.ReactNode; children: React.ReactNode; label?: string }> = ({ icon, children, label }) =>
@@ -58,7 +86,7 @@ export const MetadataTooltip: React.FC<{ title: React.ReactNode; children: React
 export const MetadataCard: React.FC<{ title: React.ReactNode; summary?: React.ReactNode; description?: React.ReactNode; children?: React.ReactNode }>
     = ({ title, summary, description, children }) =>
     <Box sx={{ p: 1.25 }}>
-        <Typography sx={{ fontSize: textVar.sm, fontWeight: 600, color: 'text.primary', overflowWrap: 'anywhere' }}>{title}</Typography>
+        <Typography sx={{ fontSize: textVar.sm, fontWeight: weight(600), color: 'text.primary', overflowWrap: 'anywhere' }}>{title}</Typography>
         {summary && <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', mt: 0.5 }}>{summary}</Typography>}
         {description && <Typography sx={{ fontSize: textVar.xs, lineHeight: 1.55, color: 'text.secondary', mt: 0.5,
             whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{description}</Typography>}
@@ -89,11 +117,46 @@ export const ViewAllButton: React.FC<{ label: string; onClick: () => void; disab
 };
 
 /** Grid for item cards: as many ~220px columns as fit. */
+const ITEM_CARD_MIN_WIDTH_PX = 220;
+const ITEM_CARD_GAP_PX = 12;
 export const itemCardGridSx = {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))',
-    gap: 1.5,
+    gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${ITEM_CARD_MIN_WIDTH_PX}px), 1fr))`,
+    gap: `${ITEM_CARD_GAP_PX}px`,
 } as const;
+
+/** Column count an `itemCardGridSx` grid lays out at its current width, e.g. to cap a grid at whole rows. */
+export function useItemCardGridColumns(): [(element: HTMLElement | null) => void, number] {
+    const [columns, setColumns] = useState(1);
+    const observerRef = React.useRef<ResizeObserver | null>(null);
+    const ref = useCallback((element: HTMLElement | null) => {
+        observerRef.current?.disconnect();
+        observerRef.current = null;
+        if (!element) return;
+        const measure = () => setColumns(Math.max(1,
+            Math.floor((element.clientWidth + ITEM_CARD_GAP_PX) / (ITEM_CARD_MIN_WIDTH_PX + ITEM_CARD_GAP_PX))));
+        measure();
+        if (typeof ResizeObserver === 'undefined') return;
+        observerRef.current = new ResizeObserver(measure);
+        observerRef.current.observe(element);
+    }, []);
+    return [ref, columns];
+}
+
+/** Gold accent for starred items. */
+export const starredColor = '#e0a526';
+
+/** Star/unstar action for an item card. */
+export const StarAction: React.FC<{ starred: boolean; onToggle: () => void }> = ({ starred, onToggle }) => {
+    const { t } = useTranslation();
+    return <ItemCardAction label={starred ? t('workspace.unstar') : t('workspace.star')} onClick={onToggle}
+        icon={starred ? <StarRoundedIcon sx={{ color: starredColor }} /> : <StarBorderRoundedIcon />} />;
+};
+
+const StarredMark: React.FC<{ size: number }> = ({ size }) => {
+    const { t } = useTranslation();
+    return <StarRoundedIcon titleAccess={t('workspace.starred')} sx={{ fontSize: size, color: starredColor, flexShrink: 0 }} />;
+};
 
 // Sidebar-sized cards and rows use accent row actions; regular cards use muted ones.
 const RowActionContext = createContext(false);
@@ -105,7 +168,9 @@ export const ItemCardAction: React.FC<{ label: string; icon: React.ReactNode; on
     return <Tooltip title={label}><span>
         <IconButton size="small" aria-label={label} aria-haspopup={menu ? 'menu' : undefined} disabled={disabled}
             sx={rowStyle ? (danger ? sidebarRowDangerActionSx : sidebarRowActionSx)
-                : { p: 0.5, color: danger ? 'error.main' : 'text.secondary', '& .MuiSvgIcon-root': { fontSize: iconVar.md } }}
+                : { p: 0.5, color: danger ? 'error.main' : 'text.secondary', '& .MuiSvgIcon-root': { fontSize: iconVar.md },
+                    '&:hover': { color: danger ? 'error.main' : 'text.primary',
+                        bgcolor: theme => alpha(danger ? theme.palette.error.main : theme.palette.text.primary, danger ? 0.1 : 0.08) } }}
             onClick={event => { event.stopPropagation(); onClick(event.currentTarget); }}>{icon}</IconButton>
     </span></Tooltip>;
 };
@@ -140,6 +205,10 @@ export interface ItemCardProps {
     compact?: boolean;
     /** One-line sidebar row. */
     mini?: boolean;
+    /** Starred by the user: a gold star before the title and, on cards, a gold-tinted surface. */
+    starred?: boolean;
+    /** Cards: let a long title wrap to this many lines (in a slightly smaller size) instead of cutting it at one. */
+    titleLines?: number;
 }
 
 const RenameField: React.FC<{ rename: NonNullable<ItemCardProps['rename']>; mini: boolean }> = ({ rename, mini }) =>
@@ -151,7 +220,7 @@ const RenameField: React.FC<{ rename: NonNullable<ItemCardProps['rename']>; mini
             else if (event.key === 'Escape') { event.preventDefault(); rename.onCancel(); }
         }}
         slotProps={{ htmlInput: { 'aria-label': rename.label, maxLength: 120 },
-            input: { sx: { fontSize: textVar.sm, ...(mini ? { fontWeight: 500, py: 0 } : {}) } } }} />;
+            input: { sx: { fontSize: textVar.sm, ...(mini ? { fontWeight: weight(500), py: 0 } : {}) } } }} />;
 
 // Hidden actions take no width; hover, keyboard focus (not a mouse click), or `active` reveal them.
 const revealSx = {
@@ -164,7 +233,8 @@ const revealSx = {
 const stopClick = (event: React.MouseEvent) => event.stopPropagation();
 
 export const ItemCard: React.FC<ItemCardProps> = ({ title, badges, captions = [], meta, rename, actions, persistentActions = false,
-    onOpen, openLabel, onOpenInNewTab, tooltip, inactive = false, current = false, active = false, compact = false, mini = false }) => {
+    onOpen, openLabel, onOpenInNewTab, tooltip, inactive = false, current = false, active = false, compact = false, mini = false, starred = false,
+    titleLines = 1 }) => {
     const clickable = !!onOpen && !rename && !inactive && !current;
     const handleClick = (event: React.MouseEvent) => {
         if (rename || inactive) return;
@@ -185,6 +255,7 @@ export const ItemCard: React.FC<ItemCardProps> = ({ title, badges, captions = []
                     sx={{ ...sidebarRowSx, ...revealSx, cursor: clickable ? 'pointer' : 'default', opacity: inactive ? 0.55 : 1 }}>
                     {current && <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: 'primary.main', flexShrink: 0 }} />}
                     {rename ? <RenameField rename={rename} mini /> : <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        {starred && <StarredMark size={13} />}
                         <Typography noWrap sx={{ ...sidebarRowTitleSx, flex: '0 1 auto',
                             color: titleColor, textDecoration: inactive ? 'line-through' : 'none' }}>{title}</Typography>
                         {badges}
@@ -201,16 +272,29 @@ export const ItemCard: React.FC<ItemCardProps> = ({ title, badges, captions = []
     }
 
     const titleContent = <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
-        <Typography component="span" noWrap={!compact} sx={{ color: titleColor, textDecoration: inactive ? 'line-through' : 'none',
-            ...(compact ? { ...sidebarRowTitleSx, flex: '0 1 auto', overflowWrap: 'anywhere' } : { minWidth: 0, fontSize: '0.875rem', lineHeight: 1.43 }) }}>{title}</Typography>
+        {starred && <StarredMark size={compact ? 14 : 16} />}
+        <Typography component="span" noWrap={!compact && titleLines <= 1} sx={{ color: titleColor, textDecoration: inactive ? 'line-through' : 'none',
+            ...(compact ? { ...sidebarRowTitleSx, flex: '0 1 auto', overflowWrap: 'anywhere' }
+                : titleLines > 1 ? { minWidth: 0, fontSize: '0.8125rem', lineHeight: 1.35, overflowWrap: 'anywhere', display: '-webkit-box',
+                    WebkitLineClamp: titleLines, WebkitBoxOrient: 'vertical', overflow: 'hidden' }
+                : { minWidth: 0, fontSize: '0.875rem', lineHeight: 1.43 }) }}>{title}</Typography>
         {badges}
     </Box>;
+    const baseSurfaceSx: Record<string, any> = compact
+        ? { border: 1, borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper', ...(clickable ? cardHoverSx : {}) }
+        : exampleCardSx(!clickable);
+    const surfaceSx = starred ? {
+        ...baseSurfaceSx, borderColor: alpha(starredColor, 0.6), bgcolor: alpha(starredColor, 0.06),
+        ...(baseSurfaceSx['&:hover'] ? { '&:hover': { ...baseSurfaceSx['&:hover'], borderColor: starredColor } } : {}),
+    } : baseSurfaceSx;
+    // The current item in a grid of cards: a primary border.
+    const currentSx = current && !compact ? { borderColor: 'primary.main' } : {};
     const card = <Box component="article" onClick={handleClick} onAuxClick={handleAuxClick} className={active ? 'item-active' : undefined} sx={{
+        ...surfaceSx,
+        ...currentSx,
         position: 'relative', minWidth: 0, textAlign: 'left', fontFamily: theme => theme.typography.fontFamily,
-        border: 1, borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper',
         px: compact ? 1 : 2, py: compact ? 0.75 : 1.5, display: 'flex', flexDirection: 'column', gap: compact ? 0.25 : 0,
         cursor: clickable ? 'pointer' : 'default', opacity: inactive ? 0.55 : 1,
-        ...(clickable ? cardHoverSx : {}),
         '& .item-overlay-actions': { opacity: 0, transition: 'opacity 90ms' },
         '&:hover .item-overlay-actions, &:has(:focus-visible) .item-overlay-actions, &.item-active .item-overlay-actions': { opacity: 1 },
         '@media (hover: none)': { '& .item-overlay-actions': { opacity: 1 } },
@@ -229,8 +313,16 @@ export const ItemCard: React.FC<ItemCardProps> = ({ title, badges, captions = []
             sx={{ fontSize: textVar.xs, lineHeight: 1.5, color: 'text.secondary', overflowWrap: 'anywhere' }}>{caption}</Typography>)}
         {meta && <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5 }}>{meta}</Box>}
         {showActions && !persistentActions && <RowActionContext.Provider value={compact}>
+            {/* No box: the card fades to its own background behind the buttons, so captions under them don't read through. */}
             <Box className="item-overlay-actions" onClick={stopClick} onAuxClick={stopClick}
-                sx={{ position: 'absolute', bottom: 4, right: 4, display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'default' }}>{actions}</Box>
+                sx={{ position: 'absolute', bottom: 0, right: 0, display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'default',
+                    pl: 4, pr: 0.5, py: 0.5, borderBottomRightRadius: 'inherit',
+                    // Fade to the card's own colour (a starred card's is tinted gold).
+                    background: theme => {
+                        const paper = theme.palette.background.paper;
+                        const surface = starred ? `color-mix(in srgb, ${starredColor} 6%, ${paper})` : paper;
+                        return `linear-gradient(to right, transparent, ${surface} 2rem)`;
+                    } }}>{actions}</Box>
         </RowActionContext.Provider>}
     </Box>;
     return tooltip && !rename ? <MetadataTooltip title={tooltip} placement={compact ? 'right-start' : 'bottom-start'}>{card}</MetadataTooltip> : card;

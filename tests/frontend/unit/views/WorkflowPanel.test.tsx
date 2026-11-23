@@ -13,7 +13,6 @@ import { dfActions, dfSelectors, fetchGlobalModelList } from '../../../../src/ap
 import { apiRequest, streamRequest } from '../../../../src/app/apiClient';
 import { getUrls } from '../../../../src/app/utils';
 import { pauseWorkflowRun, publishWorkflowRun, sendWorkflowMessage, WorkflowProgress, WorkflowPanel, WorkflowRunObserver, Run, selectChatWorkflow, workflowRequestId } from '../../../../src/views/WorkflowPanel';
-import { SchedulesPanel } from '../../../../src/views/WorkflowSchedules';
 import { SimpleChartRecBox } from '../../../../src/views/SimpleChartRecBox';
 import { FreeDataViewFC } from '../../../../src/views/DataView';
 import { DataThread } from '../../../../src/views/DataThread';
@@ -97,103 +96,124 @@ describe('Workflow session publication', () => {
     });
 
     // A full panel walkthrough: about 3s alone, longer under the parallel suite.
-    it('simplifies schedule defaults and reveals missing required inputs', async () => {
+    it('shows a workflow as a page with its schedule settings in a box, and saves them into its schedule block', async () => {
         const previous = store.getState();
         let rendered: ReturnType<typeof render> | undefined;
         try {
-            store.dispatch(dfActions.setServerConfig({ ...previous.serverConfig, IS_LOCAL_MODE: true }));
             store.dispatch(fetchGlobalModelList.fulfilled([
                 { id: 'server-first', endpoint: 'openai', model: 'First', api_key: '', api_base: '', api_version: '' },
                 { id: 'server-selected', endpoint: 'openai', model: 'Selected', api_key: '', api_base: '', api_version: '' },
             ], 'schedule-test', undefined));
             store.dispatch(dfActions.selectModel('server-selected'));
-            const item = { path: 'review.yaml', name: 'Review values', origin: 'user', parameters: [
-                { name: 'subscription', label: 'Subscription', required: true },
-                { name: 'days', label: 'Days', type: 'number', required: true, default: 28 },
-            ] };
-            let savedSchedules: { id: string; config: Record<string, unknown>; next_at: string;
-                history: { id: string; status: string; scheduled_for: string }[] }[] = [];
+            const schedule = { time: '09:00', weekdays: [0, 1, 2, 3, 4], timezone: 'UTC', model_id: 'server-selected', auto_approve: true,
+                setup: { parameters: { subscription: 'example' }, instructions: 'Keep it short' } };
+            const items: Record<string, unknown>[] = [
+                { path: 'review.yaml', name: 'Review values', origin: 'user', schedule, parameters: [
+                    { name: 'subscription', label: 'Subscription', required: true },
+                    { name: 'days', label: 'Days', type: 'number', default: 28 }] },
+                { path: 'other.yaml', name: 'Other', origin: 'user', parameters: [] },
+            ];
             vi.mocked(apiRequest).mockImplementation(async (url, options) => {
-                if (url === '/api/schedules' && options?.method === 'POST') {
-                    savedSchedules = [{ id: 'saved-schedule', config: JSON.parse(options.body as string).config, next_at: '2026-10-01T16:00:00Z',
-                        history: [{ id: 'skipped-run', status: 'skipped', scheduled_for: '2026-09-30T16:00:00Z' },
-                            { id: 'latest-run', status: 'needs_attention', scheduled_for: '2026-09-29T16:00:00Z' },
-                            { id: 'older-run', status: 'completed', scheduled_for: '2026-09-28T16:00:00Z' }] }];
+                const body = options?.body ? JSON.parse(options.body as string) : {};
+                if (url === '/api/workflows/read') return { data: { content: 'version: 1\nname: Review values\n', content_hash: 'file-hash' } } as any;
+                if (url === '/api/workflows/save') {
+                    if (body.schedule) items[0].schedule = body.schedule;
+                    return { data: { path: body.path, content_hash: 'saved' } } as any;
                 }
-                return { data: url === '/api/workflows/list'
-                    ? { items: [item], runs: [] } : { available: true, schedules: savedSchedules } } as any;
+                return { data: { items: items.map(item => ({ ...item })), runs: [], scheduling: true, schedules: { 'review.yaml': {
+                    id: 'saved-schedule', scheduled: true, enabled: (items[0].schedule as any).enabled !== false,
+                    next_at: (items[0].schedule as any).enabled === false ? null : '2026-10-01T16:00:00Z',
+                    history: [{ id: 'latest-run', status: 'needs_attention', scheduled_for: '2026-09-29T16:00:00Z' }] } } } } as any;
             });
             const openSession = vi.fn();
-            rendered = render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} onOpenSession={openSession} />
-                <SchedulesPanel onOpenSession={openSession} /></Provider>);
-            await screen.findByRole('button', { name: 'Open Review values' });
-            await waitFor(() => expect(screen.getByRole('button', { name: 'New schedule' })).toBeEnabled());
-            expect(screen.getByRole('region', { name: 'Schedules' }))
-                .toContainElement(screen.getByRole('button', { name: 'New schedule' }));
-            expect(screen.getByRole('button', { name: 'New workflow' }).parentElement)
-                .not.toContainElement(screen.getByRole('button', { name: 'New schedule' }));
-            expect(screen.getByRole('region', { name: 'Schedules' })).toHaveTextContent('No schedules yet');
-            fireEvent.click(screen.getByRole('button', { name: 'New schedule' }));
-            const workflowSelect = await screen.findByRole('combobox', { name: 'Workflow' });
-            fireEvent.change(workflowSelect.parentElement!.querySelector('input')!, { target: { value: 'review.yaml' } });
-            expect(screen.getByText('Workflow inputs')).toBeVisible();
-            expect(screen.getByText('Run settings')).toBeVisible();
-            expect(document.querySelector('[role="dialog"] details')).toBeNull();
-            fireEvent.change(screen.getByLabelText(/Subscription/), { target: { value: 'example' } });
-            const scheduleName = screen.getByLabelText(/Schedule name/);
-            expect(scheduleName).toHaveValue('Review values');
-            fireEvent.change(scheduleName, { target: { value: 'Daily review' } });
-            expect(screen.queryByRole('group', { name: 'Weekdays' })).not.toBeInTheDocument();
-            expect(screen.getByRole('checkbox', { name: 'Auto-approve commands and data loads' })).not.toBeChecked();
-            const repeatInput = screen.getByRole('combobox', { name: 'Repeat' }).parentElement!.querySelector('input')!;
-            fireEvent.change(repeatInput, { target: { value: 'weekdays' } });
-            fireEvent.change(repeatInput, { target: { value: 'custom' } });
-            fireEvent.click(screen.getByRole('checkbox', { name: 'Sun' }));
-            fireEvent.click(screen.getByRole('button', { name: 'Save schedule' }));
-            await waitFor(() => expect(vi.mocked(apiRequest).mock.calls.some(([url, options]) => url === '/api/schedules' && options?.method === 'POST')).toBe(true));
-            const submission = vi.mocked(apiRequest).mock.calls.find(([url, options]) => url === '/api/schedules' && options?.method === 'POST')!;
-            expect(JSON.parse(submission[1]!.body as string).config).toMatchObject({
-                name: 'Daily review', workflow: 'review.yaml', model_id: 'server-selected', weekdays: [0, 1, 2, 3, 4, 6],
-                enabled: true, max_retries: 2, auto_approve: false, catch_up: false,
-                setup: { parameters: { subscription: 'example', days: 28 }, instructions: '' },
-            });
-            // Saving closes the dialog; the Schedules panel lists the new schedule.
-            await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Schedules' })).not.toBeInTheDocument());
-            const scheduleTitle = 'Daily review';
-            const editSchedule = await screen.findByRole('button', { name: `Edit schedule ${scheduleTitle}` });
-            const schedules = screen.getByRole('region', { name: 'Schedules' });
-            expect(schedules).toContainElement(editSchedule);
-            expect(screen.getByRole('region', { name: 'Workflows' })).not.toContainElement(editSchedule);
-            expect(within(schedules).getByRole('img', { name: 'Next run, Mon, Tue, Wed, Thu, Fri, Sun at 09:00' })).toBeInTheDocument();
-            expect(schedules).not.toHaveTextContent(/Last run/);
-            expect(within(schedules).getByRole('img', { name: 'Needs attention' })).toBeInTheDocument();
-            expect(schedules.textContent).not.toContain('·');
-            fireEvent.click(within(schedules).getByRole('button', { name: `Open latest run for schedule ${scheduleTitle}` }));
-            expect(openSession).toHaveBeenLastCalledWith('scheduled-latest-run');
-            const runItems = within(within(schedules).getByRole('group', { name: `Runs of schedule ${scheduleTitle}` }))
-                .getAllByRole('button', { name: /^Open run .* for schedule / });
-            expect(runItems).toHaveLength(1);
-            fireEvent.click(runItems[0]);
-            expect(openSession).toHaveBeenLastCalledWith('scheduled-older-run');
-            expect(screen.queryByRole('group', { name: 'Runs of Review values' })).toBeNull();
-            fireEvent.click(screen.getByRole('button', { name: 'Open Review values' }));
-            fireEvent.click(within(await screen.findByRole('group', { name: 'Runs of Review values' })).getAllByRole('button')[0]);
+            const createSession = vi.fn();
+            rendered = render(<Provider store={store}><WorkflowPanel onCreateSession={createSession} onOpenSession={openSession} /></Provider>);
+            // A card has one action, Run, and shows its schedule on the bottom line; opening it opens its page.
+            expect(await screen.findByRole('button', { name: 'Run Review values' })).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Schedule Review values' })).toBeNull();
+            expect(await screen.findByText(/^Weekdays at 9:00 AM \(next: Oct 1/)).toBeInTheDocument();
+            const openSchedule = async (name: string) => {
+                fireEvent.click(screen.getByRole('button', { name: `Open ${name}` }));
+                const editor = await screen.findByRole('dialog', { name: 'Workflows' });
+                await within(editor).findByRole('region', { name: 'Schedule' });
+                return editor;
+            };
+            const saves = () => vi.mocked(apiRequest).mock.calls.filter(([url]) => url === '/api/workflows/save');
+            const lastSave = () => JSON.parse(saves().at(-1)![1]!.body as string);
+
+            // The page: the description, the default inputs, the deliverables, then the schedule box at the bottom.
+            let editor = await openSchedule('Review values');
+            const list = within(editor).getByRole('navigation', { name: 'Workflow list' });
+            expect(within(list).getByText('Weekdays at 9:00 AM')).toBeInTheDocument();
+            expect(within(list).queryByText('review.yaml')).toBeNull();
+            const inputs = within(editor).getByRole('region', { name: 'Default inputs' });
+            for (const text of ['Subscription', 'Days', '28']) expect(within(inputs).getByText(text)).toBeInTheDocument();
+            let box = within(editor).getByRole('region', { name: 'Schedule' });
+            expect(box.compareDocumentPosition(inputs) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+            // The rows say when it runs; the caption says when it runs next. A scheduled run sets no inputs, only instructions.
+            expect(within(box).getByText(/^Next run /)).toBeInTheDocument();
+            expect(within(box).getByRole('combobox', { name: 'Repeat' })).toHaveTextContent('Weekdays');
+            expect(within(box).getByRole('combobox', { name: 'Time' })).toHaveValue('9:00 AM');
+            expect(within(box).getByRole('combobox', { name: 'Model' })).toHaveTextContent('Selected');
+            expect(within(box).getByRole('textbox', { name: 'Instructions' })).toHaveValue('Keep it short');
+            expect(within(box).queryByText('Subscription')).toBeNull();
+            // Save appears once something changes; the agent makes every other change.
+            expect(within(editor).queryByRole('button', { name: 'Save' })).toBeNull();
+            expect(within(editor).getByRole('button', { name: 'Edit with agent' })).toBeEnabled();
+            // The source is a secondary view, behind a floating button.
+            fireEvent.click(within(editor).getByRole('button', { name: 'View source' }));
+            expect(within(editor).getByLabelText('Workflow filename')).toHaveValue('review.yaml');
+            fireEvent.click(within(editor).getByRole('button', { name: 'View source' }));
+            expect(within(editor).queryByLabelText('Workflow filename')).toBeNull();
+            box = within(editor).getByRole('region', { name: 'Schedule' });
+
+            // Edits stay a draft until Save writes the file's schedule block.
+            fireEvent.change(within(box).getByRole('textbox', { name: 'Instructions' }), { target: { value: 'Use subscription prod' } });
+            fireEvent.click(within(box).getByRole('checkbox', { name: 'Approve requests automatically' }));
+            expect(saves()).toHaveLength(0);
+            fireEvent.click(within(editor).getByRole('button', { name: 'Save' }));
+            await waitFor(() => expect(saves()).toHaveLength(1));
+            expect(lastSave()).toMatchObject({ path: 'review.yaml', content_hash: 'file-hash', schedule: { enabled: true, time: '09:00',
+                weekdays: [0, 1, 2, 3, 4], model_id: 'server-selected', auto_approve: false, setup: { instructions: 'Use subscription prod' } } });
+            await waitFor(() => expect(within(editor).queryByRole('button', { name: 'Save' })).toBeNull());
+            // The switch pauses at once: the block is kept, the rest of the settings fold away, and the box and card say so.
+            fireEvent.click(within(box).getByRole('checkbox', { name: 'Run on a schedule' }));
+            expect(within(box).queryByRole('combobox', { name: 'Repeat' })).toBeNull();
+            await waitFor(() => expect(saves()).toHaveLength(2));
+            expect(lastSave().schedule).toMatchObject({ enabled: false, time: '09:00', auto_approve: false });
+            // The timezone is named only when it is not the user's own.
+            expect(await within(box).findByText(/^Paused · Weekdays at 9:00 AM/)).toBeInTheDocument();
+            expect(within(list).getByText('Paused · Weekdays at 9:00 AM')).toBeInTheDocument();
+            // On again resumes it at once.
+            fireEvent.click(within(box).getByRole('checkbox', { name: 'Run on a schedule' }));
+            await waitFor(() => expect(saves()).toHaveLength(3));
+            expect(lastSave().schedule).toMatchObject({ enabled: true, model_id: 'server-selected', auto_approve: false });
+
+            // A workflow without a schedule shows just the switch; on, it starts daily at 09:00 with the selected model, approving.
+            fireEvent.click(within(list).getByRole('button', { name: /^Other/ }));
+            const other = await within(editor).findByRole('region', { name: 'Schedule' });
+            await within(other).findByText('Not scheduled');
+            expect(within(other).queryByRole('combobox')).toBeNull();
+            fireEvent.click(within(other).getByRole('checkbox', { name: 'Run on a schedule' }));
+            expect(within(other).getByRole('combobox', { name: 'Repeat' })).toHaveTextContent('Every day');
+            // Times show on the user's clock, and can be typed that way or in 24 hours.
+            const time = within(other).getByRole('combobox', { name: 'Time' });
+            expect(time).toHaveValue('9:00 AM');
+            fireEvent.change(time, { target: { value: '2:30 pm' } });
+            fireEvent.blur(time);
+            expect(time).toHaveValue('2:30 PM');
+            fireEvent.click(within(editor).getByRole('button', { name: 'Save' }));
+            await waitFor(() => expect(lastSave()).toMatchObject({ path: 'other.yaml', schedule: { enabled: true, time: '14:30',
+                weekdays: [0, 1, 2, 3, 4, 5, 6], model_id: 'server-selected', auto_approve: true } }));
+
+            // Edit with agent hands the workflow to the agent, in a new session of its own.
+            fireEvent.click(within(editor).getByRole('button', { name: 'Edit with agent' }));
             await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Workflows' })).toBeNull());
-            expect(openSession).toHaveBeenCalledTimes(3);
-            expect(openSession).toHaveBeenLastCalledWith('scheduled-latest-run');
-            fireEvent.click(editSchedule);
-            expect(await screen.findByLabelText(/Schedule name/)).toHaveValue(scheduleTitle);
-            expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
-            expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
-            const scheduleList = screen.getByRole('navigation', { name: 'Schedule list' });
-            expect(within(scheduleList).getByRole('button', { name: new RegExp(scheduleTitle) })).toHaveAttribute('aria-current', 'true');
-            fireEvent.click(within(scheduleList).getByRole('button', { name: 'New schedule' }));
-            expect(screen.getByLabelText(/Schedule name/)).toHaveValue('');
-            fireEvent.click(within(scheduleList).getByRole('button', { name: new RegExp(scheduleTitle) }));
-            expect(screen.getByLabelText(/Schedule name/)).toHaveValue(scheduleTitle);
+            expect(createSession).toHaveBeenCalledWith('Edit Other');
+            expect(store.getState().analystChatPending).toMatchObject({ intent: 'workflow-authoring',
+                text: expect.stringContaining('"Other" (workflows://other.yaml)') });
         } finally {
             rendered?.unmount();
-            store.dispatch(dfActions.setServerConfig(previous.serverConfig));
             store.dispatch(fetchGlobalModelList.fulfilled(previous.globalModels, 'restore-schedule-test', undefined));
         }
     }, 15_000);
@@ -282,12 +302,14 @@ describe('Workflow session publication', () => {
         expect(streamRequest).not.toHaveBeenCalled();
     });
 
-    it('explains that scheduling is local-only when the server has none', async () => {
-        vi.mocked(apiRequest).mockImplementation(async url => ({ data: url === '/api/workflows/list'
-            ? { items: [], runs: [] } : { available: false, schedules: [] } }) as any);
-        const rendered = render(<Provider store={store}><SchedulesPanel /></Provider>);
-        expect(await screen.findByText(/only available in the local Data Formulator app/)).toBeTruthy();
-        expect(screen.getByRole('button', { name: 'New schedule' })).toHaveProperty('disabled', true);
+    it('offers no schedule controls where the server cannot schedule', async () => {
+        vi.mocked(apiRequest).mockImplementation(async () => ({ data: { items: [{ path: 'review.yaml', name: 'Review', origin: 'user' }],
+            runs: [], scheduling: false, schedules: {} } }) as any);
+        const rendered = render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} /></Provider>);
+        fireEvent.click(await screen.findByRole('button', { name: 'Open Review' }));
+        const editor = await screen.findByRole('dialog', { name: 'Workflows' });
+        await within(editor).findByText('Review', { selector: 'p' });
+        expect(within(editor).queryByRole('region', { name: 'Schedule' })).toBeNull();
         rendered.unmount();
     });
 
@@ -684,6 +706,75 @@ describe('Workflow session publication', () => {
         expect(selectChatWorkflow(store.getState())).toBeUndefined();
     });
 
+    it('adds a request about an earlier chart to the end of its thread, with the chart as a reference', async () => {
+        store.dispatch(dfActions.addModel({ id: 'test-model', model: 'test', endpoint: '', api_key: '' } as any));
+        store.dispatch(dfActions.selectModel('test-model'));
+        const turn = (id: string, parentNodeId: string, createdAt: number, extra: Record<string, unknown>) =>
+            dfActions.addTextTurn({ kind: 'text', id, displayId: id, textKind: 'explain', content: '', parentNodeId, createdAt, ...extra } as any);
+        const table = (id: string, parentNodeId: string) => ({ kind: 'table', id, displayId: id, names: ['value'], metadata: {},
+            rows: [{ value: 1 }], parentNodeId, derive: { source: [], code: '', dialog: [], trigger: { tableId: 'root', resultTableId: id } } }) as any;
+        // ask → step → first (charted) → ask-2 → step-2 → second → closing
+        store.dispatch(turn('ask', 'conversation-root:gas', 1, { prompt: 'Prices over time' }));
+        store.dispatch(turn('step', 'ask', 2, { content: 'Weekly prices' }));
+        store.dispatch(dfActions.addTableToStore(table('first', 'step')));
+        store.dispatch(dfActions.addChart({ id: 'chart-first', chartType: 'Line Chart', tableRef: 'first', source: 'user',
+            encodingMap: {}, title: 'Weekly prices' } as any));
+        store.dispatch(turn('ask-2', 'first', 4, { prompt: 'Premium gap' }));
+        store.dispatch(turn('step-2', 'ask-2', 5, { content: 'Gap' }));
+        store.dispatch(dfActions.addTableToStore(table('second', 'step-2')));
+        store.dispatch(turn('closing', 'second', 7, { content: 'Done.' }));
+        store.dispatch(dfActions.setFocused({ type: 'chart', chartId: 'chart-first' }));
+        let finish!: () => void;
+        const pending = new Promise<void>(resolve => { finish = resolve; });
+        vi.mocked(streamRequest).mockImplementation(async function* () {
+            yield { type: 'placement', new_thread: true, title: 'Diesel' } as any;
+            await pending;
+            yield { type: 'completion', status: 'success', content: { summary: 'Done.' } } as any;
+        });
+        renderThread();
+        // The chart is offered as the message's reference before sending.
+        expect(document.querySelector('[data-ask-reference]')).toHaveTextContent('Weekly prices');
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Use a log scale here' } });
+        fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        const body = JSON.parse(String((vi.mocked(streamRequest).mock.calls[0][1] as any)?.body ?? '{}'));
+        expect(body.references).toEqual([{ kind: 'chart', id: 'chart-first', label: 'Weekly prices' }]);
+        const request = () => store.getState().textTurns.find(item => item.prompt === 'Use a log scale here')!;
+        expect(request().references).toEqual([{ kind: 'chart', id: 'chart-first', label: 'Weekly prices' }]);
+        // The chart stays in view; the agent then opened a thread of its own, from the chart's table.
+        expect(store.getState().focusedId).toEqual({ type: 'chart', chartId: 'chart-first' });
+        await waitFor(() => expect(request().parentNodeId).toBe('first'));
+        await act(async () => { finish(); });
+    });
+
+    it('adds a request about an earlier chart at the end of its thread when the agent continues it', async () => {
+        store.dispatch(dfActions.addModel({ id: 'test-model', model: 'test', endpoint: '', api_key: '' } as any));
+        store.dispatch(dfActions.selectModel('test-model'));
+        const turn = (id: string, parentNodeId: string, createdAt: number, extra: Record<string, unknown>) =>
+            dfActions.addTextTurn({ kind: 'text', id, displayId: id, textKind: 'explain', content: '', parentNodeId, createdAt, ...extra } as any);
+        const table = (id: string, parentNodeId: string) => ({ kind: 'table', id, displayId: id, names: ['value'], metadata: {},
+            rows: [{ value: 1 }], parentNodeId, derive: { source: [], code: '', dialog: [], trigger: { tableId: 'root', resultTableId: id } } }) as any;
+        store.dispatch(turn('ask', 'conversation-root:gas', 1, { prompt: 'Prices over time' }));
+        store.dispatch(turn('step', 'ask', 2, { content: 'Weekly prices' }));
+        store.dispatch(dfActions.addTableToStore(table('first', 'step')));
+        store.dispatch(turn('ask-2', 'first', 4, { prompt: 'Premium gap' }));
+        store.dispatch(turn('step-2', 'ask-2', 5, { content: 'Gap' }));
+        store.dispatch(dfActions.addTableToStore(table('second', 'step-2')));
+        store.dispatch(turn('closing', 'second', 7, { content: 'Done.' }));
+        store.dispatch(dfActions.setFocused({ type: 'table', tableId: 'first' }));
+        vi.mocked(streamRequest).mockImplementation(async function* () {
+            yield { type: 'completion', status: 'success', content: { summary: 'Done.' } } as any;
+        });
+        renderThread();
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Explain this table' } });
+        fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
+        const request = store.getState().textTurns.find(item => item.prompt === 'Explain this table')!;
+        expect(request).toMatchObject({ parentNodeId: 'closing', references: [{ kind: 'table', id: 'first', label: 'first' }] });
+        // One thread: nothing branched.
+        expect(buildThreads(dfSelectors.getThreadGraph(store.getState()))).toHaveLength(1);
+    });
+
     it.each(['workflow', 'chart', 'table'])('places a new analyst request after the focused %s artifact', async target => {
         store.dispatch(dfActions.addModel({ id: 'test-model', model: 'test', endpoint: '', api_key: '' } as any));
         store.dispatch(dfActions.selectModel('test-model'));
@@ -1056,35 +1147,70 @@ describe('Workflow session publication', () => {
         await waitFor(() => expect(store.getState().textTurns.find(turn => turn.workflow)?.workflow?.status).toBe('completed'));
     });
 
-    it('saves a proposed workflow together with the schedule proposed with it', async () => {
+    it('saves a proposed workflow with the schedule in its definition', async () => {
+        const previous = store.getState().globalModels;
+        store.dispatch(fetchGlobalModelList.fulfilled([{ id: 'server-model', endpoint: 'openai', model: 'Model', api_key: '', api_base: '',
+            api_version: '' }], 'proposal-schedule-test', undefined));
         const definition = { name: 'Quarterly review', overview: 'Review current sales', deliverables: ['Sales report'],
-            parameters: [{ name: 'period', label: 'Period', default: 'Q1' }] };
-        const proposal = { definition, content: 'version: 1\nname: Quarterly review\noverview: Review current sales\ndeliverables: [Sales report]',
-            schedule: { config: { time: '08:00', weekdays: [0, 1, 2, 3, 4], model_id: 'server-model' }, issues: [] } };
+            parameters: [{ name: 'period', label: 'Period', default: 'Q1' }],
+            schedule: { time: '08:00', weekdays: [0, 1, 2, 3, 4], model_id: 'server-model' } };
+        const proposal = { definition, scheduleIssues: [],
+            content: 'version: 1\nname: Quarterly review\noverview: Review current sales\ndeliverables: [Sales report]\nschedule:\n  time: 08:00\n' };
         store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'scheduled-proposal', displayId: 'Proposal', textKind: 'explain',
             content: 'Ready to review.', form: { kind: 'workflow', title: definition.name, workflow: proposal },
             parentNodeId: 'conversation-root:authoring', createdAt: 1 }));
         vi.mocked(apiRequest).mockImplementation(async (url, options) => {
-            if (url === '/api/workflows/save') return { data: { path: JSON.parse(options!.body as string).path, content_hash: 'saved-hash' } } as any;
-            if (url === '/api/schedules' && options?.method === 'POST') return { data: { schedule: { id: 'schedule-1', next_at: '2026-10-12T15:00:00Z' } } } as any;
-            if (url === '/api/schedules') return { data: { available: true, schedules: [] } } as any;
-            return { data: { items: [], runs: [], drafts: [] } } as any;
+            if (url === '/api/workflows/save') return { data: { path: JSON.parse(options!.body as string).path, content_hash: 'saved-hash',
+                content: 'saved content' } } as any;
+            return { data: { items: [], runs: [], scheduling: true, schedules: {} } } as any;
         });
         store.dispatch(dfActions.setFocused({ type: 'text', textId: 'scheduled-proposal' }));
         render(<Provider store={store}><VisualizationViewFC /></Provider>);
+        expect(screen.getByText(/^Scheduled /)).toBeInTheDocument();
         fireEvent.click(await screen.findByRole('button', { name: 'Save workflow' }));
         const dialog = await screen.findByRole('dialog', { name: 'Save workflow' });
         expect(await within(dialog).findByRole('checkbox', { name: 'Also run it on a schedule' })).toBeChecked();
         fireEvent.click(within(dialog).getByRole('button', { name: 'Save and schedule' }));
         await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Save workflow' })).not.toBeInTheDocument());
-        // The schedule runs the workflow just saved, with its default inputs.
-        const scheduled = JSON.parse(vi.mocked(apiRequest).mock.calls.find(([url, options]) => url === '/api/schedules' && options?.method === 'POST')![1]!.body as string);
-        expect(scheduled.config).toMatchObject({ workflow: 'quarterly-review.workflow.yaml', name: 'Quarterly review', time: '08:00',
-            weekdays: [0, 1, 2, 3, 4], model_id: 'server-model', setup: { parameters: { period: 'Q1' } } });
-        const saved = store.getState().textTurns.find((turn: any) => turn.id === 'scheduled-proposal')!.form as any;
-        expect(saved.workflow.saved.path).toBe('quarterly-review.workflow.yaml');
-        expect(saved.workflow.schedule).toMatchObject({ savedId: 'schedule-1', nextAt: '2026-10-12T15:00:00Z' });
-        expect(screen.getByText(/^Scheduled /)).toBeInTheDocument();
+        // One save writes the workflow and its schedule block, with the timezone and inputs the form filled in.
+        const saves = vi.mocked(apiRequest).mock.calls.filter(([url]) => url === '/api/workflows/save');
+        expect(saves).toHaveLength(1);
+        const saved = JSON.parse(saves[0][1]!.body as string);
+        expect(saved).toMatchObject({ path: 'quarterly-review.workflow.yaml', content: proposal.content,
+            schedule: { time: '08:00', weekdays: [0, 1, 2, 3, 4], model_id: 'server-model', setup: { parameters: { period: 'Q1' } } } });
+        expect(saved.schedule.timezone).toBeTruthy();
+        const form = store.getState().textTurns.find((turn: any) => turn.id === 'scheduled-proposal')!.form as any;
+        expect(form.workflow.saved).toEqual({ path: 'quarterly-review.workflow.yaml', content_hash: 'saved-hash', scheduled: true });
+        expect(form.workflow.content).toBe('saved content');
+        store.dispatch(fetchGlobalModelList.fulfilled(previous, 'restore-proposal-schedule-test', undefined));
+    });
+
+    it('starts a new copy of a scheduled workflow unscheduled and says how a revision changes the schedule', async () => {
+        const schedule = { time: '08:00', weekdays: [0], timezone: 'UTC', model_id: 'server-model' };
+        const definition = { name: 'Fuel', overview: 'Weekly fuel', deliverables: ['Report'], schedule: { ...schedule, enabled: false } };
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'revision', displayId: 'Proposal', textKind: 'explain', content: 'Ready.',
+            form: { kind: 'workflow', title: 'Fuel', workflow: { definition, content: 'version: 1\n',
+                target: { id: 'fuel.workflow.yaml', name: 'Fuel', schedule } } }, parentNodeId: 'conversation-root:authoring', createdAt: 1 }));
+        vi.mocked(apiRequest).mockImplementation(async url => ({ data: url === '/api/workflows/read' ? { content_hash: 'h' }
+            : url === '/api/workflows/save' ? { path: 'fuel-2.workflow.yaml', content_hash: 'x' }
+            : { items: [], runs: [], scheduling: true, schedules: {} } }) as any);
+        store.dispatch(dfActions.setFocused({ type: 'text', textId: 'revision' }));
+        render(<Provider store={store}><VisualizationViewFC /></Provider>);
+        expect(screen.getByText("Saving pauses this workflow's schedule.")).toBeInTheDocument();
+        fireEvent.click(await screen.findByRole('button', { name: 'Save workflow' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Save workflow' });
+        expect(await within(dialog).findByRole('checkbox', { name: 'Also run it on a schedule' })).toBeChecked();
+        // The review lists what the revision changes in the schedule, before → after; no fields to edit.
+        const changes = within(dialog).getByLabelText('Schedule of Fuel');
+        expect(changes).toHaveTextContent('StatusRuns on schedule → Paused');
+        expect(changes).not.toHaveTextContent('When');
+        expect(within(dialog).queryByRole('combobox')).toBeNull();
+        fireEvent.click(within(dialog).getByRole('radio', { name: 'Save as new workflow' }));
+        expect(within(dialog).getByRole('checkbox', { name: 'Also run it on a schedule' })).not.toBeChecked();
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+        await waitFor(() => expect(vi.mocked(apiRequest).mock.calls.some(([url]) => url === '/api/workflows/save')).toBe(true));
+        const saved = JSON.parse(vi.mocked(apiRequest).mock.calls.find(([url]) => url === '/api/workflows/save')![1]!.body as string);
+        expect(saved.schedule).toBeNull();
     });
 
     it('formats definition sections and saves a renamed workflow without losing YAML fields', async () => {
@@ -1254,8 +1380,8 @@ describe('Workflow session publication', () => {
         const cards = within(workflows).getAllByRole('article');
         expect(cards).toHaveLength(3);
         expect(cards[0]).toHaveTextContent(user.name);
-        expect(screen.getByRole('button', { name: `Open ${demo.name}` })).toHaveTextContent(/demo$/);
-        expect(screen.getByRole('button', { name: `Open ${user.name}` })).not.toHaveTextContent(/demo$/);
+        expect(screen.getByRole('button', { name: `Open ${demo.name}` })).toHaveTextContent(`(Demo) ${demo.name}`);
+        expect(screen.getByRole('button', { name: `Open ${user.name}` })).not.toHaveTextContent(/Demo/);
         expect(screen.queryByText('Workspace workflows')).not.toBeInTheDocument();
         expect(screen.queryByText('Demo workflows')).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Workflows' })).toBeNull();
@@ -1263,6 +1389,8 @@ describe('Workflow session publication', () => {
         expect(await screen.findByRole('button', { name: `Delete ${user.path}` })).toBeTruthy();
         const workflowList = screen.getByRole('navigation', { name: 'Workflow list' });
         fireEvent.click(within(workflowList).getByRole('button', { name: new RegExp(demo.name) }));
+        // The workflow's page comes first; the source is a secondary view, where a demo is edited as a copy.
+        fireEvent.click(await screen.findByRole('button', { name: 'View source' }));
         await waitFor(() => expect(screen.getByLabelText('Workflow filename')).toHaveValue('household-cost-review-copy-2.yaml'));
         expect(screen.queryByRole('button', { name: `Delete ${demo.path}` })).toBeNull();
         expect(JSON.parse(vi.mocked(apiRequest).mock.calls.filter(([url]) => url === '/api/workflows/read').at(-1)![1]!.body as string)).toEqual({ path: demo.path });
@@ -1288,14 +1416,14 @@ describe('Workflow session publication', () => {
         expect(examples.compareDocumentPosition(user) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         expect(examples).toHaveTextContent('Compare prices');
         expect(within(user).getByRole('article')).toHaveTextContent('My review');
-        expect(within(examples).getByRole('article').querySelector('[data-workflow-gears="idle"]')).toBeInTheDocument();
-        expect(within(user).getByRole('article').querySelector('[data-workflow-gears="idle"]')).toBeInTheDocument();
+        expect(within(examples).getByRole('article').querySelector('[data-workflow-icon="idle"]')).toBeInTheDocument();
+        expect(within(user).getByRole('article').querySelector('[data-workflow-icon="idle"]')).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Example workflows' })).toBeNull();
         expect(screen.queryByRole('button', { name: 'Customize Price review' })).toBeNull();
         expect(screen.queryByRole('button', { name: 'Edit My review' })).toBeNull();
         expect(within(examples).getByRole('article')).toContainElement(demo);
         expect(demo).toHaveTextContent('Compare prices');
-        expect(within(demo).getByTestId('PlayArrowIcon')).toBeInTheDocument();
+        expect(within(demo).queryByTestId('PlayArrowIcon')).toBeNull();
         expect(within(examples).getAllByRole('button')).toHaveLength(1);
         expect(within(user).getByRole('button', { name: 'Delete mine.yaml' })).toBeInTheDocument();
         expect(screen.getAllByRole('button', { name: 'New workflow' })).toHaveLength(1);
@@ -1336,7 +1464,8 @@ describe('Workflow session publication', () => {
         expect(streamRequest).not.toHaveBeenCalled();
     });
 
-    it('collects setup without an agent turn and submits typed values only after confirmation', async () => {
+    // A full setup walkthrough: a few seconds alone, longer under the parallel suite.
+    it('collects setup without an agent turn and submits typed values only after confirmation', { timeout: 20000 }, async () => {
         store.dispatch(dfActions.addModel({ id: 'test-model', model: 'test', endpoint: '', api_key: '' } as any));
         store.dispatch(dfActions.selectModel('test-model'));
         vi.mocked(apiRequest).mockResolvedValue({ data: { items: [{ path: 'setup.yaml', name: 'Setup review', parameters: [
@@ -1563,15 +1692,12 @@ describe('Workflow session publication', () => {
         expect(screen.getAllByRole('button', { name: /Streaming fuel review/ })).toHaveLength(1);
     });
 
-    it('advances streaming reports in stages, pauses for reading, and preserves the final position', () => {
+    it('leaves the view where the reader put it while a report streams, with a jump to newer text below', () => {
         let resize = () => {};
-        const frames: FrameRequestCallback[] = [];
         vi.stubGlobal('ResizeObserver', class {
             constructor(callback: () => void) { resize = callback; }
             observe() {} unobserve() {} disconnect() {}
         });
-        vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => frames.push(callback)));
-        vi.stubGlobal('cancelAnimationFrame', vi.fn());
         const report = { id: 'staged-report', title: 'Review', content: '# Writing', status: 'generating' as const,
             generatingPhase: 'writing' as const, selectedChartIds: [], createdAt: 1 };
         store.dispatch(dfActions.saveGeneratedReport(report));
@@ -1581,42 +1707,52 @@ describe('Workflow session publication', () => {
         </ThemeProvider></Provider>);
         const scroller = container.querySelector('[data-report-scroll]') as HTMLDivElement;
         const content = container.querySelector('[data-report-content]') as HTMLDivElement;
+        const scrollTo = vi.fn();
+        scroller.scrollTo = scrollTo as any;
         let contentHeight = 500;
-        Object.defineProperty(scroller, 'clientHeight', { value: 600 });
-        vi.spyOn(scroller, 'getBoundingClientRect').mockImplementation(() => ({ top: 0 } as DOMRect));
-        vi.spyOn(content, 'getBoundingClientRect').mockImplementation(() => ({ height: contentHeight, bottom: contentHeight - scroller.scrollTop } as DOMRect));
+        vi.spyOn(scroller, 'getBoundingClientRect').mockImplementation(() => ({ top: 0, bottom: 600 } as DOMRect));
+        vi.spyOn(content, 'getBoundingClientRect').mockImplementation(() => ({ bottom: contentHeight - scroller.scrollTop } as DOMRect));
         const grow = (height: number) => act(() => {
             contentHeight = height;
             resize();
-            frames.splice(0).forEach(callback => callback(0));
         });
         grow(500);
-        expect(scroller.scrollTop).toBe(0);
-        grow(580);
-        expect(scroller.scrollTop).toBe(190);
-        grow(650);
-        expect(scroller.scrollTop).toBe(190);
-        grow(780);
-        expect(scroller.scrollTop).toBe(390);
-        fireEvent.wheel(scroller, { deltaY: -60 });
-        scroller.scrollTop = 200;
-        fireEvent.scroll(scroller);
-        grow(1000);
-        expect(scroller.scrollTop).toBe(200);
-        expect(screen.getByRole('button', { name: 'Jump to latest' })).toHaveStyle({ left: '24px', bottom: '20px' });
-        fireEvent.click(screen.getByRole('button', { name: 'Jump to latest' }));
-        grow(1000);
-        expect(scroller.scrollTop).toBe(610);
         expect(screen.queryByRole('button', { name: 'Jump to latest' })).toBeNull();
-        const reportFrame = content.parentElement as HTMLElement;
-        const space = reportFrame.nextElementSibling as HTMLElement;
-        expect(space.style.height).toBe('210px');
-        expect(reportFrame.style.minHeight).toBe('1000px');
+        grow(900);
+        expect(scroller.scrollTop).toBe(0);
+        const pill = screen.getByRole('button', { name: 'Jump to latest' });
+        expect(pill).toHaveStyle({ left: '50%', bottom: '20px' });
+        expect(pill).toHaveTextContent('Writing your report');
+        fireEvent.click(screen.getByRole('button', { name: 'Jump to latest' }));
+        expect(scrollTo).toHaveBeenCalledWith({ top: scroller.scrollHeight, behavior: 'smooth' });
+        act(() => {
+            scroller.scrollTop = 320;
+            fireEvent.scroll(scroller);
+        });
+        expect(screen.queryByRole('button', { name: 'Jump to latest' })).toBeNull();
         act(() => store.dispatch(dfActions.updateGeneratedReportContent({ id: report.id, status: 'completed', content: '# Finished' })));
-        expect(scroller.scrollTop).toBe(610);
-        expect(space.style.height).toBe('210px');
-        expect(reportFrame.style.minHeight).toBe('1000px');
-        expect(content.contains(space)).toBe(false);
+        expect(scroller.scrollTop).toBe(320);
+        expect(screen.queryByRole('button', { name: 'Jump to latest' })).toBeNull();
+    });
+
+    it('formats a report as it streams', async () => {
+        vi.stubGlobal('requestAnimationFrame', vi.fn(() => 0));
+        vi.stubGlobal('cancelAnimationFrame', vi.fn());
+        const report = { id: 'table-report', title: 'Review', content: '# Costs\n\n| Region | Cost |\n',
+            status: 'generating' as const, generatingPhase: 'writing' as const, selectedChartIds: [], createdAt: 1 };
+        store.dispatch(dfActions.saveGeneratedReport(report));
+        store.dispatch(dfActions.setFocused({ type: 'report', reportId: report.id }));
+        const { container } = render(<Provider store={store}><ThemeProvider theme={createTheme()}>
+            <ReportView />
+        </ThemeProvider></Provider>);
+        await waitFor(() => expect(screen.getByRole('heading', { name: 'Costs' })).toBeTruthy());
+        // The header row waits for the delimiter row rather than showing as a line of pipes.
+        expect(container.textContent).not.toContain('| Region');
+        act(() => store.dispatch(dfActions.updateGeneratedReportContent({ id: report.id,
+            content: '# Costs\n\n| Region | Cost |\n|---|---|\n| North | 4 |\n' })));
+        await waitFor(() => expect(container.querySelector('table.report-table th')?.textContent).toBe('Region'));
+        expect(screen.getByRole('cell', { name: 'North' })).toBeTruthy();
+        expect(container.textContent).toContain('Writing your report');
     });
 
     it.each(['', '# Partial report'])('renders final report content read-only after a stream containing %j', async partial => {
@@ -1633,7 +1769,7 @@ describe('Workflow session publication', () => {
         act(() => {
             store.dispatch(dfActions.updateGeneratedReportContent({ id: report.id, content: '# Streaming text' }));
         });
-        expect(screen.getByText('Streaming text')).toBeVisible();
+        await waitFor(() => expect(screen.getByText('Streaming text')).toBeVisible());
         expect(container.querySelector('[contenteditable="true"]')).toBeNull();
         act(() => {
             store.dispatch(dfActions.saveGeneratedReport({ ...report, status: 'completed',
@@ -2030,7 +2166,7 @@ describe('Workflow session publication', () => {
         }
     });
 
-    it('keeps a preview timeline with instructions and execution details closed by default', async () => {
+    it('shows step instructions as prose and keeps tool calls closed by default', async () => {
         const snapshot = run();
         snapshot.outputs = [];
         snapshot.instance!.steps!.push({ id: 'report', description: 'Explain the findings', instructions: 'Write the final report.' });
@@ -2040,15 +2176,62 @@ describe('Workflow session publication', () => {
         expect(screen.queryByRole('tablist')).toBeNull();
         const report = within(container.querySelector('[data-workflow-step="report"]') as HTMLElement);
         expect(report.getByText('pending')).toBeVisible();
-        expect(report.getByText('Write the final report.')).not.toBeVisible();
-        fireEvent.click(report.getByText('Execution details'));
         expect(report.getByText('Write the final report.')).toBeVisible();
-        expect(report.getByText('No activity yet.')).toBeVisible();
-        fireEvent.click(report.getByText('Execution details'));
+        expect(container.querySelector('[data-workflow-step="report"] [data-workflow-execution]')).toBeNull();
         await publishWorkflowRun({ ...snapshot, step_id: 'report' }, 'session');
         rerender(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
-        expect(report.getByText('Write the final report.')).not.toBeVisible();
+        const execution = container.querySelector('[data-workflow-step="report"] [data-workflow-execution]')!;
+        expect(execution).not.toHaveAttribute('open');
+        expect(execution.querySelector('summary')).toHaveTextContent('0 tool calls');
+        expect(report.getByText('No activity yet.')).not.toBeVisible();
+        fireEvent.click(execution.querySelector('summary')!);
+        expect(report.getByText('No activity yet.')).toBeVisible();
         expect(report.getByRole('progressbar', { name: 'Current step running' })).toBeVisible();
+    });
+
+    it('caps long step prose with one show-more toggle per step', async () => {
+        const snapshot = run();
+        snapshot.outputs = [];
+        snapshot.instance!.steps![1].checkers = [{ id: 'accuracy', condition: 'Totals reconcile to the source data.' }];
+        await publishWorkflowRun(snapshot, 'session');
+        const scrollHeight = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get')
+            .mockImplementation(function (this: HTMLElement) { return this.closest('[data-workflow-step="analyze"]') ? 200 : 0; });
+        const clientHeight = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(60);
+        try {
+            const { container } = render(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
+            const gather = within(container.querySelector('[data-workflow-step="analyze"]') as HTMLElement);
+            expect(within(container.querySelector('[data-workflow-step="gather"]') as HTMLElement).queryByRole('button', { name: 'Show more' })).toBeNull();
+            expect(gather.getAllByRole('button', { name: 'Show more' })).toHaveLength(1);
+            fireEvent.click(gather.getByRole('button', { name: 'Show more' }));
+            expect(gather.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
+            fireEvent.click(gather.getByRole('button', { name: 'Show less' }));
+            expect(gather.getByRole('button', { name: 'Show more' })).toHaveAttribute('aria-expanded', 'false');
+        } finally {
+            scrollHeight.mockRestore();
+            clientHeight.mockRestore();
+        }
+    });
+
+    it('shows checks only for the current step and summarizes finished ones', async () => {
+        const snapshot = run();
+        snapshot.outputs = [];
+        snapshot.instance!.steps![0].checkers = [{ id: 'coverage', condition: 'Regions are covered.' }];
+        snapshot.instance!.steps![1].checkers = [{ id: 'accuracy', condition: 'Totals reconcile.' }];
+        snapshot.instance!.steps!.push({ id: 'report', instructions: 'Write the report', checkers: [{ id: 'cited', condition: 'Claims cite evidence.' }] });
+        snapshot.checks = { ...snapshot.checks, accuracy: { status: 'failed', explanation: 'Totals differ', evidence_ids: [] } };
+        await publishWorkflowRun(snapshot, 'session');
+        const { container } = render(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
+        const step = (id: string) => container.querySelector(`[data-workflow-step="${id}"]`)!;
+        expect(step('gather').querySelector('[data-workflow-checks] summary')).toHaveTextContent('All checks passed');
+        expect(screen.getByText('Regions are covered.')).not.toBeVisible();
+        expect(step('analyze').querySelector('[data-workflow-checks]')!.tagName).not.toBe('DETAILS');
+        expect(screen.getByText('Totals reconcile.')).toBeVisible();
+        expect(step('analyze')).toHaveTextContent('Totals reconcile. — Totals differ');
+        expect(step('report').querySelector('[data-workflow-checks]')).toBeNull();
+        expect(screen.queryByText('Claims cite evidence.')).toBeNull();
+        expect(step('gather').querySelector('[data-workflow-block]')).toHaveStyle('border-color: rgba(46, 125, 50, 0.4)');
+        expect(step('analyze').querySelector('[data-workflow-block]')).toHaveStyle('border-color: #1976d2');
+        expect(step('report').querySelector('[data-workflow-block]')).toHaveStyle('border-color: rgba(0, 0, 0, 0.12)');
     });
 
     it('resets step progress to pending when the revised plan needs review', async () => {
@@ -2169,7 +2352,8 @@ describe('Workflow session publication', () => {
         expect(within(step).queryByRole('tab')).toBeNull();
         const execution = step.querySelector('[data-workflow-execution]')!;
         expect(execution).not.toHaveAttribute('open');
-        fireEvent.click(within(step).getByText('Execution details'));
+        expect(execution.querySelector('summary')).toHaveTextContent('4 tool calls');
+        fireEvent.click(execution.querySelector('summary')!);
         expect(execution).toHaveAttribute('open');
         const live = step.querySelector('[data-workflow-running-tool="live"]')!;
         expect(live.querySelector('summary')).toBeVisible();
@@ -2204,14 +2388,14 @@ describe('Workflow session publication', () => {
         expect(completed).toHaveAttribute('open');
         expect(completed.querySelector('code.language-python')).toBeVisible();
         expect(step.querySelector('[data-workflow-call="computed"]')).not.toHaveAttribute('open');
-        fireEvent.click(within(step).getByText('Execution details'));
+        fireEvent.click(execution.querySelector('summary')!);
         await publishWorkflowRun({ ...snapshot, activity: 'Still comparing medians' }, 'session');
         rerender(<WorkflowProgress turn={store.getState().textTurns[0]} canvas />);
         expect(execution).not.toHaveAttribute('open');
         expect(live).not.toBeVisible();
     });
 
-    it('groups calls and checks by step and reveals their evidence on demand', async () => {
+    it('lists checks with their evidence and keeps calls behind the step disclosure', async () => {
         const snapshot = run();
         snapshot.status = 'completed';
         snapshot.outputs = [];
@@ -2229,26 +2413,35 @@ describe('Workflow session publication', () => {
         const gather = container.querySelector('[data-workflow-step="gather"]')!;
         const analyze = container.querySelector('[data-workflow-step="analyze"]')!;
         expect(screen.getByRole('list', { name: 'Workflow plan timeline' }).children).toHaveLength(2);
-        expect(screen.getByText('Collect data')).not.toBeVisible();
         expect(screen.getByText('Collect comparable observations for the requested regions.')).toBeVisible();
-        const actionPreview = screen.getByText('Collect data');
         expect(within(gather as HTMLElement).queryByRole('tab')).toBeNull();
-        expect(actionPreview).not.toBeVisible();
-        expect(screen.getByText('Requested dates and regions are covered.')).not.toBeVisible();
-        expect(screen.getByText('Totals reconcile to the source data.')).not.toBeVisible();
-        fireEvent.click(within(gather as HTMLElement).getByText('Execution details'));
-        expect(screen.getByText('Requested dates and regions are covered.')).toBeVisible();
-        expect(actionPreview).toBeVisible();
         expect(gather.querySelector('[data-workflow-action]')).toHaveTextContent('Collect data');
+        expect(screen.getByText('Collect data')).toBeVisible();
+        const gatherChecks = gather.querySelector('[data-workflow-checks]')!;
+        const analyzeChecks = analyze.querySelector('[data-workflow-checks]')!;
+        expect(gatherChecks.tagName).toBe('DETAILS');
+        expect(gatherChecks).not.toHaveAttribute('open');
+        expect(gatherChecks.querySelector('summary')).toHaveTextContent('All checks passed');
+        expect(analyzeChecks.querySelector('summary')).toHaveTextContent('0 of 1 checks passed');
+        expect(screen.getByText('Requested dates and regions are covered.')).not.toBeVisible();
+        fireEvent.click(gatherChecks.querySelector('summary')!);
+        expect(screen.getByText('Requested dates and regions are covered.')).toBeVisible();
+        expect(screen.getByText('Totals reconcile to the source data.')).not.toBeVisible();
+        expect(screen.getByLabelText('coverage: passed')).toBeVisible();
         expect(screen.getByLabelText('accuracy: pending')).not.toBeVisible();
-        expect(screen.getByText('Before this step · On failure: gather')).not.toBeVisible();
-        expect(screen.getByText('Observed rows')).not.toBeVisible();
+        expect(gather.querySelector('[data-workflow-check="coverage"]')).toHaveTextContent('Requested dates and regions are covered. — Observed rows');
+        // A check that only revisits its own step needs no failure note.
+        expect(screen.getByText('Before this step')).toBeVisible();
+        expect(container.textContent).not.toContain('On failure');
+        const execution = gather.querySelector('[data-workflow-execution]')!;
+        expect(execution.querySelector('summary')).toHaveTextContent('1 tool call');
         expect(screen.getByText('Returns reconciled')).not.toBeVisible();
         expect(gather.querySelector('[data-workflow-call="gathered"]')).toBeTruthy();
-        expect(gather.textContent).toContain('Observed rows');
         expect(gather.textContent).not.toContain('Returns reconciled');
         expect(analyze.querySelector('[data-workflow-call="analyzed"]')).toBeTruthy();
         expect(screen.getByText('Unassigned calls (1)').closest('details')!.textContent).toContain('Older result without step metadata');
+        expect(gather.querySelector('[data-workflow-activity]')).not.toBeVisible();
+        fireEvent.click(execution.querySelector('summary')!);
         expect(gather.querySelector('[data-workflow-activity]')).toBeVisible();
         fireEvent.click(within(gather as HTMLElement).getByText('Call 1: fetch live data'));
         const inputOutput = within(gather as HTMLElement).getByRole('group', { name: 'Tool input' });
@@ -2256,15 +2449,10 @@ describe('Workflow session publication', () => {
         expect(inputOutput).toHaveTextContent('Input not retained for this call.');
         expect(within(inputOutput).queryByRole('button', { name: 'Copy input' })).toBeNull();
         expect(JSON.parse(inputOutput.querySelector('pre')!.textContent!)).toEqual({ rows: 61, metadata: { source: 'live' } });
-        expect(screen.getByText('Observed rows')).not.toBeVisible();
-        fireEvent.click(gather.querySelector('[data-workflow-check="coverage"] summary')!);
-        expect(screen.getByText('Observed rows')).toBeVisible();
-        expect(screen.getByText('Before this step · On failure: gather')).toBeVisible();
-        expect(screen.getByText('Collect data')).toBeVisible();
         expect(within(gather as HTMLElement).queryByText('No outputs yet.')).toBeNull();
-        fireEvent.click(within(gather as HTMLElement).getByText('Execution details'));
-        expect(screen.getByText('Collect data')).not.toBeVisible();
-        expect(screen.getByText('Observed rows')).not.toBeVisible();
+        fireEvent.click(execution.querySelector('summary')!);
+        expect(gather.querySelector('[data-workflow-activity]')).not.toBeVisible();
+        expect(screen.getByText('Collect data')).toBeVisible();
         expect(container.textContent!.indexOf('Final verified response')).toBeLessThan(container.textContent!.indexOf('Unassigned calls'));
     });
 
@@ -2454,6 +2642,38 @@ describe('Workflow session publication', () => {
         expect(screen.getAllByRole('button', { name: 'Open Review' })).toHaveLength(1);
         fireEvent.click(screen.getByRole('button', { name: 'Open Review' }));
         expect(await screen.findByRole('button', { name: 'Delete native.yaml' })).toBeTruthy();
+    });
+
+    it('asks before a copy keeps the schedule, and deletes a workflow without its scheduled runs', async () => {
+        const content = 'version: 1\nname: Review\nschedule:\n  time: "09:00"\n';
+        vi.mocked(apiRequest).mockImplementation(async (url, options) => ({ data: url === '/api/workflows/read' ? { content, content_hash: 'h' }
+            : url === '/api/workflows/save' ? { path: JSON.parse(options!.body as string).path, content_hash: 'x' }
+            : url === '/api/workflows/delete' ? { path: 'review.yaml' }
+            : { items: [{ path: 'review.yaml', name: 'Review', origin: 'user' }], runs: [], scheduling: true, schedules: { 'review.yaml': {
+                id: 's', scheduled: true, enabled: true, next_at: '2026-10-01T16:00:00Z',
+                history: [{ id: 'one', status: 'completed', scheduled_for: '2026-09-29T16:00:00Z' }] } } } }) as any);
+        render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} /></Provider>);
+        fireEvent.click(await screen.findByRole('button', { name: 'Open Review' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'View source' }));
+        const filename = await screen.findByLabelText('Workflow filename');
+        fireEvent.change(filename, { target: { value: 'review-copy.yaml' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+        fireEvent.click(within(await screen.findByRole('dialog', { name: 'Also schedule the copy?' })).getByRole('button', { name: 'Copy without schedule' }));
+        await waitFor(() => expect(vi.mocked(apiRequest).mock.calls.some(([url]) => url === '/api/workflows/save')).toBe(true));
+        expect(JSON.parse(vi.mocked(apiRequest).mock.calls.find(([url]) => url === '/api/workflows/save')![1]!.body as string))
+            .toMatchObject({ path: 'review-copy.yaml', schedule: null });
+        const close = await screen.findByRole('button', { name: 'Close' });
+        await waitFor(() => expect(close).toBeEnabled());
+        fireEvent.click(close);
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Open Review' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Delete review.yaml' }));
+        // Its scheduled runs are sessions, kept like any other.
+        const confirm = await screen.findByRole('dialog', { name: 'Delete workflow?' });
+        expect(within(confirm).queryByRole('checkbox')).toBeNull();
+        fireEvent.click(within(confirm).getByRole('button', { name: 'Delete' }));
+        await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/workflows/delete',
+            expect.objectContaining({ body: JSON.stringify({ path: 'review.yaml' }) })));
     });
 
     it('keeps a saved workflow when deletion fails', async () => {

@@ -2,6 +2,8 @@
 // Licensed under the MIT License.
 
 import _, {  } from "lodash";
+import { chartLookConfig, chartThemeSpec } from './savedThemes';
+import { CHART_COLOR_CHANNELS } from './categoryColors';
 import { useEffect, useRef } from "react";
 import ts from "typescript";
 import { Channel, Chart, EncodingItem, EncodingMap, FieldItem, FieldSemanticsInfo, Trigger } from "../components/ComponentType";
@@ -13,11 +15,13 @@ import { assembleVegaLite, type ChartEncoding, type AssembleOptions } from "flin
 import { mergeableLayerSorts, resolveColumnSorts } from "./chartSort";
 import { choroplethRegion, keepUnmatchedRegions } from "./chartMaps";
 import { getBrowserId } from './identity';
-import { DEMO_HEADER, DEMO_ID } from './demo';
+import { SPACE_HEADER, SPACE_ID } from './space';
 
 export function getUrls() {
     return {
         APP_CONFIG: `/api/app-config`,
+        UPDATE_CHECK: `/api/update-check`,
+        SHARES: `/api/shares`,
         AUTH_INFO_PREFIX: `/api/.auth/`,
 
         // these functions involves ai agents
@@ -75,6 +79,11 @@ export function getUrls() {
         SESSION_EXPORT: `/api/sessions/export`,
         SESSION_IMPORT: `/api/sessions/import`,
         SESSION_UPDATE_META: `/api/sessions/update-meta`,
+        SESSION_WORMHOLE_SEND: `/api/sessions/wormhole/send`,
+        SESSION_WORMHOLE_RECEIVE: `/api/sessions/wormhole/receive`,
+        SESSION_WORMHOLE_TRANSFERS: `/api/sessions/wormhole/transfers`,
+        SESSION_WORMHOLE_CANCEL: `/api/sessions/wormhole/cancel`,
+        SESSION_WORMHOLE_DISMISS: `/api/sessions/wormhole/dismiss`,
 
         // Workspace
         OPEN_WORKSPACE: `/api/tables/open-workspace`,
@@ -176,6 +185,20 @@ export const CONNECTOR_URLS = {
     DELETE: (id: string) => `/api/connectors/${id}`,
 } as const;
 
+// The store the page renders with, registered by index.tsx. Request code reads the session and identity from it
+// rather than importing the store module, which in a dev tab can resolve to a second copy after hot reloads
+// (with its own, stale state) and so send requests to another session.
+let pageStore: { getState: () => any } | null = null;
+
+export function setPageStore(store: { getState: () => any }): void {
+    pageStore = store;
+}
+
+/** The page's store (see `setPageStore`), or the store module's when none is registered (tests, scripts). */
+export async function currentStore(): Promise<{ getState: () => any }> {
+    return pageStore ?? (await import('./store')).store;
+}
+
 /**
  * Get the current namespaced identity from the Redux store, or fall back to browser ID.
  * Returns identity in "type:id" format (e.g., "user:alice@example.com" or "browser:550e8400-...")
@@ -185,8 +208,7 @@ export const CONNECTOR_URLS = {
  */
 async function getCurrentNamespacedIdentity(): Promise<string> {
     try {
-        const { store } = await import('./store');
-        const state = store.getState();
+        const state = (await currentStore()).getState();
         if (state.identity?.id && state.identity?.type) {
             return `${state.identity.type}:${state.identity.id}`;
         }
@@ -206,8 +228,7 @@ async function getCurrentNamespacedIdentity(): Promise<string> {
  */
 async function getActiveWorkspaceId(): Promise<string | null> {
     try {
-        const { store } = await import('./store');
-        const state = store.getState();
+        const state = (await currentStore()).getState();
         return state?.activeWorkspace?.id ?? null;
     } catch {
         return null;
@@ -238,7 +259,7 @@ async function _doFetch(
 
         headers.set('Accept-Language', getAgentLanguage());
 
-        if (DEMO_ID) headers.set(DEMO_HEADER, DEMO_ID);
+        if (SPACE_ID) headers.set(SPACE_HEADER, SPACE_ID);
 
         // Attach OIDC Bearer token when available (frontend mode only).
         // In backend mode the session cookie handles auth — no Bearer needed.
@@ -257,10 +278,9 @@ async function _doFetch(
 
         options = { ...options, headers };
 
-        console.log(
-            `[fetchWithIdentity] ${options.method || 'GET'} ${urlString} with headers:`,
-            Object.fromEntries(headers.entries()),
-        );
+        const loggedHeaders = Object.fromEntries(headers.entries());
+        if (loggedHeaders.authorization) loggedHeaders.authorization = '[redacted]';
+        console.log('[fetchWithIdentity] %s %s with headers:', options.method || 'GET', urlString, loggedHeaders);
 
     }
 
@@ -589,6 +609,26 @@ export function prepVisTable(table: any[], allFields: FieldItem[], encodingMap: 
 /** Key of the non-enumerable Flint input attached to an assembled spec (see assembleVegaChart). */
 export const FLINT_INPUT = '__flintInput';
 
+export interface Size { width: number; height: number }
+
+/**
+ * The box (`canvasSize`) an assembled spec was laid out for, exactly as passed
+ * to Flint. Undefined for specs Flint did not assemble.
+ */
+export const chartCanvasBox = (spec: any): Size | undefined => {
+    const box = spec?.[FLINT_INPUT]?.chart_spec?.canvasSize;
+    return box && box.width > 0 && box.height > 0 ? { width: box.width, height: box.height } : undefined;
+};
+
+/**
+ * Flint's host contract: a drawing is scaled into its box (contain), never up.
+ * Flint keeps the result legible (≥ 70%), so a host never needs to clip.
+ */
+export const containScale = (drawn: Size, box: Size | undefined): number => {
+    if (!box || drawn.width <= 0 || drawn.height <= 0) return 1;
+    return Math.min(1, box.width / drawn.width, box.height / drawn.height);
+};
+
 export const assembleVegaChart = (
     chartType: string, 
     encodingMap: { [key in Channel]: EncodingItem; }, 
@@ -606,6 +646,8 @@ export const assembleVegaChart = (
     title?: string,
     subtitle?: string,
     themeId?: string,
+    /** Colours bound to values of the colour (or group) field: the session's category colours. */
+    valueColors?: Record<string, string>,
 ) => {
 
     // Convert app-level EncodingMap (fieldID-based) to library-level encodings (field-name-based)
@@ -624,6 +666,9 @@ export const assembleVegaChart = (
 
     // Flint rejects sort references it cannot resolve; an unusable sort hint must not block the chart.
     Object.assign(encodings, resolveColumnSorts(encodings, workingTable));
+    const colorChannel = valueColors && Object.keys(valueColors).length
+        ? CHART_COLOR_CHANNELS.find(channel => encodings[channel]?.field) : undefined;
+    if (colorChannel) encodings[colorChannel] = { ...encodings[colorChannel], colors: valueColors };
     for (const encoding of Object.values(encodings)) {
         const sortBy = encoding.sortBy;
         if (sortBy === undefined) continue;
@@ -651,11 +696,13 @@ export const assembleVegaChart = (
     const effectiveW = Math.round(baseChartWidth * scaleFactor);
     const effectiveH = Math.round(baseChartHeight * scaleFactor);
 
-    // Flint 0.2.x sizing: `baseSize` is the target the chart aims for; `canvasSize`
-    // is the hard ceiling (= base × stretch). DF's `maxStretchFactor` is that
-    // multiplier; fall back to 1.5 so the ceiling is always set explicitly rather
-    // than relying on flint's default. (Radial charts — pie/rose/etc. — render at the
-    // target like any other type under flint 0.2.1, so no pie-specific damping.)
+    // Flint sizing: `baseSize` is the target the chart aims for; `canvasSize`
+    // (= base × stretch) is the box the chart is laid out for and scaled into.
+    // The plot never stretches past it, but the title, keys and axes share the
+    // box, so the drawing may come out a little larger: every host must
+    // contain-scale it into this box (see `chartCanvasBox` / `containScale`).
+    // DF's `maxStretchFactor` is the multiplier; fall back to 1.5 so the box is
+    // always set explicitly rather than relying on flint's default.
     const stretch = maxStretchFactor ?? 1.5;
 
     const fieldDisplayNames: Record<string, string> = {};
@@ -672,8 +719,8 @@ export const assembleVegaChart = (
             ...(title ? { title } : {}),
             ...(subtitle ? { subtitle } : {}),
             // DF's default chart width/height is the *target* size → flint `baseSize`.
-            // The hard ceiling is base × stretch (see `stretch` above), so charts render
-            // at the configured size and only grow under pressure up to that ceiling.
+            // The box is base × stretch (see `stretch` above), so charts render at
+            // the configured size and only grow under pressure up to that box.
             baseSize: { width: effectiveW, height: effectiveH },
             canvasSize: {
                 width: Math.round(effectiveW * stretch),
@@ -689,10 +736,18 @@ export const assembleVegaChart = (
             ...(maxStretchFactor != null ? { maxStretch: maxStretchFactor } : {}),
             ...assembleOptions,
         },
-        ...(themeId ? { theme_spec: themeId } : {}),
+        ...(chartThemeSpec(themeId) ? { theme_spec: chartThemeSpec(themeId) } : {}),
         ...(Object.keys(fieldDisplayNames).length > 0 ? { field_display_names: fieldDisplayNames } : {}),
     };
     const spec = mergeableLayerSorts(keepUnmatchedRegions(assembleVegaLite(flintInput)));
+    // Flint's default theme on a dark look: recolour text, grid and background only (see `chartLookConfig`).
+    const lookConfig = chartLookConfig(themeId);
+    if (lookConfig) {
+        spec.config = spec.config ?? {};
+        for (const [key, value] of Object.entries(lookConfig)) {
+            spec.config[key] = value && typeof value === 'object' ? { ...(spec.config[key] ?? {}), ...value } : value;
+        }
+    }
     // The complete Flint input behind the chart, for copying; not part of the Vega-Lite spec.
     Object.defineProperty(spec, FLINT_INPUT, { value: flintInput, enumerable: false });
 
@@ -707,7 +762,8 @@ export const assembleVegaChart = (
             fontWeight: 500,
             fontSize: 13,
             subtitleFontSize: 11,
-            color: '#555',
+            color: lookConfig?.title?.color ?? '#555',
+            ...(lookConfig ? { subtitleColor: lookConfig.title.subtitleColor } : {}),
             offset: 12,
         };
     }

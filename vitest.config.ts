@@ -22,5 +22,10 @@ export default defineConfig({
     setupFiles: ['./tests/frontend/setup.ts'],
     include: ['tests/frontend/**/*.test.{ts,tsx}'],
     css: false,
+    // Under the full suite's parallel load a test can take several times as long as alone (see setup.ts).
+    testTimeout: 20000,
+    // Flint's interactive entries load their backends through extensionless dynamic imports
+    // meant for a bundler; let Vite resolve them instead of Node.
+    server: { deps: { inline: ['flint-chart'] } },
   },
 });

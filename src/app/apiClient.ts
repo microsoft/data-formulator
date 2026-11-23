@@ -24,6 +24,8 @@ import { fetchWithIdentity } from './utils';
 export interface ApiError {
     code: string;
     message: string;
+    /** The external system's own explanation (e.g. why a data source rejected a query), already sanitized. */
+    reason?: string;
     detail?: string;
     retry?: boolean;
     request_id?: string;

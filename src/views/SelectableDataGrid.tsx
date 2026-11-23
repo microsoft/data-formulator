@@ -3,7 +3,8 @@
 
 import * as React from 'react';
 import { useTranslation } from 'react-i18next';
-import { shadow, transition } from '../app/tokens';
+import { ambientShadow, identText, shadow, transition, ink, paper } from '../app/tokens';
+import { tableHeaderSurface } from '../app/look';
 import { TableVirtuoso } from 'react-virtuoso';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
@@ -169,15 +170,9 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
         }),
     }), [field]);
 
-    let backgroundColor: string;
-    let borderBottomColor = theme.palette.primary.main;
-    if (columnDef.source == "custom") {
-        backgroundColor = theme.palette.custom.bgcolor || alpha(theme.palette.custom.main, 0.1);
-        borderBottomColor = theme.palette.custom.main;
-    } else {
-        backgroundColor = theme.palette.primary.bgcolor || alpha(theme.palette.primary.main, 0.1);
-        borderBottomColor = theme.palette.primary.main;
-    }
+    // Underlined in its field's colour (derived orange, original blue); tinted where the look fills headers.
+    const headerSurface = tableHeaderSurface(theme, columnDef.source == "custom" ? theme.palette.custom : theme.palette.primary);
+    const backgroundColor = headerSurface.backgroundColor;
 
     const opacity = isDragging ? 0.3 : 1;
     const cursorStyle = field ? (isDragging ? "grabbing" : "grab") : "default";
@@ -192,9 +187,7 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
             className="data-view-header-container" 
             ref={dragPreview}
             sx={{ 
-                backgroundColor: backgroundColor, 
-                borderBottomColor, 
-                borderBottomWidth: '2px', 
+                ...headerSurface,
                 borderBottomStyle: 'solid',
                 opacity,
                 display: 'flex',
@@ -208,7 +201,7 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
                 ...(field && {
                     '&:hover': {
                         backgroundColor: hoverBackgroundColor,
-                        boxShadow: shadow.md,
+                        boxShadow: ambientShadow(shadow.md),
                     },
                 }),
             }}
@@ -258,7 +251,7 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
                     arrow
                     placement="top"
                 >
-                    <Typography sx={{fontSize: textVar.sm, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>
+                    <Typography sx={{fontSize: textVar.sm, ...identText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>
                         {columnDef.label}
                     </Typography>
                 </Tooltip>
@@ -332,7 +325,7 @@ const VirtuosoTableHead = React.forwardRef<HTMLTableSectionElement, React.HTMLAt
 ));
 const VirtuosoTableRow = (props: any) => {
     const index = props['data-index'];
-    return <TableRow {...props} style={{...props.style, backgroundColor: index % 2 == 0 ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.02)"}}/>
+    return <TableRow {...props} style={{...props.style, backgroundColor: index % 2 == 0 ? paper(0.05) : ink(0.02)}}/>
 };
 const VirtuosoTableBody = React.forwardRef<HTMLTableSectionElement>((props, ref) => (
     <TableBody {...props} ref={ref} />
@@ -580,6 +573,12 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
         fetchVirtualDataRef.current = fetchVirtualData;
     }, [fetchVirtualData]);
 
+    // A virtual table's in-memory preview can be empty (an imported session, or one restored after a
+    // reload), and with no rows the list never reaches its end to load more, so fetch the first page.
+    React.useEffect(() => {
+        if (virtual && rows.length === 0 && rowCount > 0) fetchVirtualData([], 'asc', 0, false);
+    }, [tableId]);
+
     // Refetch from offset 0 whenever filters change (virtual tables only).
     // Skip the initial mount; the first load happens via the existing
     // virtual-data effect.
@@ -676,7 +675,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                                                         justifyContent: 'center',
                                                         borderBottomWidth: '2px',
                                                         borderBottomStyle: 'solid',
-                                                        borderBottomColor: 'rgba(0,0,0,0.2)',
+                                                        borderBottomColor: ink(0.2),
                                                         padding: '4px 4px',
                                                         margin: '0 2px 0 0',
                                                     }}
@@ -725,7 +724,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                         return (
                             <>
                                 {columnDefs.map((column, colIndex) => {
-                                    let backgroundColor = "rgba(255,255,255,0.05)";
+                                    let backgroundColor = paper(0.05);
 
                                     return (
                                         <TableCell

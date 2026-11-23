@@ -20,7 +20,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useTranslation } from 'react-i18next';
 import { iconVar, textVar } from '../app/layout';
-import { borderColor, radius, shadow } from '../app/tokens';
+import { borderColor, radius, shadow, paper, weight } from '../app/tokens';
 import { InlineLoadingStatus } from '../components/FunComponents';
 
 export interface Message {
@@ -109,6 +109,10 @@ const DiagnosticsViewer: React.FC<{ diagnostics: any }> = React.memo(({ diagnost
     );
 });
 
+/** The badge follows the latest message: an error that has since been followed by other news no longer reads as the current state. */
+export const messageBadgeSeverity = (messages: Message[]): Message['type'] | 'default' =>
+    messages.length ? messages[messages.length - 1].type : 'default';
+
 export const MessageSnackbar = React.memo(function MessageSnackbar() {
   
     const messages = useSelector((state: DataFormulatorState) => state.messages);
@@ -122,7 +126,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
     const toastSx = {
         minWidth: 0, minHeight: 36, boxSizing: 'border-box',
         border: `1px solid ${borderColor.view}`, borderRadius: radius.md, boxShadow: shadow.xl,
-        bgcolor: theme.palette.mode === 'dark' ? 'grey.900' : 'grey.50',
+        bgcolor: theme.palette.mode === 'dark' ? 'background.paper' : 'grey.50',
         color: 'text.primary', fontSize: textVar.sm, lineHeight: 1.5,
     };
 
@@ -140,13 +144,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
 
     const messagesScrollRef = React.useRef<HTMLDivElement>(null);
 
-    const buttonSeverity: "error" | "warning" | "info" | "success" | "default" = React.useMemo(() => {
-        if (messages.length === 0) return "default";
-        if (messages.some(m => m.type === "error")) return "error";
-        if (messages.some(m => m.type === "warning")) return "warning";
-        if (messages.some(m => m.type === "info")) return "info";
-        return "success";
-    }, [messages]);
+    const buttonSeverity = messageBadgeSeverity(messages);
 
     React.useEffect(()=>{
         if (displayedMessageIdx < messages.length) {
@@ -215,7 +213,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                         width: 30,
                         height: 30,
                         zIndex: 10,
-                        backgroundColor: 'white',
+                        backgroundColor: paper(),
                         border: '1px solid',
                         borderColor: buttonSeverity === 'default' ? 'grey.400' : `${buttonSeverity}.main`,
                         boxShadow: '0 0 6px rgba(0,0,0,0.1)',
@@ -223,7 +221,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                         transition: 'all 0.3s ease',
                         '&:hover': {
                             transform: 'scale(1.1)',
-                            backgroundColor: 'white',
+                            backgroundColor: paper(),
                         },
                     }}
                     aria-label={t('messages.viewSystemMessages')}
@@ -269,7 +267,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                         borderBottom: `1px solid ${borderColor.divider}`,
                     }}>
                         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                            <Typography sx={{ fontSize: textVar.sm, fontWeight: 500, color: 'text.secondary', lineHeight: 1.3 }}>
+                            <Typography sx={{ fontSize: textVar.sm, fontWeight: weight(500), color: 'text.secondary', lineHeight: 1.3 }}>
                                 {t('messages.systemMessagesWithCount', { count: messages.length + activeLoads.length })}
                             </Typography>
                             {messages.length > MAX_DISPLAY_MESSAGES && (
@@ -369,7 +367,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                                             {msg.count > 1 && (
                                                 <Box component="span" sx={{
                                                     color, fontSize: textVar.xxs,
-                                                    fontWeight: 600, lineHeight: 1.4,
+                                                    fontWeight: weight(600), lineHeight: 1.4,
                                                 }}>
                                                     ×{msg.count}
                                                 </Box>

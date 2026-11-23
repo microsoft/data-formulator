@@ -21,6 +21,19 @@ export interface ChartCacheEntry {
     specKey: string;            // Deterministic key of the inputs that produced this render
     naturalWidth: number;       // Intrinsic width (CSS px) the rendering engine chose for the chart
     naturalHeight: number;      // Intrinsic height (CSS px) the rendering engine chose for the chart
+    // The size to show the chart at: the natural size contain-scaled into the
+    // box Flint laid it out for (its title, keys and axes may run past it).
+    displayWidth: number;
+    displayHeight: number;
+    /**
+     * The size the chart draws at on the canvas (laid out for the canvas's default chart size, then
+     * contain-scaled into its box): its shape as the user sees it, which the agent is told so an app can
+     * give the chart room of the same shape.
+     */
+    canvasWidth?: number;
+    canvasHeight?: number;
+    /** The Vega-Lite spec it was drawn from, to draw it again sharper (renderChartPng). */
+    spec?: any;
 }
 
 const cache = new Map<string, ChartCacheEntry>();
@@ -113,6 +126,7 @@ export function computeCacheKey(
     tableMetadata?: any,
     fieldSemantics?: any,
     themeId?: string,
+    sizing?: string,
 ): string {
     return JSON.stringify({
         chartType,
@@ -125,5 +139,6 @@ export function computeCacheKey(
         // and arrives asynchronously — a change here must re-render.
         fieldSemantics: fieldSemantics || null,
         themeId: themeId || null,
+        sizing: sizing || null,
     });
 }

@@ -1,11 +1,12 @@
-import { ShimmerText, WorkflowGears } from '../components/FunComponents';
-import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { ShimmerText, WorkflowIcon } from '../components/FunComponents';
+import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { savedThemeFromResult, upsertSavedTheme } from '../app/savedThemes';
 import { useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { CanvasHeader } from './CanvasHeader';
 import i18n from '../i18n';
-import { Alert, Box, Button, ButtonBase, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
-    IconButton, Popover, TextField, Tooltip, Typography, alpha, useTheme } from '@mui/material';
+import { Alert, Box, Button, ButtonBase, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
+    FormControlLabel, IconButton, Popover, TextField, ToggleButton, Tooltip, Typography, alpha, useTheme } from '@mui/material';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
@@ -17,15 +18,15 @@ import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
+import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import { ArtifactDeleteButton, ThreadArtifactCard } from './DataThreadCards';
-import { cardHoverSx, ItemCard, MetadataCard, MetadataChips, ViewAllButton } from '../components/ItemCard';
-import { readingTypography, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarToolbarSx } from '../app/tokens';
+import { exampleCardButtonSx, exampleCardDescriptionSx, exampleCardSx, exampleCardTitleSx, ItemCard, itemCardGridSx, MetadataCard, MetadataChips, ViewAllButton } from '../components/ItemCard';
+import { readingTypography, sidebarPrimaryActionSx, sidebarRowActionSx, sidebarToolbarSx, ink, paper, weight } from '../app/tokens';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import CodeIcon from '@mui/icons-material/Code';
 import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
-import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
 import { getCachedChart } from '../app/chartCache';
@@ -40,8 +41,9 @@ import { buildDictTableFromWorkspace } from '../app/tableThunks';
 import { applySessionDeletion, type DeletionPlan } from '../app/sessionDeletion';
 import { applySessionUpdate } from '../app/sessionFiles';
 import { loadWorkspace, notifyWorkspaceFilesChanged, WorkspaceLoadSupersededError } from '../app/workspaceService';
-import { createConversationRootId, createDictTable, computeInsightKey, DictTable, FieldItem, TextTurn, ClarificationResponse } from '../components/ComponentType';
+import { createConversationRootId, createDictTable, computeInsightKey, DictTable, FieldItem, TextTurn, ClarificationResponse, type ScheduleConfig } from '../components/ComponentType';
 import { MarkdownEditor } from '../components/MarkdownEditor';
+import { FileTypeIcon } from '../icons';
 import { textVar, iconVar } from '../app/layout';
 import { ListDetailDialog } from '../components/ListDetailDialog';
 import { ExecutionCodeBlock, formatTerminalCommand, TerminalApprovalDialog, TerminalProposal } from '../components/TerminalApprovalDialog';
@@ -50,8 +52,10 @@ import { parseDataOperation } from '../dataOperations/models';
 import { ClarificationPanel, FailedDraftPanel } from './AgentPausePanel';
 import { formatClarificationResponses, normalizeClarifyEvent } from '../app/clarification';
 import ReactMarkdown from 'react-markdown';
-import { CardRuns, RunEntry, RunList, useScheduleLibrary, workflowApi as post, WorkflowLibraryItem,
-    WorkflowSetup, WorkflowSetupFields, workflowSetupContentSx } from './WorkflowSchedules';
+import { CardRuns, RunEntry, RunList, scheduleCadence, ScheduleDraft, scheduleDraftOf, scheduleDraftToSave, ScheduleLine, WorkflowPage,
+    workflowApi as post, WorkflowLibraryItem,
+    WorkflowScheduleState, WorkflowSetup, RunInputs, workflowSetupContentSx } from './WorkflowSchedules';
+import { load as loadYaml } from 'js-yaml';
 
 export interface Run {
     workflow_path?: string;
@@ -85,7 +89,7 @@ export interface Run {
 }
 
 /** Tools whose output is a workspace file the run publishes; apps are files too. */
-const FILE_OUTPUT_TOOLS = ['create_file', 'edit_file', 'write_app', 'write_html_app'];
+const FILE_OUTPUT_TOOLS = ['create_file', 'edit_file', 'write_app', 'write_html_app', 'write_map'];
 
 function workflowOutputIds(run: Run): string[] {
     return [...new Set((run.outputs || []).flatMap(output => {
@@ -122,6 +126,36 @@ function workflowArtifacts(run: Run): NonNullable<NonNullable<TextTurn['workflow
     }).filter((artifact, index, all) => all.findLastIndex(item => item.nodeId === artifact.nodeId) === index);
 }
 
+const visuallyHidden = { position: 'absolute', width: '1px', height: '1px', p: 0, m: '-1px', overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0 } as const;
+
+/** Caps each `[data-clamp]` descendant at its line count; one toggle, shown only on overflow, expands them together. */
+const ClampedRegion: React.FC<React.ComponentProps<typeof Box>> = ({ children, sx, ...props }) => {
+    const { t } = useTranslation();
+    const ref = useRef<HTMLElement>(null);
+    const [expanded, setExpanded] = useState(false);
+    const [overflowing, setOverflowing] = useState(false);
+    useLayoutEffect(() => {
+        const element = ref.current;
+        if (!element || expanded) return;
+        const measure = () => setOverflowing([...element.querySelectorAll<HTMLElement>('[data-clamp]')]
+            .some(item => item.scrollHeight > item.clientHeight + 1));
+        measure();
+        if (typeof ResizeObserver === 'undefined') return;
+        const observer = new ResizeObserver(measure);
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, [expanded, children]);
+    const clamp = (lines: number) => ({ display: '-webkit-box', WebkitLineClamp: lines, WebkitBoxOrient: 'vertical', overflow: 'hidden' });
+    return <Box ref={ref} {...props} sx={[!expanded && { '& [data-clamp="2"]': clamp(2), '& [data-clamp="3"]': clamp(3) }, ...(Array.isArray(sx) ? sx : [sx])]}>
+        {children}
+        {(overflowing || expanded) && <Box component="button" type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}
+            sx={{ display: 'block', mt: 0.25, p: 0, border: 0, bgcolor: 'transparent', cursor: 'pointer', font: 'inherit', fontSize: textVar.xs,
+                color: 'primary.main', '&:hover': { textDecoration: 'underline' } }}>
+            {expanded ? t('workflow.showLess') : t('workflow.showMore')}
+        </Box>}
+    </Box>;
+};
+
 const WorkflowArtifacts: React.FC<{ artifacts: NonNullable<NonNullable<TextTurn['workflow']>['artifacts']> }> = ({ artifacts }) => {
     const { t } = useTranslation();
     const state = useSyncExternalStore(store.subscribe, store.getState);
@@ -135,7 +169,7 @@ const WorkflowArtifacts: React.FC<{ artifacts: NonNullable<NonNullable<TextTurn[
         const title = chart?.title || table?.displayId || table?.id || file?.displayName || report?.title || artifact.nodeId;
         const cached = chart ? getCachedChart(chart.id) : undefined;
         const image = chart ? cached?.fullPngDataUrl || dfSelectors.getChartThumbnail(chart.id)(state) || cached?.thumbnailDataUrl : undefined;
-        const Icon = chart ? BarChartOutlinedIcon : table ? TableChartOutlinedIcon : file ? InsertDriveFileOutlinedIcon : ArticleOutlinedIcon;
+        const Icon = chart ? BarChartOutlinedIcon : table ? TableChartOutlinedIcon : ArticleOutlinedIcon;
         const open = () => {
             if (chart) store.dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
             else if (loaded || file) store.dispatch(dfActions.setFocused({ type: 'reference', referenceId: artifact.nodeId }));
@@ -144,7 +178,7 @@ const WorkflowArtifacts: React.FC<{ artifacts: NonNullable<NonNullable<TextTurn[
         };
         const detail = table && !chart ? t('workflow.rowsColumns', { rows: (table.virtual?.rowCount ?? table.rows.length).toLocaleString(), columns: table.names.length })
             : report?.status === 'generating' ? t('workflow.composing') : undefined;
-        return [{ artifact, chart, title, image, Icon, open, detail }];
+        return [{ artifact, chart, file, title, image, Icon, open, detail }];
     });
     const cardSx = { textAlign: 'left', minWidth: 0, boxSizing: 'border-box', border: 1, borderColor: 'divider', borderRadius: 1,
         bgcolor: 'background.paper', '&:hover': { bgcolor: 'action.hover' },
@@ -155,10 +189,12 @@ const WorkflowArtifacts: React.FC<{ artifacts: NonNullable<NonNullable<TextTurn[
     // Tables, files and reports read as compact rows; charts share one card size below them, in the same columns.
     return <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, my: 0.25 }}>
         {others.length > 0 && <Box sx={gridSx}>
-            {others.map(({ artifact, title, Icon, open, detail }) => <ButtonBase key={artifact.nodeId} aria-label={t('workflow.openItem', { name: title })}
+            {others.map(({ artifact, file, title, Icon, open, detail }) => <ButtonBase key={artifact.nodeId} aria-label={t('workflow.openItem', { name: title })}
                 data-workflow-artifact={artifact.nodeId} onClick={open}
                 sx={{ ...cardSx, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-start', gap: 0.75, px: 1, py: 0.75 }}>
-                <Icon sx={{ fontSize: 16, flexShrink: 0, mt: '2px', color: 'text.secondary' }} />
+                {file
+                    ? <Box component="span" sx={{ display: 'flex', flexShrink: 0, mt: '2px' }}><FileTypeIcon path={file.path} size={16} sx={{ color: 'text.secondary' }} /></Box>
+                    : <Icon sx={{ fontSize: 16, flexShrink: 0, mt: '2px', color: 'text.secondary' }} />}
                 <Box component="span" sx={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
                     <Box component="span" title={title} sx={{ fontSize: textVar.sm,
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</Box>
@@ -385,6 +421,9 @@ export async function publishWorkflowRun(run: Run, workspaceId: string, focus = 
         } else if (output.type === 'tool_result' && output.tool === 'edit_file' && JSON.parse(output.stdout || '{}').session_update) {
             // A chart or report the run edited, applied as an analyst edit is (unless it changed meanwhile).
             applySessionUpdate(JSON.parse(output.stdout || '{}').session_update, store.dispatch, () => store.getState());
+        } else if (output.type === 'tool_result' && output.tool === 'save_theme') {
+            const saved = savedThemeFromResult(output.stdout);
+            if (saved) upsertSavedTheme(saved);
         } else if (output.type === 'tool_result' && output.tool === 'delete_items') {
             const plan: DeletionPlan | undefined = JSON.parse(output.stdout || '{}').deleted;
             if (plan) {
@@ -532,6 +571,14 @@ export async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => 
     if (executions.has(workspaceId)) throw new Error(i18n.t('workflow.alreadyRunning'));
     const controller = new AbortController();
     executions.set(workspaceId, controller);
+    // Until the server reports the new run, an empty session would otherwise look idle.
+    let starting = !body.run_id;
+    const endStarting = () => {
+        if (!starting) return;
+        starting = false;
+        if (store.getState().activeWorkspace?.id === workspaceId) store.dispatch(dfActions.setWorkflowStarting(false));
+    };
+    if (starting) store.dispatch(dfActions.setWorkflowStarting(true));
     const unsubscribe = store.subscribe(() => {
         if (store.getState().activeWorkspace?.id !== workspaceId) controller.abort();
     });
@@ -601,6 +648,7 @@ export async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => 
                 flushReport();
                 latest = result.run;
                 await publishWorkflowRun(latest, workspaceId, true, startNodeId);
+                endStarting();
                 onAccepted?.();
                 onAccepted = undefined;
             } else if (result.type === 'activity' && latest) {
@@ -615,6 +663,7 @@ export async function executeWorkflow(body: WorkflowRequest, onAccepted?: () => 
     } catch (reason) {
         if (latest?.status !== 'running') throw reason;
     } finally {
+        endStarting();
         flushReport();
         if (streamingReportId && store.getState().activeWorkspace?.id === workspaceId
             && latest?.status !== 'running'
@@ -841,7 +890,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
     const renderChecks = (checks: NonNullable<NonNullable<TextTurn['workflow']>['checks']>) => checks.map(check => <Box key={check.id}
         sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, py: 1 }}>
         <Box sx={{ pt: 0.25 }}>{stepIcon(check.status)}</Box>
-        <Box sx={{ minWidth: 0 }}><Typography sx={{ fontSize: textVar.sm, fontWeight: 600 }}>{check.id} · {statusLabel(check.status)}</Typography>
+        <Box sx={{ minWidth: 0 }}><Typography sx={{ fontSize: textVar.sm, fontWeight: weight(600) }}>{check.id} · {statusLabel(check.status)}</Typography>
             <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', lineHeight: 1.6 }}>{check.explanation}</Typography></Box>
     </Box>);
     const callPresentation = (tool: string) => tool === 'execute_python_script'
@@ -908,25 +957,66 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
             ? [{ ...runningTool, text: '', running: true }, ...entries] : entries;
         const status = displayedStepStatus(step.status, archived);
         const finished = status === 'passed' || status === 'completed';
+        const instructions = step.instructions || definition?.instructions || '';
+        const current = !archived && workflow.status !== 'completed' && !workflow.planReviewPending && workflow.stepId === step.id;
+        // Checks matter while a step runs; afterwards they collapse to one line, and pending steps omit them.
+        const checksMode = !checkers.length || (!current && status === 'pending') ? 'hidden' : current ? 'open' : 'summary';
+        const passedChecks = checkers.filter(check => results.find(item => item.id === check.id)?.status === 'passed').length;
+        const failedChecks = checkers.some(check => results.find(item => item.id === check.id)?.status === 'failed');
+        const checkList = <Box component="ul" sx={{ listStyle: 'none', m: 0, mt: 0.25, p: 0 }}>
+            {checkers.map(check => {
+                const result = results.find(item => item.id === check.id);
+                const checkStatus = result?.status || 'pending';
+                const timing = [check.when === 'before' || check.when === 'during' ? t(`workflow.checkWhenStep.${check.when}`) : '',
+                    check.on_fail && check.on_fail !== step.id ? t('workflow.onFailure', { action: check.on_fail }) : ''].filter(Boolean).join(' · ');
+                return <Box component="li" key={check.id} data-workflow-check={check.id}
+                    sx={{ display: 'grid', gridTemplateColumns: '16px minmax(0, 1fr)', columnGap: 1, py: 0.25, fontSize: textVar.md, lineHeight: 1.6 }}>
+                    <Box component="span" aria-label={`${check.id}: ${statusLabel(checkStatus)}`} sx={{ display: 'inline-flex', pt: 0.4 }}>{stepIcon(checkStatus)}</Box>
+                    <Box sx={{ minWidth: 0 }}>
+                        <Box data-clamp="2" sx={{ overflowWrap: 'anywhere' }}>
+                            {check.condition || check.id}
+                            {result?.explanation && <Box component="span" sx={{ color: 'text.secondary' }}> — {result.explanation}</Box>}
+                        </Box>
+                        {timing && <Box component="span" sx={{ display: 'block', fontSize: textVar.xs, color: 'text.secondary' }}>{timing}</Box>}
+                    </Box>
+                </Box>;
+            })}
+        </Box>;
+        const hasActivity = calls.length > 0 || transitions.length > 0 || !!step.assessment || step.elapsedSeconds !== undefined || active;
         return <Box component="li" key={step.id} data-workflow-step={archived ? undefined : step.id} aria-busy={active}
             sx={{ position: 'relative', display: 'grid', gridTemplateColumns: '24px minmax(0, 1fr)', columnGap: 1.25, pb: 1.5 }}>
-            {index < steps.length - 1 && <Box aria-hidden="true" data-workflow-connector={finished ? 'solid' : 'pending'} sx={{ position: 'absolute', left: 11, top: 26, bottom: 2,
+            {index < steps.length - 1 && <Box aria-hidden="true" data-workflow-connector={finished ? 'solid' : 'pending'} sx={{ position: 'absolute', left: 11, top: 30, bottom: 2,
                 borderLeft: 2, borderColor: finished ? 'success.main' : 'divider' }} />}
-            <Box data-workflow-marker sx={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{stepIcon(status, active)}</Box>
-            <Box sx={{ minWidth: 0 }}>
+            <Box data-workflow-marker sx={{ width: 24, height: 24, mt: 1.25, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{stepIcon(status, active)}</Box>
+            <Box data-workflow-block sx={{ minWidth: 0, px: 2, py: 1.25, border: 1, borderRadius: 2,
+                borderColor: active ? 'primary.main' : status === 'failed' ? 'error.main' : finished ? alpha(theme.palette.success.main, 0.4) : 'divider', bgcolor: active ? alpha(theme.palette.primary.main, 0.03) : 'background.paper',
+                boxShadow: active ? `0 0 0 3px ${alpha(theme.palette.primary.main, 0.08)}` : 'none' }}>
                 <Box sx={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: 1, minHeight: 24 }}>
-                    <Typography component="h3" sx={{ fontSize: textVar.md, fontWeight: active ? 600 : 500, flex: 1, minWidth: 0,
+                    <Typography component="h3" sx={{ fontSize: textVar.md, fontWeight: weight(600), flex: 1, minWidth: 0,
                         color: status === 'pending' ? 'text.secondary' : 'text.primary', overflowWrap: 'anywhere' }}>{step.description || definition?.description || step.id.replaceAll('_', ' ')}</Typography>
-                    <Typography component="span" sx={{ fontSize: textVar.xs, color: finished ? 'success.main' : 'text.secondary' }}>{statusLabel(status)}</Typography>
+                    {/* The border and marker carry status; only a failure also gets a visible label. */}
+                    <Typography component="span" sx={status === 'failed' ? { fontSize: textVar.xs, color: 'error.main' } : visuallyHidden}>{statusLabel(status)}</Typography>
                 </Box>
+                <ClampedRegion>
+                {instructions && <Box data-clamp="3" data-workflow-action={step.id} sx={{ ...proseSx, mt: 0.5, color: 'text.secondary', overflowWrap: 'anywhere' }}><ReactMarkdown>{instructions}</ReactMarkdown></Box>}
+                {checksMode === 'open' && <Box data-workflow-checks={step.id} sx={{ mt: 1 }}>
+                    <Typography component="h4" sx={{ fontSize: textVar.sm, fontWeight: weight(600) }}>{t('workflow.checks')}</Typography>
+                    {checkList}
+                </Box>}
+                </ClampedRegion>
                 {stepArtifacts.length > 0 && <Box data-workflow-artifacts={step.id} sx={{ mt: 1, mb: 0.5 }}><WorkflowArtifacts artifacts={stepArtifacts} /></Box>}
-                <Box component="details" data-workflow-execution={step.id}>
-                    <Box component="summary" sx={{ color: 'text.secondary', '&&': { py: 0.5 }, fontSize: textVar.xs }}>{t('workflow.executionDetails')}</Box>
-                    <Box data-workflow-action={step.id} sx={proseSx}><ReactMarkdown>{step.instructions || definition?.instructions || ''}</ReactMarkdown></Box>
-                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary', my: 1 }}>{t('workflow.callsAndChecks', { calls: calls.length, passed: results.filter(result => result.status === 'passed').length, total: checkers.length })}{stepDuration(step.elapsedSeconds, active)}</Typography>
-                    {step.next && step.next !== steps[index + 1]?.id && <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{t('workflow.nextStep', { step: step.next })}</Typography>}
+                {checksMode === 'summary' && <Box component="details" data-workflow-checks={step.id} sx={{ mt: 0.75 }}>
+                    <Box component="summary" sx={{ color: failedChecks ? 'error.main' : 'text.secondary', '&&': { py: 0.25 }, fontSize: textVar.xs }}>
+                        {passedChecks === checkers.length ? t('workflow.allChecksPassed') : t('workflow.checksPassedCount', { passed: passedChecks, total: checkers.length })}
+                    </Box>
+                    <ClampedRegion sx={{ pl: { xs: 1, sm: 2 }, py: 0.5 }}>{checkList}</ClampedRegion>
+                </Box>}
+                {hasActivity && <Box component="details" data-workflow-execution={step.id} sx={{ mt: checksMode === 'summary' ? 0 : 0.75 }}>
+                    <Box component="summary" sx={{ color: 'text.secondary', '&&': { py: 0.25 }, fontSize: textVar.xs }}>
+                        {t('workflow.toolCalls', { count: calls.length })}{stepDuration(step.elapsedSeconds, active)}
+                    </Box>
                     <Box data-workflow-activity={step.id} sx={sectionContentSx}>
-                        <Typography component="h3" sx={{ fontWeight: 600, mb: 0.75 }}>{t('workflow.activities')}</Typography>
+                        {step.next && step.next !== steps[index + 1]?.id && <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{t('workflow.nextStep', { step: step.next })}</Typography>}
                         {!calls.length && !transitions.length && !step.assessment && <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary' }}>{t('workflow.noActivity')}</Typography>}
                         {step.assessment && <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary', my: 1 }}>
                             {t('workflow.progressAssessment', { status: statusLabel(step.assessment.status), explanation: step.assessment.explanation })}
@@ -935,26 +1025,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                         {calls.map(renderCall)}
                         {transitions.map((transition, transitionIndex) => <Typography key={transitionIndex} sx={{ mt: 1, fontSize: textVar.sm, color: 'text.secondary' }}>{transition.reason}</Typography>)}
                     </Box>
-                    <Box data-workflow-checks={step.id} sx={sectionContentSx}>
-                        <Typography component="h3" sx={{ fontWeight: 600, mb: 0.75 }}>{t('workflow.checks')}</Typography>
-                        {!checkers.length && <Typography sx={{ fontSize: textVar.sm, color: 'text.secondary' }}>{t('workflow.noChecks')}</Typography>}
-                        {checkers.map(check => {
-                            const result = results.find(item => item.id === check.id);
-                            return <Box component="details" key={check.id} data-workflow-check={check.id}>
-                                <Box component="summary" sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75 }}>
-                                    <ChevronRightIcon className="workflow-chevron" sx={{ fontSize: 16, mt: 0.25, flexShrink: 0 }} />
-                                    <Box component="span" aria-label={`${check.id}: ${statusLabel(result?.status || 'pending')}`} sx={{ display: 'inline-flex', pt: 0.25 }}>{stepIcon(result?.status || 'pending')}</Box>
-                                    <Box component="span" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>{check.condition || check.id}</Box>
-                                </Box>
-                                <Box sx={{ pl: 5.5, py: 0.5 }}>
-                                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{t('workflow.checkAgentReported', { id: check.id, status: statusLabel(result?.status || 'pending') })}</Typography>
-                                    <Typography sx={{ fontSize: textVar.md, lineHeight: 1.6 }}>{result?.explanation || t('workflow.notCheckedYet')}</Typography>
-                                    <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{t(`workflow.checkWhenStep.${check.when === 'before' || check.when === 'during' ? check.when : 'after'}`)}{check.on_fail ? ` · ${t('workflow.onFailure', { action: check.on_fail })}` : ''}</Typography>
-                                </Box>
-                            </Box>;
-                        })}
-                    </Box>
-                </Box>
+                </Box>}
             </Box>
         </Box>;
         })}
@@ -980,7 +1051,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
         <Box component="span" sx={{ flex: 1, minWidth: 0, ...(canvas ? { display: 'block' } : {}) }}>
             <Typography component="span" sx={{ display: 'block', fontSize: textVar.xs, color: 'text.secondary', overflowWrap: 'anywhere', mb: 0.75, pr: canvas ? 0 : 3.5 }}>
                 <Box component="span"
-                    sx={{ fontWeight: 600, color: statusColor, textTransform: 'capitalize' }}>
+                    sx={{ fontWeight: weight(600), color: statusColor, textTransform: 'capitalize' }}>
                     {workflow.status === 'running' ? <ShimmerText tone="neutral" fontSize="inherit" fontWeight={600}>{workflow.pauseRequested ? t('workflow.stopping') : workflow.planReviewPending ? t('workflow.reviewingPlan') : statusLabel(workflow.status)}</ShimmerText> : statusLabel(workflow.status)}
                 </Box> · {t('workflow.toolCalls', { count: workflow.toolCalls ?? workflow.log?.length ?? 0 })}
             </Typography>
@@ -1008,7 +1079,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                 '& h2': { fontSize: '0.95rem', lineHeight: 1.4, letterSpacing: 0 },
                 '& h3': { fontSize: '0.875rem', lineHeight: 1.4, letterSpacing: 0 } } : { minWidth: 0, width: '100%' }) }}>
         {/* Under the tabs the header only carries status and run controls; a finished run needs neither. */}
-        {canvas && !interactionOnly && workflow.status !== 'completed' && <CanvasHeader icon={<WorkflowGears running={workflow.status === 'running'} size={18} color="text.secondary" showTooltip={false} />} title={turn.displayId || t('workflow.fallbackName')}
+        {canvas && !interactionOnly && workflow.status !== 'completed' && <CanvasHeader icon={<WorkflowIcon running={workflow.status === 'running'} size={18} color="text.secondary" showTooltip={false} />} title={turn.displayId || t('workflow.fallbackName')}
             meta={<Box component="span" sx={{ color: statusColor, textTransform: 'capitalize' }}>
                 {workflow.status === 'running' ? <ShimmerText tone="neutral" fontSize="inherit">{workflow.pauseRequested ? t('workflow.stopping') : workflow.planReviewPending ? t('workflow.reviewingPlan') : statusLabel('running')}</ShimmerText> : statusLabel(workflow.status)}
             </Box>}
@@ -1064,7 +1135,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
         {canvas && <Box component="section" aria-label={t('workflow.summary')} sx={{ ...proseSx, mt: 2, pb: 1.5, borderBottom: 1, borderColor: 'divider',
             '& > h2': { mb: 0.75 } }}>
             {workflow.status === 'completed' ? <>
-                <Typography component="h2" sx={{ fontSize: textVar.sm, fontWeight: 600 }}>{t('workflow.results')}</Typography>
+                <Typography component="h2" sx={{ fontSize: textVar.sm, fontWeight: weight(600) }}>{t('workflow.results')}</Typography>
                 <ReactMarkdown>{turn.content}</ReactMarkdown>
             </> : null}
             {(overview || scope || deliverables.length > 0 || setup?.instructions || Object.keys(setup?.parameters || {}).length > 0) && <Box component="details" sx={{ mt: 1,
@@ -1073,7 +1144,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                 {overview && <Box data-workflow-overview sx={{ my: 1 }}><ReactMarkdown>{overview}</ReactMarkdown></Box>}
                 {scope && <ReactMarkdown>{scope}</ReactMarkdown>}
                 {deliverables.length > 0 && <Box sx={{ mt: 0.75 }}>
-                    <Typography component="h2" sx={{ fontSize: textVar.sm, fontWeight: 600 }}>{t('workflow.expectedOutputs')}</Typography>
+                    <Typography component="h2" sx={{ fontSize: textVar.sm, fontWeight: weight(600) }}>{t('workflow.expectedOutputs')}</Typography>
                     <Box component="ul" sx={{ m: 0, mt: 0.25, pl: 2.5, '& p': { my: 0 } }}>
                         {deliverables.map((item, index) => <Box component="li" key={index}><ReactMarkdown>{item}</ReactMarkdown></Box>)}
                     </Box>
@@ -1095,7 +1166,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
             '& summary:has(.workflow-chevron)': { listStyle: 'none', '&::-webkit-details-marker': { display: 'none' } },
             '& details[open] > summary > .workflow-chevron': { transform: 'rotate(90deg)' } }}>
             {!!workflow.planHistory?.length && <Box component="details" sx={{ mb: 2, borderTop: 1, borderColor: 'divider' }}>
-                <Box component="summary" sx={{ fontWeight: 600 }}>{t('workflow.earlierPlans', { count: workflow.planHistory.length })}</Box>
+                <Box component="summary" sx={{ fontWeight: weight(600) }}>{t('workflow.earlierPlans', { count: workflow.planHistory.length })}</Box>
                 {workflow.planHistory.map(plan => <Box component="details" key={plan.revision} data-workflow-plan={plan.revision}
                     sx={{ pl: { xs: 1, sm: 3 }, borderTop: 1, borderColor: 'divider' }}>
                     <Box component="summary">{t('workflow.planReason', { number: plan.revision + 1, reason: plan.reason })}</Box>
@@ -1103,7 +1174,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                     {allLog.filter(entry => (entry.plan_revision || 0) === plan.revision && !plan.steps.some(step => step.id === entry.step_id)).map(renderCall)}
                 </Box>)}
             </Box>}
-            <Typography component="h2" sx={{ fontSize: textVar.sm, fontWeight: 600, mb: 1 }}>{t('workflow.steps')}{workflow.planRevision ? ` · ${t('workflow.planNumber', { number: workflow.planRevision + 1 })}` : ''}</Typography>
+            <Typography component="h2" sx={{ fontSize: textVar.sm, fontWeight: weight(600), mb: 1 }}>{t('workflow.steps')}{workflow.planRevision ? ` · ${t('workflow.planNumber', { number: workflow.planRevision + 1 })}` : ''}</Typography>
             {renderTimeline(workflow.steps, workflow.checks || [], workflow.planRevision || 0)}
             {!!unassignedArtifacts.length && <Box component="section" aria-label={t('workflow.unassignedArtifacts')} sx={{ mt: 2 }}>
                 <Typography sx={{ fontSize: textVar.xs, color: 'text.secondary' }}>{t('workflow.unassignedArtifacts')}</Typography>
@@ -1114,7 +1185,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
                 {t('workflow.historyUnavailable')}
             </Typography>}
             {!!unassignedLog.length && <Box component="details" sx={{ mt: 2, borderTop: 1, borderColor: 'divider' }}>
-                <Box component="summary" sx={{ fontWeight: 600 }}>{t('workflow.unassignedCalls', { count: unassignedLog.length })}</Box>
+                <Box component="summary" sx={{ fontWeight: weight(600) }}>{t('workflow.unassignedCalls', { count: unassignedLog.length })}</Box>
                 {unassignedLog.map(renderCall)}
             </Box>}
             {!!unassignedChecks.length && <Box component="details" sx={{ borderTop: 1, borderColor: 'divider' }}>
@@ -1187,7 +1258,7 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
             anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }} transformOrigin={{ vertical: 'top', horizontal: 'left' }}
             transitionDuration={{ enter: 180, exit: 120 }} onClick={event => event.stopPropagation()}
             slotProps={{ paper: { sx: { mt: 0.75, width: 380, maxWidth: 'calc(100vw - 32px)', px: 1.25, pt: 1, pb: 0.5,
-                borderRadius: '12px', border: 1, borderColor: 'divider', overflow: 'visible',
+                borderRadius: 3, border: 1, borderColor: 'divider', overflow: 'visible',
                 boxShadow: '0 4px 18px rgba(32, 33, 36, 0.16), 0 1px 3px rgba(32, 33, 36, 0.08)',
                 transition: 'border-color 120ms ease, box-shadow 120ms ease',
                 '&:focus-within': { borderColor: 'primary.main',
@@ -1219,6 +1290,10 @@ export const WorkflowProgress: React.FC<{ turn: TextTurn; canvas?: boolean; sele
     </Box>;
 };
 
+/** Hands a saved workflow to the agent to change: it reads the file, asks what to change, and proposes the revision. */
+export const workflowEditPrompt = (item: { name: string; path: string }) =>
+    `Help me change the workflow "${item.name}" (workflows://${item.path}). Read it, ask me what I want to change, then propose the revised workflow.`;
+
 export const WORKFLOW_AUTHORING_PROMPT = 'Help me create a workflow from our current conversation and data. Suggest a few useful directions for me to choose from before drafting it. Do not save or execute it yet.';
 
 export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; onOpenSession?: (id: string) => void | Promise<void>; headerActions?: React.ReactNode;
@@ -1227,7 +1302,8 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
 }> = ({ onCreateSession, onOpenSession, headerActions, presentation = 'sidebar', renderLanding }) => {
     const { t, i18n } = useTranslation();
     const landing = presentation === 'landing';
-    const canSchedule = useSelector((state: DataFormulatorState) => state.serverConfig?.IS_LOCAL_MODE);
+    const globalModels = useSelector((state: DataFormulatorState) => state.globalModels);
+    const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const model = useSelector((state: DataFormulatorState) => [...state.globalModels, ...state.models]
         .find(item => item.id === state.selectedModelId));
     const workspaceId = useSelector((state: DataFormulatorState) => state.activeWorkspace?.id);
@@ -1237,7 +1313,9 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
     const [runs, setRuns] = useState<Run[]>([]);
     const busy = useSelector((state: DataFormulatorState) => state.textTurns.some(turn => turn.workflow?.status === 'running'));
     const [loading, setLoading] = useState(false);
-    const [editor, setEditor] = useState<{ path: string; content: string; content_hash?: string; creating?: boolean; source?: string } | null>(null);
+    // The workflow's page: what it does and its schedule, read-only; its source (the file) is a secondary view.
+    const [editor, setEditor] = useState<{ path: string; content: string; content_hash?: string; creating?: boolean; source?: string;
+        view: 'page' | 'source'; schedule?: ScheduleDraft } | null>(null);
     const [saving, setSaving] = useState(false);
     const [deleteTarget, setDeleteTarget] = useState<WorkflowLibraryItem | null>(null);
     const [deletingInstance, setDeletingInstance] = useState(false);
@@ -1246,16 +1324,23 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
     const [setupInstructions, setSetupInstructions] = useState('');
     const [starting, setStarting] = useState(false);
     const [pendingRun, setPendingRun] = useState<{ path: string; content?: string; setup: WorkflowSetup; previousWorkspaceId?: string } | null>(null);
-    // Scheduled runs also appear among each workflow's previous runs.
-    const scheduleLibrary = useScheduleLibrary(!landing && !!canSchedule, busy);
+    // Each workflow's schedule state (the local app only): its next run and its scheduled runs, listed with its manual runs.
+    const [scheduling, setScheduling] = useState(false);
+    const [schedules, setSchedules] = useState<Record<string, WorkflowScheduleState>>({});
+    // Saving an edited workflow under a new filename: whether its copy keeps the schedule.
+    const [copyPrompt, setCopyPrompt] = useState<string | null>(null);
     const generation = useRef(0);
 
     const refresh = async (quiet = false) => {
         const current = generation.current;
         if (!quiet) setLoading(true);
         try {
-            const result = await post<{ items: WorkflowLibraryItem[]; runs: Run[] }>('list', { language: getAgentLanguage() });
-            if (current === generation.current) { setItems(result.items); setRuns(result.runs); }
+            const result = await post<{ items: WorkflowLibraryItem[]; runs: Run[]; scheduling?: boolean;
+                schedules?: Record<string, WorkflowScheduleState> }>('list', { language: getAgentLanguage() });
+            if (current === generation.current) {
+                setItems(result.items); setRuns(result.runs);
+                setScheduling(result.scheduling === true); setSchedules(result.schedules || {});
+            }
         } catch (reason) { if (current === generation.current && !quiet) handleApiError(reason, 'Load workflows'); }
         finally { if (current === generation.current && !quiet) setLoading(false); }
     };
@@ -1272,7 +1357,8 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
 
     // Run status changes server-side, so refresh when a run ends, the tab returns, or while any run is active.
     const wasBusy = useRef(busy);
-    const anyRunActive = runs.some(run => run.status === 'running');
+    const anyRunActive = runs.some(run => run.status === 'running')
+        || Object.values(schedules).some(state => state.history.some(run => run.status === 'running' || run.status === 'retry'));
     useEffect(() => {
         if (wasBusy.current && !busy) void refresh(true);
         wasBusy.current = busy;
@@ -1284,7 +1370,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
         return () => { document.removeEventListener('visibilitychange', onVisible); window.clearInterval(timer); };
     }, [workspaceId, anyRunActive]);
 
-    const edit = async (item: WorkflowLibraryItem) => {
+    const edit = async (item: WorkflowLibraryItem, view: 'page' | 'source' = 'page') => {
         const current = generation.current;
         try {
             const result = await post<{ content: string; content_hash?: string }>('read', { path: item.path });
@@ -1296,7 +1382,8 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                 let suffix = 2;
                 while (items.some(existing => existing.path === path)) path = `${stem}-copy-${suffix++}.yaml`;
             }
-            setEditor({ path, content: result.content ?? '', content_hash: path === item.path ? result.content_hash : undefined, source: item.path });
+            setEditor({ path, content: result.content ?? '', content_hash: path === item.path ? result.content_hash : undefined, source: item.path,
+                view, schedule: scheduleDraftOf(item.origin === 'user' ? item.schedule : undefined, globalModels, selectedModelId) });
         }
         catch (reason) { handleApiError(reason, 'Read workflow'); }
     };
@@ -1361,18 +1448,46 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
         let path = 'workflow.workflow.yaml';
         let suffix = 2;
         while (items.some(item => item.path === path)) path = `workflow-${suffix++}.workflow.yaml`;
-        setEditor({ path, content: '', creating: true });
+        setEditor({ path, content: '', creating: true, view: 'source' });
     };
     const editorItem = editor && !editor.creating ? items.find(item => item.path === editor.source) : undefined;
+    const editorDeliverables: string[] = (() => {
+        try {
+            const deliverables = (loadYaml(editor?.content || '') as { deliverables?: unknown } | null)?.deliverables;
+            return Array.isArray(deliverables) ? deliverables.map(String) : [];
+        } catch { return []; }
+    })();
+    const hasSchedule = (content: string) => { try { return !!(loadYaml(content) as { schedule?: unknown } | null)?.schedule; } catch { return false; } };
+    /** Save the editor's file; `schedule: null` saves it without its schedule (a copy that should not also run). */
+    /** Save the editor's file; `schedule` replaces its schedule block (null: a copy saved without it). */
+    const saveEditor = async (path: string, override: { schedule?: ScheduleConfig | null } = {}, keepDraft = false) => {
+        if (!editor) return;
+        setSaving(true);
+        try {
+            const saved = await post<{ path: string; content_hash?: string; content?: string }>('save', { path, content: editor.content,
+                content_hash: editor.content_hash, ...override });
+            setEditor(previous => previous && ({ ...previous, path, creating: false, source: path, content_hash: saved?.content_hash,
+                content: saved?.content ?? previous.content, schedule: previous.schedule && { ...previous.schedule, dirty: keepDraft && previous.schedule.dirty } }));
+            await refresh();
+            return true;
+        } catch (reason) { handleApiError(reason, 'Save workflow'); return false; }
+        finally { setSaving(false); }
+    };
     const workflowRunsFor = (item: WorkflowLibraryItem, beforeOpen?: () => void): RunEntry[] => [
         ...runs.filter(run => run.workflow_path === item.path || !run.workflow_path && run.name === item.name
             && items.filter(candidate => candidate.name === item.name).length === 1)
             .map(run => ({ key: run.id, status: run.status, time: run.started_at, disabled: busy, open: () => { beforeOpen?.(); void openRun(run); } })),
-        ...(openRunSession ? scheduleLibrary.schedules.filter(schedule => schedule.config.workflow === item.path)
-            .flatMap(schedule => (schedule.history || []).filter(run => run.status !== 'skipped'))
+        ...(openRunSession ? (schedules[item.path]?.history || [])
             .map(run => ({ key: `scheduled-${run.id}`, status: run.status, time: run.scheduled_for,
                 open: () => { beforeOpen?.(); void openRunSession(`scheduled-${run.id}`); } })) : []),
     ].sort((left, right) => Date.parse(right.time) - Date.parse(left.time));
+    /** The card's bottom line: its schedule, where this app runs schedules. */
+    const scheduleLineOf = (item: WorkflowLibraryItem) => scheduling && item.schedule
+        ? <ScheduleLine schedule={item.schedule} nextAt={schedules[item.path]?.next_at} /> : null;
+    // On landing cards, where a click runs the workflow; a sidebar card opens the page itself.
+    const scheduleButton = (item: WorkflowLibraryItem, sx: object) => scheduling && <Tooltip title={t('schedule.action')}><span>
+        <IconButton aria-label={t('schedule.actionItem', { name: item.name })} size="small" disabled={!!item.error} sx={sx}
+            onClick={event => { event.stopPropagation(); void edit(item); }}><ScheduleOutlinedIcon /></IconButton></span></Tooltip>;
     const editorRuns = editorItem ? workflowRunsFor(editorItem, () => setEditor(null)) : [];
 
     const toolbar = <Box sx={{ ...sidebarToolbarSx, flexWrap: 'wrap', ...(landing ? { p: 0, borderBottom: 0, bgcolor: 'transparent' } : {}) }}>
@@ -1402,8 +1517,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
             </Box>
             )}
             {landing && groupId === 'demo' && !model && <Alert severity="info" sx={{ ...listNoticeSx, mb: 1 }}>{t('workflow.selectModelToRun')}</Alert>}
-            <Box id={`workflow-${presentation}-group-${groupId}`} sx={{ mx: landing ? 0 : 0.75, mt: landing ? 0 : 1, display: 'grid', gap: landing ? 1 : 0.75,
-                ...(landing ? { gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))' } : {}) }}>
+            <Box id={`workflow-${presentation}-group-${groupId}`} sx={landing ? itemCardGridSx : { mx: 0.75, mt: 1, display: 'grid', gap: 0.75 }}>
         {!group.length && <Typography sx={{ px: 1, py: 0.75, fontSize: textVar.xs, color: 'text.secondary' }}>
             {loading ? t('workflow.loading') : t('workflow.empty')}
         </Typography>}
@@ -1418,35 +1532,45 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
             };
             if (!landing) {
                 const cardRuns = workflowRunsFor(item);
-                return <ItemCard key={item.path} compact title={item.name} openLabel={t('workflow.openItem', { name: item.name })} onOpen={() => void edit(item)}
-                    badges={origin === 'demo' && <Box component="span" sx={{ flexShrink: 0, fontSize: textVar.xxs, color: 'text.disabled' }}>{t('workflow.demoBadge')}</Box>}
+                const scheduled = scheduling && item.schedule;
+                return <ItemCard key={item.path} compact title={scheduled ? <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+                        {item.schedule!.enabled === false ? <PauseIcon aria-hidden sx={{ fontSize: iconVar.sm, color: 'warning.main', flexShrink: 0 }} />
+                            : <ScheduleOutlinedIcon aria-hidden sx={{ fontSize: iconVar.sm, color: 'text.secondary', flexShrink: 0 }} />}
+                        <span>{item.name}</span></Box> : origin === 'demo' ? t('workflow.demoTitle', { name: item.name }) : item.name} openLabel={t('workflow.openItem', { name: item.name })} onOpen={() => void edit(item)}
                     tooltip={item.error ? undefined : <MetadataCard title={item.name} description={item.overview}>
                         {!!item.parameters?.length && <MetadataChips items={item.parameters.map(parameter => ({ name: parameter.label || parameter.name }))} />}
                     </MetadataCard>}
-                    captions={item.error ? [<Box key="error" component="span" sx={{ color: 'error.main' }}>{item.error}</Box>] : []}
+                    captions={item.error ? [<Box key="error" component="span" sx={{ color: 'error.main' }}>{item.error}</Box>]
+                        : scheduled ? [<ScheduleLine key="schedule" schedule={item.schedule!} nextAt={schedules[item.path]?.next_at} textOnly />] : []}
                     persistentActions
-                    actions={<Tooltip title={t('workflow.runWorkflow')}><span><IconButton aria-label={t('workflow.runItem', { name: item.name })} size="small" disabled={runDisabled}
-                        sx={sidebarRowActionSx} onClick={openSetup}><PlayArrowIcon /></IconButton></span></Tooltip>}
+                    actions={<>
+                        <Tooltip title={t('workflow.runWorkflow')}><span><IconButton aria-label={t('workflow.runItem', { name: item.name })} size="small" disabled={runDisabled}
+                            sx={sidebarRowActionSx} onClick={openSetup}><PlayArrowIcon /></IconButton></span></Tooltip>
+                    </>}
                     meta={cardRuns.length > 0 && <CardRuns label={t('workflow.previousRunsOf', { name: item.name })} runs={cardRuns} />} />;
             }
-            return <Box component="article" key={item.path} sx={{ minWidth: 0, ...cardHoverSx, display: 'flex', position: 'relative',
-                border: '1px solid rgba(0, 0, 0, 0.18)', borderRadius: 1, bgcolor: 'background.paper', boxShadow: '0 1px 3px rgba(32, 33, 36, 0.06)',
+            return <Box component="article" key={item.path} sx={{ ...exampleCardSx(runDisabled),
+                ...(!runDisabled ? { '&:hover .workflow-card-icon, &:has(:focus-visible) .workflow-card-icon': { color: 'primary.main' } } : {}),
                 '& .workflow-secondary-action': { opacity: 0 },
                 '&:hover .workflow-secondary-action, &:focus-within .workflow-secondary-action': { opacity: 1 },
                 '@media (hover: none)': { '& .workflow-secondary-action': { opacity: 1 } } }}>
             <ButtonBase aria-label={t('workflow.runItem', { name: item.name })} disabled={runDisabled} onClick={openSetup}
-                sx={{ display: 'block', width: '100%', minWidth: 0, textAlign: 'left', p: 1.25, flex: 1, borderRadius: 'inherit',
-                    '&.Mui-disabled': { opacity: 0.6 }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, pr: origin === 'user' ? 2.5 : 0 }}>
-                    <WorkflowGears running={false} size={16} color="text.secondary" showTooltip={false} />
-                    <Typography sx={{ fontSize: textVar.md, fontWeight: 400, lineHeight: 1.4, minWidth: 0, overflowWrap: 'anywhere' }}>{item.name}</Typography>
-                    <PlayArrowIcon sx={{ ml: 'auto', flexShrink: 0, fontSize: iconVar.md, color: runDisabled ? 'action.disabled' : 'primary.main' }} />
+                sx={{ ...exampleCardButtonSx, display: 'block', p: 1.5 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, pr: origin === 'user' ? (scheduling ? 5.5 : 2.5) : 0 }}>
+                    <Box component="span" className="workflow-card-icon" sx={{ display: 'flex', flexShrink: 0, color: 'text.secondary', transition: 'color 120ms ease' }}>
+                        <WorkflowIcon running={false} size={16} color="inherit" showTooltip={false} />
+                    </Box>
+                    <Typography sx={exampleCardTitleSx}>{item.name}</Typography>
                 </Box>
-                {(item.error || item.overview) && <Typography sx={{ mt: 0.25, fontSize: textVar.xs, lineHeight: 1.5,
-                    color: item.error ? 'error.main' : 'text.secondary', overflowWrap: 'anywhere',
-                    ...(!item.error ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : {}) }}>
+                {(item.error || item.overview) && <Typography sx={item.error
+                    ? { ...exampleCardDescriptionSx, display: 'block', overflow: 'visible', color: 'error.main' } : exampleCardDescriptionSx}>
                     {item.error || item.overview}</Typography>}
+                {origin === 'user' && scheduleLineOf(item)}
             </ButtonBase>
+            {origin === 'user' && <Box className="workflow-secondary-action"
+                sx={{ position: 'absolute', top: 4, right: 32, '& .MuiIconButton-root': { width: 24, height: 24, '& svg': { fontSize: 16 } } }}>
+                {scheduleButton(item, { color: 'text.secondary' })}
+            </Box>}
             {origin === 'user' && <Box className="workflow-secondary-action" sx={{ position: 'absolute', top: 4, right: 4 }}>
                 <ArtifactDeleteButton label={t('workflow.deleteItem', { name: item.path })} disabled={busy || deletingInstance}
                     onClick={() => setDeleteTarget(item)} />
@@ -1457,9 +1581,9 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
     return <Box sx={{ display: landing ? 'contents' : 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, flex: '0 1 auto', overflow: landing ? 'visible' : 'hidden' }}>
         {landing && renderLanding ? renderLanding({ examples: renderGroups(['demo']), saved: renderGroups(['user', 'server']), toolbar }) : <>
         <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', px: 1.5, height: 40, minHeight: 40, boxSizing: 'border-box',
-            flexShrink: 0, borderBottom: '1px solid rgba(0, 0, 0, 0.16)', bgcolor: 'rgba(255, 255, 255, 0.76)',
+            flexShrink: 0, borderBottom: `1px solid ${ink(0.16)}`, bgcolor: paper(0.76),
             ...(landing ? { px: 0, borderBottom: 0, bgcolor: 'transparent' } : {}) }}>
-            <Typography component={landing ? 'h2' : 'div'} sx={{ fontSize: landing ? textVar.xl : textVar.md, fontWeight: landing ? 400 : 600, textAlign: 'left' }}>{landing ? t('workflow.exampleWorkflows') : t('workflow.title')}</Typography>
+            <Typography component={landing ? 'h2' : 'div'} sx={{ fontSize: landing ? textVar.xl : textVar.md, fontWeight: landing ? weight(400) : weight(600), textAlign: 'left' }}>{landing ? t('workflow.exampleWorkflows') : t('workflow.title')}</Typography>
             {!landing && <ViewAllButton label={t('workflow.viewAll')} onClick={() => {
                 const first = items.find(item => (item.origin || 'user') === 'user') ?? items[0];
                 if (first) void edit(first); else createWorkflow();
@@ -1488,16 +1612,15 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                 if (target?.value === 'current' && inSession) void execute(runTarget.path, setup, runTarget.content);
                 else startNewSession(runTarget, setup);
             }}>
-                <DialogTitle id="workflow-setup-title" sx={{ fontSize: textVar.xl, lineHeight: 1.5, fontWeight: 400, overflowWrap: 'anywhere', pb: 2 }}>
+                <DialogTitle id="workflow-setup-title" sx={{ fontSize: textVar.xl, lineHeight: 1.5, fontWeight: weight(400), overflowWrap: 'anywhere', pb: 2 }}>
                     <Box component="span" sx={{ color: 'text.primary' }}>{t('workflow.runWorkflowPrefix')}</Box>{' '}
                     <Box component="span" sx={{ color: 'primary.main' }}>{runTarget?.name}</Box>
                 </DialogTitle>
                 <DialogContent sx={workflowSetupContentSx}>
                     {!model && <Alert severity="info">{t('workflow.selectModelToRun')}</Alert>}
                     {runTarget?.overview && <Typography variant="body2" color="text.secondary" sx={{ fontSize: textVar.sm, lineHeight: 1.65, overflowWrap: 'anywhere', mb: 0.5 }}>{runTarget.overview}</Typography>}
-                    <WorkflowSetupFields parameters={runTarget?.parameters || []} values={setupValues} onChange={setSetupValues} disabled={starting} />
-                    <TextField label={t('workflow.additionalInstructions')} size="small" multiline minRows={3} fullWidth disabled={starting}
-                        value={setupInstructions} onChange={event => setSetupInstructions(event.target.value)} slotProps={{ htmlInput: { maxLength: 8000 } }} />
+                    {runTarget && <RunInputs key={runTarget.path} parameters={runTarget.parameters || []} values={setupValues} onChange={setSetupValues}
+                        instructions={setupInstructions} onInstructionsChange={setSetupInstructions} disabled={starting} />}
                 </DialogContent>
                 <DialogActions sx={{ flexWrap: 'wrap', gap: 0.5, px: 3, py: 1.5, borderTop: 1, borderColor: 'divider' }}>
                     <Button disabled={starting} onClick={() => setRunTarget(null)}>{t('app.cancel')}</Button>
@@ -1525,6 +1648,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                         await post('delete', { path });
                         if (current !== generation.current) return;
                         setItems(previous => previous.filter(item => item.path !== path));
+                        setSchedules(({ [path]: _deleted, ...rest }) => rest);
                         setEditor(previous => previous?.source === path ? null : previous);
                         setDeleteTarget(null);
                     } catch (reason) { if (current === generation.current) handleApiError(reason, 'Delete workflow'); }
@@ -1533,12 +1657,28 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
             </DialogActions>
         </Dialog>
 
+        <Dialog open={!!copyPrompt} onClose={() => setCopyPrompt(null)} maxWidth="xs" fullWidth>
+            <DialogTitle>{t('workflow.copyScheduleTitle')}</DialogTitle>
+            <DialogContent><Typography variant="body2">{t('workflow.copyScheduleBody')}</Typography></DialogContent>
+            <DialogActions>
+                <Button onClick={() => { const path = copyPrompt!; setCopyPrompt(null); void saveEditor(path); }}>{t('workflow.copyKeepSchedule')}</Button>
+                <Button variant="contained" disableElevation onClick={() => { const path = copyPrompt!; setCopyPrompt(null); void saveEditor(path, { schedule: null }); }}>
+                    {t('workflow.copyWithoutSchedule')}</Button>
+            </DialogActions>
+        </Dialog>
+
         {editor && <ListDetailDialog title={t('workflow.title')} listLabel={t('workflow.list')} createLabel={t('workflow.new')} busy={saving} onClose={() => setEditor(null)} fillHeight
             selectedKey={editor.creating ? null : editor.source ?? null}
-            onSelect={key => { const item = items.find(candidate => candidate.path === key); if (item) void edit(item); else createWorkflow(); }}
+            onSelect={key => { const item = items.find(candidate => candidate.path === key); if (item) void edit(item, editor.view); else createWorkflow(); }}
             items={[...items].sort((left, right) => Number((right.origin || 'user') === 'user') - Number((left.origin || 'user') === 'user'))
-                .map(item => ({ key: item.path, primary: item.name,
-                    secondary: item.origin === 'demo' ? t('workflow.demoBadge') : item.origin === 'server' ? t('workflow.sharedBadge') : item.path }))}
+                .map(item => ({ key: item.path, primary: item.origin === 'demo' ? t('workflow.demoTitle', { name: item.name }) : item.name,
+                    // The file's name belongs to the source view; a demo says so in its title, and the list says when a workflow runs.
+                    secondary: item.origin === 'server' ? t('workflow.sharedBadge')
+                        : scheduling && item.schedule ? <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                            '& .MuiSvgIcon-root': { fontSize: 13, flexShrink: 0 } }}>
+                            {item.schedule.enabled === false ? <PauseIcon aria-hidden sx={{ color: 'warning.main' }} /> : <ScheduleOutlinedIcon aria-hidden />}
+                            {item.schedule.enabled === false ? `${t('schedule.paused')} · ${scheduleCadence(item.schedule)}` : scheduleCadence(item.schedule)}
+                        </Box> : undefined }))}
             footer={<>
                 {!editor.creating && (editorItem?.origin || 'user') === 'user' && editorItem && <Button color="error"
                     aria-label={t('workflow.deleteItem', { name: editorItem.path })} disabled={saving || busy || deletingInstance} sx={{ mr: 'auto' }}
@@ -1558,22 +1698,61 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                         }}>{t('workflow.createWithAgent')}</Button>
                     </Box>
                 </Tooltip>}
-                <Button variant="contained" disableElevation disabled={saving || !editor.content.trim() || !editor.path.trim()} onClick={async () => {
+                {editor.view === 'page' && editorItem && <Tooltip title={!model ? t('workflow.createNeedsModel') : busy ? t('workflow.createWaitForRun') : ''}>
+                    <Box component="span"><Button variant="outlined" disabled={saving || !model || readOnly || busy}
+                        sx={{ textTransform: 'none' }} onClick={() => {
+                            // Editing is its own conversation, in a new session, not mixed into the current analysis.
+                            onCreateSession(t('workflow.editSessionName', { name: editorItem.name }));
+                            setEditor(null);
+                            store.dispatch(dfActions.queueAnalystTask({ text: workflowEditPrompt(editorItem), images: [], attachments: [],
+                                intent: 'workflow-authoring' }));
+                            store.dispatch(dfActions.setDataSourceSidebarOpen(false));
+                        }}>{t('workflow.editWithAgent')}</Button></Box>
+                </Tooltip>}
+                {editor.view === 'page' && editorItem && editor.schedule?.dirty && <Button variant="contained" disableElevation
+                    disabled={saving || (editor.schedule.on && (!editor.schedule.config.weekdays.length || !editor.schedule.config.model_id))}
+                    onClick={() => {
+                        const schedule = editor.schedule && scheduleDraftToSave(editor.schedule, editorItem.origin === 'user' ? editorItem.schedule : undefined);
+                        if (schedule !== undefined) void saveEditor(editor.path, { schedule });
+                        else setEditor(previous => previous && ({ ...previous, schedule: previous.schedule && { ...previous.schedule, dirty: false } }));
+                    }}>{t('app.save')}</Button>}
+                {(editor.view === 'source' || !editorItem) && <Button variant="contained" disableElevation disabled={saving || !editor.content.trim() || !editor.path.trim()} onClick={() => {
                     const path = editor.path.trim();
-                    setSaving(true);
-                    try {
-                        const saved = await post<{ path: string; content_hash?: string }>('save', { path, content: editor.content, content_hash: editor.content_hash });
-                        setEditor(previous => previous && ({ ...previous, path, creating: false, source: path, content_hash: saved?.content_hash }));
-                        await refresh();
-                    } catch (reason) { handleApiError(reason, 'Save workflow'); }
-                    finally { setSaving(false); }
-                }}>{t('app.save')}</Button>
+                    if (!editor.creating && editor.source && path !== editor.source && hasSchedule(editor.content)) setCopyPrompt(path);
+                    else void saveEditor(path);                }}>{t('app.save')}</Button>}
             </>}>
             <Box>
-                <Typography sx={{ fontSize: textVar.lg, fontWeight: 500, overflowWrap: 'anywhere' }}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                <Typography sx={{ flex: 1, minWidth: 0, fontSize: textVar.lg, fontWeight: weight(500), overflowWrap: 'anywhere' }}>
                     {editor.creating ? t('workflow.new') : editorItem?.name ?? editor.path}</Typography>
+                {!editor.creating && editorItem && <Tooltip title={t('workflow.viewSource')}>
+                    <ToggleButton size="small" value="source" aria-label={t('workflow.viewSource')} selected={editor.view === 'source'}
+                        onChange={() => setEditor(previous => previous && ({ ...previous, view: previous.view === 'source' ? 'page' : 'source' }))}
+                        sx={{ flexShrink: 0, p: 0.5, borderRadius: 1, color: 'text.secondary',
+                            '&.Mui-selected, &.Mui-selected:hover': { color: 'primary.main', borderColor: 'primary.main', bgcolor: 'action.selected' } }}>
+                        <CodeIcon sx={{ fontSize: iconVar.lg }} />
+                    </ToggleButton>
+                </Tooltip>}
+                </Box>
                 {editorRuns.length > 0 && <RunList caption={t('schedule.previousRuns')} label={t('schedule.runsOf', { name: editorItem?.name })} limit={6} runs={editorRuns} />}
             </Box>
+            {editor.view === 'page' && editorItem ? <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                <WorkflowPage item={editorItem} deliverables={editorDeliverables} scheduling={scheduling} busy={saving}
+                    state={editor.source ? schedules[editor.source] : undefined} draft={editor.schedule}
+                    onDraftChange={schedule => setEditor(previous => previous && ({ ...previous, schedule }))}
+                    onToggle={on => {
+                        // Pausing or resuming a saved schedule writes only that, at once; other edits stay a draft.
+                        const current = editorItem.origin === 'user' ? editorItem.schedule : undefined;
+                        if (!current || !editor.schedule) return;
+                        const setOn = (value: boolean) => setEditor(previous => previous && previous.schedule
+                            ? { ...previous, schedule: { ...previous.schedule, on: value } } : previous);
+                        setOn(on);
+                        // Resuming runs it again, so with a model that is available now, as the draft has it.
+                        void saveEditor(editor.path, { schedule: { ...current, enabled: on,
+                            ...(on ? { model_id: editor.schedule.config.model_id, language: getAgentLanguage() } : {}) } }, true)
+                            .then(saved => { if (!saved) setOn(!on); });
+                    }} />
+            </Box> : <>
             <TextField size="small" label={t('workflow.filename')} disabled={saving} value={editor.path}
                 onChange={event => setEditor(previous => previous && ({ ...previous, path: event.target.value, content_hash: undefined }))} />
             <Box sx={{ flex: 1, minHeight: 240, overflow: 'hidden', border: 1, borderColor: 'divider' }}>
@@ -1581,6 +1760,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                     placeholder={t('workflow.yamlPlaceholder')}
                     onChange={content => setEditor(previous => previous && ({ ...previous, content }))} />
             </Box>
+            </>}
         </ListDetailDialog>}
 
     </Box>;

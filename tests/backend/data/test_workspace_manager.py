@@ -88,6 +88,16 @@ class TestWorkspaceLifecycle:
         assert "second" in names
         assert len(ws_list) == 2
 
+    def test_a_session_remembers_the_example_it_was_opened_from(self, manager):
+        manager.create_workspace("from_example")
+        state = {"tables": [], "activeWorkspace": {"id": "from_example", "displayName": "Pipeline",
+                                                    "exampleId": "sales/pipeline"}}
+        manager.save_session_state("from_example", state)
+        # Later saves keep it, even one whose state no longer carries it.
+        manager.save_session_state("from_example", {"tables": [], "activeWorkspace": {"id": "from_example",
+                                                                                      "displayName": "Renamed"}})
+        assert manager.list_workspaces()[0]["example_id"] == "sales/pipeline"
+
     def test_workspace_exists(self, manager):
         assert not manager.workspace_exists("nope")
         manager.create_workspace("test")
@@ -195,6 +205,46 @@ class TestSessionState:
             .read_text(encoding="utf-8")
         )
         assert meta["displayName"] == "Some Name"
+
+    def test_save_refuses_a_copy_older_than_the_stored_state(self, manager):
+        from data_formulator.datalake.workspace_manager import SessionConflictError
+
+        manager.create_workspace("ws")
+        assert manager.state_revision("ws") == 0
+        first = manager.save_session_state("ws", {"textTurns": [1]}, base_revision=0)
+        second = manager.save_session_state("ws", {"textTurns": [1, 2]}, base_revision=first)
+        assert (first, second) == (1, 2)
+
+        # A tab still holding revision 1 (or a copy restored from browser storage) cannot overwrite revision 2.
+        with pytest.raises(SessionConflictError) as conflict:
+            manager.save_session_state("ws", {"textTurns": [1]}, base_revision=first)
+        assert conflict.value.revision == 2
+        assert manager.load_session_state("ws")["textTurns"] == [1, 2]
+        # Saves without a base revision (server-side writers, first save of a new session) still land.
+        assert manager.save_session_state("ws", {"textTurns": [1, 2, 3]}) == 3
+        # Renaming and starring keep the revision.
+        manager.update_display_name("ws", "Renamed")
+        manager.set_starred("ws", True)
+        assert manager.state_revision("ws") == 3
+
+    def test_set_starred_survives_saves_without_bumping_updated_at(self, manager):
+        manager.create_workspace("ws")
+        manager.save_session_state("ws", {"tables": [], "activeWorkspace": {"id": "ws", "displayName": "Sales"}})
+        meta_file = manager.get_workspace_path("ws") / WORKSPACE_META_FILENAME
+        updated_at = json.loads(meta_file.read_text(encoding="utf-8"))["updatedAt"]
+
+        manager.set_starred("ws", True)
+
+        assert json.loads(meta_file.read_text(encoding="utf-8"))["updatedAt"] == updated_at
+        assert [w["starred"] for w in manager.list_workspaces()] == [True]
+
+        manager.save_session_state("ws", {"tables": [], "activeWorkspace": {"id": "ws", "displayName": "Sales"}})
+        manager.update_display_name("ws", "Renamed")
+        assert manager.list_workspaces()[0]["starred"] is True
+
+        manager.set_starred("ws", False)
+        assert "starred" not in json.loads(meta_file.read_text(encoding="utf-8"))
+        assert manager.list_workspaces()[0]["starred"] is False
 
     def test_save_to_nonexistent_workspace_raises(self, manager):
         with pytest.raises(ValueError, match="does not exist"):

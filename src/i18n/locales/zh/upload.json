@@ -1,5 +1,35 @@
 {
   "upload": {
+    "livePick": {
+      "umbrella": "这周要带伞吗？",
+      "umbrellaBusy": "正在看天…",
+      "umbrellaHint": "附近城市本周天气预报，实时加载并画在地图上",
+      "warmer": "这周比往常更暖和吗？",
+      "warmerBusy": "正在翻看往年的天气…",
+      "warmerHint": "附近城市本周预报，与过去十年同一周对比",
+      "daylightShorter": "白天变短得有多快？",
+      "daylightLonger": "白天变长得有多快？",
+      "daylightBusy": "正在看太阳…",
+      "daylightHint": "未来四个月的白昼时长，从北到南",
+      "wiki": "今天世界在读什么？",
+      "wikiBusy": "正在越过世界的肩膀偷看…",
+      "wikiHint": "昨天最多人读的维基百科条目，以及本周的走势",
+      "countries": "今天每个国家都在读什么？",
+      "countriesBusy": "正在偷看世界在读什么…",
+      "countriesHint": "昨天世界各地阅读最多的维基百科条目，画在地图上",
+      "failed": "没有成功，稍后再试。",
+      "failedDetail": "无法加载“{{question}}”的实时数据：{{reason}}",
+      "moon": "下一个满月是什么时候？",
+      "moonBusy": "正在看月亮…",
+      "moonHint": "未来两个月的月相"
+    },
+    "sessionStart": {
+      "list": "看看我已连接的数据源里有什么",
+      "scheduledWorkflow": "我想创建一个定期生成报告的工作流",
+      "workflow": "我想创建一个可重复使用、用来生成报告的工作流",
+      "connect": "一步步带我连接新的数据源",
+      "discover": "帮我设置在线发现数据的工具"
+    },
     "title": "加载数据",
     "sampleDatasets": "示例数据集",
     "sampleDatasetsDesc": "精选示例数据集",
@@ -154,6 +184,7 @@
       "cosmosdb": "查询 Cosmos DB 容器",
       "mongodb": "查询 MongoDB 集合",
       "bigquery": "查询 BigQuery 数据集",
+      "snowflake": "查询 Snowflake 表",
       "athena": "查询 Amazon Athena",
       "kusto": "查询 Azure Data Explorer",
       "superset": "浏览 Superset 数据集",

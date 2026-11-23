@@ -82,6 +82,7 @@ def _meta_from_frontmatter(raw: dict[str, Any], fallback_name: str) -> SkillMeta
         when_to_use=str(raw.get("when_to_use") or ""),
         always_on=bool(raw.get("always_on", False)),
         includes=_coerce_name_list(raw.get("includes")),
+        listed=bool(raw.get("listed", False)),
         tool_names=_coerce_name_list(raw.get("tools")),
         action_names=_coerce_name_list(raw.get("actions")),
     )
@@ -109,21 +110,121 @@ class SkillRegistry:
     # ``actions`` is a committing action, in ``tools`` an inspection tool).
     tool_specs: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     _doc_paths: dict[str, Path] = field(default_factory=dict)
+    # Bodies made for this registry rather than read from a SKILL.md (the space skill's).
+    _bodies: dict[str, str] = field(default_factory=dict)
+    # Passages of a skill's body this registry replaces, as (old, new) pairs (a space's, see with_space).
+    _body_edits: dict[str, tuple[tuple[str, str], ...]] = field(default_factory=dict)
     terminal_mode: str = "ask"
+    browser_mode: str = "off"
+    # Actions whose arguments are a third party's schema (MCP tools): passed through untouched.
+    external_actions: frozenset[str] = frozenset()
+
+    def with_mcp_servers(self, servers: list[dict[str, Any]], mode: str) -> SkillRegistry:
+        """This registry plus one gated skill per usable MCP server (see ``mcp_servers.skill``)."""
+        from data_formulator.mcp_servers.skill import registry_entries
+
+        entries = registry_entries(servers, mode) if mode != "off" else []
+        if not entries:
+            return self
+        registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
+                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
+                           _bodies=dict(self._bodies), _body_edits=dict(self._body_edits))
+        external = set(self.external_actions)
+        for entry in entries:
+            registry.metas[entry["name"]] = entry["meta"]
+            registry.skills[entry["name"]] = entry["skill"]
+            registry.tool_specs[entry["name"]] = entry["specs"]
+            registry._bodies[entry["name"]] = entry["body"]
+            external.update(entry["meta"].action_names)
+        registry.external_actions = frozenset(external)
+        return registry
+
+    def without_tools(self, names: set[str] | frozenset[str]) -> SkillRegistry:
+        """This registry minus the named tools and actions (skills keep their other tools)."""
+        if not any(set(meta.tool_names + meta.action_names) & names for meta in self.metas.values()):
+            return self
+        registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
+                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
+                           _bodies=dict(self._bodies), _body_edits=dict(self._body_edits))
+        for name, meta in list(registry.metas.items()):
+            if set(meta.tool_names + meta.action_names) & names:
+                registry.metas[name] = replace(
+                    meta, tool_names=tuple(item for item in meta.tool_names if item not in names),
+                    action_names=tuple(item for item in meta.action_names if item not in names))
+                registry.tool_specs[name] = [spec for spec in registry.tool_specs.get(name, [])
+                                             if spec.get("function", {}).get("name") not in names]
+        return registry
 
     def with_terminal_policy(self, mode: str) -> SkillRegistry:
         registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
-                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths), terminal_mode=mode)
+                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
+                           _bodies=dict(self._bodies), _body_edits=dict(self._body_edits), terminal_mode=mode)
         if mode == "off":
             for collection in (registry.metas, registry.skills, registry.tool_specs, registry._doc_paths):
                 collection.pop("terminal", None)
         elif "terminal" in registry.metas:
-            registry.metas["terminal"] = replace(registry.metas["terminal"], always_on=True)
+            # Enabled, it loads on demand like other gated skills (preloaded when a session has no data yet).
             for spec in registry.tool_specs.get("terminal", []):
                 spec["function"]["description"] += (
                     " Each invocation requires exact-command approval." if mode == "ask" else
                     " The application automatically executes permitted invocations; do not ask for routine approval."
                 )
+        return registry
+
+    def with_browser_policy(self, mode: str) -> SkillRegistry:
+        """Expose the browser skill only when the user turned the browser on (``mode`` off, ask or auto)."""
+        registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
+                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
+                           _bodies=dict(self._bodies), _body_edits=dict(self._body_edits), browser_mode=mode)
+        if mode == "off":
+            for collection in (registry.metas, registry.skills, registry.tool_specs, registry._doc_paths):
+                collection.pop("browser", None)
+        elif "browser" in registry.metas:
+            for spec in registry.tool_specs.get("browser", []):
+                if spec["function"]["name"] == "browser_tabs":
+                    continue
+                spec["function"]["description"] += (
+                    " The first call on a site the user has not allowed pauses for their approval." if mode == "ask" else
+                    " Runs without asking; do not ask for routine approval."
+                )
+        return registry
+
+    def with_accounts_policy(self, available: bool) -> SkillRegistry:
+        """Drop ``accounts`` and the provider skills that include it unless sign-ins are available (design-docs/72):
+        an interactive chat in the single-user local app."""
+        if available:
+            return self
+        dropped = {"accounts"} | {name for name, meta in self.metas.items() if "accounts" in meta.includes}
+        if not dropped & set(self.metas):
+            return self
+        registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
+                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
+                           _bodies=dict(self._bodies), _body_edits=dict(self._body_edits))
+        for name in dropped:
+            for collection in (registry.metas, registry.skills, registry.tool_specs, registry._doc_paths):
+                collection.pop(name, None)
+        return registry
+
+    def with_space(self, space_id: str | None) -> SkillRegistry:
+        """This registry for a request in the space ``space_id`` (design-docs/69); unchanged without one.
+
+        The copy keeps every skill and gains the ``space`` skill, made for that space. What data it reaches is
+        decided by the space's sources (``spaces.current_space_connector_ids``), not by removing skills.
+        """
+        from data_formulator.spaces.skill import SPACE_SKILL, SKILL_DIR, space_skill_available, space_skill_body
+
+        if not space_skill_available(space_id):
+            return self
+        from data_formulator.spaces.skill.skill import get_skill
+
+        registry = replace(self, metas=dict(self.metas), skills=dict(self.skills),
+                           tool_specs=deepcopy(self.tool_specs), _doc_paths=dict(self._doc_paths),
+                           _bodies=dict(self._bodies), _body_edits=dict(self._body_edits))
+        raw, _ = _parse_front_matter((SKILL_DIR / SKILL_DOC_NAME).read_text(encoding="utf-8"))
+        registry.metas[SPACE_SKILL] = _meta_from_frontmatter(raw, SPACE_SKILL)
+        registry.skills[SPACE_SKILL] = get_skill()
+        registry.tool_specs[SPACE_SKILL] = _load_tool_specs(SKILL_DIR)
+        registry._bodies[SPACE_SKILL] = space_skill_body(space_id)
         return registry
 
     def canonical_name(self, name: str) -> str:
@@ -194,11 +295,11 @@ class SkillRegistry:
         return expanded
 
     def included_skill_names(self) -> set[str]:
-        """Return implementation members hidden from the public skill index."""
+        """Return implementation members hidden from the public skill index (all included skills but listed ones)."""
         included: set[str] = set()
         for meta in self.metas.values():
             included.update(self.expanded_names(meta.includes))
-        return included
+        return {name for name in included if not self.metas[name].listed}
 
     def is_active(self, loaded_names, name: str) -> bool:
         return self.canonical_name(name) in self.expanded_names(loaded_names)
@@ -230,8 +331,8 @@ class SkillRegistry:
         for name in self.gated_skill_names():
             meta = self.metas[name]
             blurb = (meta.when_to_use or meta.description or "").strip().replace("\n", " ")
-            unlocks = ", ".join(meta.action_names) if meta.action_names else "(no actions)"
-            lines.append(f"- **{name}** — unlocks `{unlocks}`. {blurb}")
+            unlocks = f"unlocks `{', '.join(meta.action_names)}`. " if meta.action_names else ""
+            lines.append(f"- **{name}** — {unlocks}{blurb}")
         return "\n".join(lines)
 
     def load_body(self, name: str) -> str:
@@ -241,20 +342,36 @@ class SkillRegistry:
             raise KeyError(f"Unknown skill: {name!r}")
         bodies: list[str] = []
         for expanded_name in self.expanded_names([name]):
+            if expanded_name in self._bodies:
+                bodies.append(self._bodies[expanded_name])
+                continue
             path = self._doc_paths.get(expanded_name)
             if not path or not path.exists():
                 continue
             _, body = _parse_front_matter(path.read_text(encoding="utf-8"))
+            for old, new in self._body_edits.get(expanded_name, ()):
+                body = body.replace(old, new)
+            if expanded_name == "configure" and "propose_mcp_changes" not in self.metas[expanded_name].action_names:
+                body = re.sub(r"\n## MCP servers\n.*?(?=\n## |\Z)", "\n", body, flags=re.S)
+                body = re.sub(r"^\|[^\n]*`propose_mcp_changes`[^\n]*\n", "", body, flags=re.M)
             if expanded_name == "connected_data":
                 terminal_route = (
-                    "| Existing CLI access or local files | Use `run_terminal` to acquire a bounded dataset "
-                    "into scratch without requiring a new connector. Register the working dataset with "
-                    "`create_data` and acquisition metadata, then use its returned input ID and path for "
-                    "analysis and visualization or report tools. Follow the terminal skill's approval "
-                    "and execution contract. |\n"
+                    "| Existing CLI access, local files, or public files and APIs on the web | Use `run_terminal` "
+                    "(the `terminal` skill) to acquire a bounded dataset into scratch without requiring a new "
+                    "connector. Register the working dataset with `create_data` and acquisition metadata, then use "
+                    "its returned input ID and path for analysis and visualization or report tools. Follow the "
+                    "terminal skill's approval and execution contract. |\n"
                     if self.has("terminal") else ""
                 )
+                browser_route = (
+                    "| Data on the web: finding a source with a search engine, or pages that need JavaScript, "
+                    "the user's sign-in, or interaction | Load the `browser` skill to search, open and read pages, "
+                    "then register the collected data with `create_data` like any acquired dataset. |\n"
+                    if self.has("browser") else ""
+                )
                 body = body.replace("{terminal_acquisition_route}\n", terminal_route)
+                body = body.replace("{browser_acquisition_route}\n", browser_route)
+                body = body.replace("{missing_data_options}", self._missing_data_options())
             if expanded_name == "terminal":
                 policy = (
                     "The application pauses for approval of each exact invocation. Submit the tool call directly; "
@@ -264,11 +381,55 @@ class SkillRegistry:
                     "execute immediately. Only dangerouslyDisableSandbox requests require user approval."
                 )
                 body = body.replace("{terminal_policy}", policy)
-                from data_formulator.analyst.skills.terminal.skill import sandbox_filesystem_policy
+                from data_formulator.analyst.skills.terminal.skill import (
+                    sandbox_filesystem_policy, terminal_host, terminal_sandbox)
+                host = terminal_host()
+                host_note = {
+                    "wsl": ("This is Windows: commands run in WSL (Linux), so use Linux tools and paths. Windows drives "
+                            "are at /mnt/<drive letter>, e.g. C:\\Users\\me is /mnt/c/Users/me. Give `cwd` as a Windows "
+                            "path; the command starts in its WSL equivalent. CLI logins made in Windows are not visible "
+                            "in WSL; ones made inside WSL are."),
+                    "windows": ("This is Windows without WSL: commands run natively. There is no Unix shell; call "
+                                "`powershell -NoProfile -Command ...` or Windows executables explicitly, with Windows paths."),
+                }.get(host)
+                if host_note:
+                    body = body.replace(policy, f"{policy} {host_note}", 1)
+                    policy = f"{policy} {host_note}"
+                if terminal_sandbox() is None:
+                    policy_note = ("No sandbox is installed on this machine: every command runs with the user's normal "
+                                   "access and needs their approval, even in Auto. Do not set dangerouslyDisableSandbox "
+                                   "for that reason alone. Keep commands minimal and their side effects clear.")
+                    body = body.replace(policy, f"{policy} {policy_note}", 1)
                 body = body.replace("{terminal_filesystem_policy}", json.dumps(sandbox_filesystem_policy()))
+            if expanded_name == "browser":
+                body = body.replace("{browser_status}", _browser_status_note())
+                body = body.replace("{browser_policy}", (
+                    "Ask mode: the first open, read or script on a site the user has not allowed pauses for their "
+                    "approval (for this chat or always). Submit the call directly; a pending call has not run."
+                    if self.browser_mode == "ask" else
+                    "Auto mode: browser calls run without asking."))
             if body.strip():
                 bodies.append(body.strip())
         return "\n\n".join(bodies)
+
+    def _missing_data_options(self) -> str:
+        """The ``ask_user`` options connected_data offers when no session or connected data has a subject."""
+        terminal, browser = self.has("terminal"), self.has("browser")
+        options: list[str] = []
+        if terminal or browser:
+            how = ("search with the browser and download files or APIs with the terminal" if terminal and browser
+                   else "search and read pages with the browser" if browser
+                   else "download a public dataset or API with the terminal")
+            options.append(
+                f"- Find it online (labelled with the subject, e.g. \"Find <subject> online\"): {how}, preferring an authoritative "
+                "public source (a government agency, statistics office, or research group). Offer this first when "
+                "the subject is public data. Icon: search_web.")
+        if self.has("configure"):
+            options.append(
+                "- Connect a data source: load `configure` and open a connector form with `propose_connection` "
+                "(the user enters credentials and clicks Connect). Icon: connect.")
+        options.append("- Upload a file: the user adds a CSV or Excel file, or pastes the data. Icon: upload.")
+        return "\n".join(options)
 
     def get_skill(self, name: str) -> Skill | None:
         """Return the (eagerly-instantiated) skill code module, or ``None`` for
@@ -321,6 +482,8 @@ class SkillRegistry:
         """Return the required argument names for the action ``name`` (empty if
         unknown), read from the action schema's ``parameters.required``. Used for
         a cheap pre-dispatch completeness check."""
+        if name in self.external_actions:
+            return ()
         for skill_name in self.names():
             for spec in self._specs_split(skill_name)[1]:
                 if spec.get("function", {}).get("name") == name:
@@ -356,6 +519,21 @@ class SkillRegistry:
                 field, channel = spec[action]
                 return (str(field), str(channel))
         return None
+
+
+def _browser_status_note() -> str:
+    """Which browser the agent drives, and whether pages see the user's own sign-ins."""
+    try:
+        from data_formulator.browser.service import get_service
+
+        driver = get_service().driver
+    except Exception:  # noqa: BLE001 - described to the agent instead
+        return "The browser could not be prepared on this computer; calls will report what is missing."
+    if driver.uses_user_profile:
+        return (f"Browser: the user's own {driver.label}, signed in as them. Pages open in a separate window, so the "
+                "user's other tabs are not touched; sites the user is signed in to work without signing in again.")
+    return (f"Browser: {driver.label}, a separate browser window with its own profile. The user's everyday sign-ins "
+            "are not there: when a site needs sign-in, the user signs in once in that window and it is remembered.")
 
 
 def _instantiate_skill(name: str) -> Skill | None:
@@ -401,10 +579,9 @@ def _load_tool_specs(skill_dir: Path) -> list[dict[str, Any]]:
     for spec in specs:
         properties = spec.get("function", {}).get("parameters", {}).get("properties", {})
         if properties.get("definition") == {"$ref": "workflow-definition"}:
-            from copy import deepcopy
-            from data_formulator.workflows.instances import WORKFLOW_DEFINITION_SCHEMA
+            from data_formulator.workflows.instances import authored_definition_schema
 
-            properties["definition"] = deepcopy(WORKFLOW_DEFINITION_SCHEMA)
+            properties["definition"] = authored_definition_schema()
     return specs
 
 

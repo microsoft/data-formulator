@@ -44,7 +44,7 @@ from typing import Any, Generator, Protocol, runtime_checkable
 # An ``Event`` is a channel-tagged dict yielded on the unified output stream.
 # See design-docs/35 §5. Examples:
 #   {"type": "text_delta", "channel": "report", "content": "..."}
-#   {"type": "tool_start", "tool": "inspect_chart", ...}
+#   {"type": "tool_start", "tool": "read_file", ...}
 #   {"type": "action", "action": "visualize", ...}
 #   {"type": "result", ...}
 #   {"type": "completion", ...}
@@ -72,8 +72,11 @@ class SkillMeta:
     # Other skill packages whose tools, actions, and guidance this bundle
     # activates. Included skills remain the concrete owners of their handlers.
     includes: tuple[str, ...] = ()
+    # An included skill is an implementation member, hidden from the skill index; ``listed`` keeps one that is also
+    # useful on its own (``accounts``, included by provider skills) in the index.
+    listed: bool = False
     # The inspection **tool** names this skill exposes (data gathering, no turn
-    # commit). Declared in the ``SKILL.md`` frontmatter (``tools: [inspect_chart]``)
+    # commit). Declared in the ``SKILL.md`` frontmatter (``tools: [list_connectors]``)
     # so the frontmatter is the complete, symmetric surface declaration; the
     # matching JSON schemas live in ``tools.json``.
     tool_names: tuple[str, ...] = ()

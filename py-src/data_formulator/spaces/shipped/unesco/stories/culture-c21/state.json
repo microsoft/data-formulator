@@ -1,0 +1,513 @@
+{
+ "__stateVersion": 15,
+ "activeWorkspace": {
+  "id": "culture-c21",
+  "displayName": "Who pays for heritage? Mostly national governments"
+ },
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "heritage_spending_by_level",
+   "displayId": "National and local heritage spending by country",
+   "names": [
+    "country_id",
+    "country",
+    "latest_year",
+    "national",
+    "local",
+    "local_share"
+   ],
+   "rows": [
+    {
+     "country_id": "BEL",
+     "country": "Belgium",
+     "latest_year": 2023,
+     "national": 24.6,
+     "local": 184.1,
+     "local_share": 88.2
+    },
+    {
+     "country_id": "BLR",
+     "country": "Belarus",
+     "latest_year": 2023,
+     "national": 14.3,
+     "local": 43.0,
+     "local_share": 75.1
+    },
+    {
+     "country_id": "SRB",
+     "country": "Serbia",
+     "latest_year": 2023,
+     "national": 7.9,
+     "local": 16.7,
+     "local_share": 67.9
+    },
+    {
+     "country_id": "POL",
+     "country": "Poland",
+     "latest_year": 2024,
+     "national": 28.1,
+     "local": 50.9,
+     "local_share": 64.4
+    },
+    {
+     "country_id": "ESP",
+     "country": "Spain",
+     "latest_year": 2023,
+     "national": 14.4,
+     "local": 25.9,
+     "local_share": 64.3
+    },
+    {
+     "country_id": "FIN",
+     "country": "Finland",
+     "latest_year": 2023,
+     "national": 117.8,
+     "local": 147.3,
+     "local_share": 55.6
+    },
+    {
+     "country_id": "BIH",
+     "country": "Bosnia and Herzegovina",
+     "latest_year": 2023,
+     "national": 20.4,
+     "local": 22.3,
+     "local_share": 52.3
+    },
+    {
+     "country_id": "FRA",
+     "country": "France",
+     "latest_year": 2023,
+     "national": 50.0,
+     "local": 47.6,
+     "local_share": 48.8
+    },
+    {
+     "country_id": "IRL",
+     "country": "Ireland",
+     "latest_year": 2024,
+     "national": 57.0,
+     "local": 52.4,
+     "local_share": 47.9
+    },
+    {
+     "country_id": "COL",
+     "country": "Colombia",
+     "latest_year": 2024,
+     "national": 7.6,
+     "local": 6.5,
+     "local_share": 46.2
+    },
+    {
+     "country_id": "EST",
+     "country": "Estonia",
+     "latest_year": 2021,
+     "national": 16.8,
+     "local": 14.4,
+     "local_share": 46.1
+    },
+    {
+     "country_id": "ECU",
+     "country": "Ecuador",
+     "latest_year": 2024,
+     "national": 29.7,
+     "local": 23.6,
+     "local_share": 44.2
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "latest_year": 2020,
+     "national": 77.4,
+     "local": 57.3,
+     "local_share": 42.6
+    },
+    {
+     "country_id": "LTU",
+     "country": "Lithuania",
+     "latest_year": 2024,
+     "national": 24.0,
+     "local": 17.5,
+     "local_share": 42.2
+    },
+    {
+     "country_id": "ALB",
+     "country": "Albania",
+     "latest_year": 2021,
+     "national": 15.6,
+     "local": 10.7,
+     "local_share": 40.7
+    },
+    {
+     "country_id": "SVK",
+     "country": "Slovakia",
+     "latest_year": 2024,
+     "national": 34.8,
+     "local": 22.7,
+     "local_share": 39.5
+    },
+    {
+     "country_id": "BRA",
+     "country": "Brazil",
+     "latest_year": 2024,
+     "national": 11.9,
+     "local": 7.2,
+     "local_share": 37.6
+    },
+    {
+     "country_id": "CHE",
+     "country": "Switzerland",
+     "latest_year": 2022,
+     "national": 91.7,
+     "local": 55.2,
+     "local_share": 37.6
+    },
+    {
+     "country_id": "TUR",
+     "country": "Türkiye",
+     "latest_year": 2024,
+     "national": 0.6,
+     "local": 0.2,
+     "local_share": 29.6
+    },
+    {
+     "country_id": "LUX",
+     "country": "Luxembourg",
+     "latest_year": 2024,
+     "national": 166.6,
+     "local": 64.3,
+     "local_share": 27.9
+    },
+    {
+     "country_id": "MDA",
+     "country": "Moldova",
+     "latest_year": 2023,
+     "national": 2.0,
+     "local": 0.8,
+     "local_share": 27.9
+    },
+    {
+     "country_id": "HUN",
+     "country": "Hungary",
+     "latest_year": 2023,
+     "national": 72.6,
+     "local": 23.2,
+     "local_share": 24.2
+    },
+    {
+     "country_id": "ARM",
+     "country": "Armenia",
+     "latest_year": 2024,
+     "national": 16.0,
+     "local": 4.9,
+     "local_share": 23.4
+    },
+    {
+     "country_id": "CYP",
+     "country": "Cyprus",
+     "latest_year": 2021,
+     "national": 49.6,
+     "local": 14.6,
+     "local_share": 22.8
+    },
+    {
+     "country_id": "CMR",
+     "country": "Cameroon",
+     "latest_year": 2024,
+     "national": 1.0,
+     "local": 0.3,
+     "local_share": 22.2
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "latest_year": 2020,
+     "national": 21.9,
+     "local": 6.0,
+     "local_share": 21.5
+    },
+    {
+     "country_id": "PER",
+     "country": "Peru",
+     "latest_year": 2024,
+     "national": 8.2,
+     "local": 2.0,
+     "local_share": 19.3
+    },
+    {
+     "country_id": "BOL",
+     "country": "Bolivia",
+     "latest_year": 2023,
+     "national": 219.9,
+     "local": 51.6,
+     "local_share": 19.0
+    },
+    {
+     "country_id": "NOR",
+     "country": "Norway",
+     "latest_year": 2024,
+     "national": 12.7,
+     "local": 2.5,
+     "local_share": 16.1
+    },
+    {
+     "country_id": "DOM",
+     "country": "Dominican Republic",
+     "latest_year": 2024,
+     "national": 13.1,
+     "local": 1.5,
+     "local_share": 10.1
+    },
+    {
+     "country_id": "HRV",
+     "country": "Croatia",
+     "latest_year": 2023,
+     "national": 222.1,
+     "local": 18.3,
+     "local_share": 7.6
+    },
+    {
+     "country_id": "SWE",
+     "country": "Sweden",
+     "latest_year": 2024,
+     "national": 80.1,
+     "local": 4.2,
+     "local_share": 5.0
+    },
+    {
+     "country_id": "MUS",
+     "country": "Mauritius",
+     "latest_year": 2024,
+     "national": 13.1,
+     "local": 0.7,
+     "local_share": 4.9
+    },
+    {
+     "country_id": "MLT",
+     "country": "Malta",
+     "latest_year": 2023,
+     "national": 338.7,
+     "local": 11.8,
+     "local_share": 3.4
+    },
+    {
+     "country_id": "ISR",
+     "country": "Israel",
+     "latest_year": 2024,
+     "national": 33.1,
+     "local": 1.0,
+     "local_share": 2.9
+    },
+    {
+     "country_id": "PHL",
+     "country": "Philippines",
+     "latest_year": 2020,
+     "national": 4.6,
+     "local": 0.1,
+     "local_share": 2.5
+    },
+    {
+     "country_id": "CIV",
+     "country": "Côte d'Ivoire",
+     "latest_year": 2023,
+     "national": 3.5,
+     "local": 0.0,
+     "local_share": 0.2
+    }
+   ],
+   "metadata": {
+    "country_id": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "latest_year": {
+     "type": "integer",
+     "levels": []
+    },
+    "national": {
+     "type": "number",
+     "levels": []
+    },
+    "local": {
+     "type": "number",
+     "levels": []
+    },
+    "local_share": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with pairs as (\n        select a.COUNTRY_ID as country_id, a.country, a.year, a.value as national, b.value as local\n        from read_parquet('data/sdg11_national.parquet') a\n        join read_parquet('data/sdg11_national.parquet') b using (COUNTRY_ID, year)\n        where a.indicator_id = 'HEXPCSTPPPCAPGOV.NTL.HER.PU' and b.indicator_id = 'HEXPCSTPPPCAPGOV.LOC.HER.PU'\n          and a.year between 2020 and 2024\n          and a.value is not null and b.value is not null\n          and coalesce(a.magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n          and coalesce(b.magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n        qualify row_number() over (partition by a.COUNTRY_ID order by a.year desc) = 1\n    ),\n    population as (\n        select COUNTRY_ID as country_id, value as thousands\n        from read_parquet('data/dem_national.parquet')\n        where indicator_id = '200101'\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    )\n    select p.country_id, p.country, p.year as latest_year, round(p.national, 1) as national,\n           round(p.local, 1) as local, round(100 * p.local / (p.local + p.national), 1) as local_share\n    from pairs p join population using (country_id)\n    where population.thousands >= 100\n    order by local_share desc, p.country\n\"\"\").df()\nout['country'] = out.country.replace({'Bolivia (Plurinational State of)': 'Bolivia', 'China, Hong Kong Special Administrative Region': 'Hong Kong', 'China, Macao Special Administrative Region': 'Macao', \"Democratic People's Republic of Korea\": 'North Korea', 'Democratic Republic of the Congo': 'DR Congo', 'Iran (Islamic Republic of)': 'Iran', \"Lao People's Democratic Republic\": 'Laos', 'Micronesia (Federated States of)': 'Micronesia', 'Republic of Korea': 'South Korea', 'Republic of Moldova': 'Moldova', 'Russian Federation': 'Russia', 'Syrian Arab Republic': 'Syria', 'United Kingdom of Great Britain and Northern Ireland': 'UK', 'United Republic of Tanzania': 'Tanzania', 'United States of America': 'US', 'Venezuela (Bolivarian Republic of)': 'Venezuela', 'Viet Nam': 'Vietnam'})\n",
+    "outputVariable": "out",
+    "source": [
+     "dem_national",
+     "sdg11_national"
+    ],
+    "trigger": {
+     "tableId": "dem_national",
+     "resultTableId": "heritage_spending_by_level",
+     "chart": {
+      "id": "chart-trigger-heritage_spending_by_level",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "dem_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "heritage_spending_by_level",
+    "rowCount": 37
+   },
+   "description": "Public spending on cultural and natural heritage per person by national and by local governments (constant 2017 PPP$), from each country's latest year in 2020–2024 with both (latest_year), and the local share of the two (%). Source: UIS, February 2026 release; indicators HEXPCSTPPPCAPGOV.NTL.HER.PU, HEXPCSTPPPCAPGOV.LOC.HER.PU.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794707800000_step_1",
+   "createdAt": 1794707802000
+  }
+ ],
+ "charts": [],
+ "conceptShelfItems": [],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794707800000_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1794707800000_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Who pays for heritage: national or local governments?",
+   "parentNodeId": "conversation-root:4f16f44d-f697-5e5a-802f-78aa53f0e31e",
+   "actionId": "exploreDataFromNL_1794707800000",
+   "createdAt": 1794707800000
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794707800000_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1794707800000_step_1",
+   "textKind": "explain",
+   "content": "Splitting heritage spending between national and local government.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794707800000_prompt",
+   "actionId": "exploreDataFromNL_1794707800000",
+   "createdAt": 1794707801000,
+   "startedAt": 1794707800000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794707800000-1-1",
+     "kind": "tool",
+     "label": "Querying: dem_national, sdg11_national",
+     "status": "completed",
+     "tool": "create_data"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794707800000-1-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "App created: Who pays for heritage"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794707800000_closing_turn",
+   "displayId": "textTurn_exploreDataFromNL_1794707800000_closing",
+   "textKind": "explain",
+   "content": "**National governments pay more for heritage than local ones in 30 of the 37 countries that report both.**\n\nLocal governments spend more in 7 countries, most of all in Belgium, where towns and cities supply **88%** of national and local heritage spending.\n\nThe dashboard ranks every country by the local share. Each country's latest year from 2020–2024 with both figures; regional governments are left out. Source: UIS, February 2026 release; indicators HEXPCSTPPPCAPGOV.NTL.HER.PU, HEXPCSTPPPCAPGOV.LOC.HER.PU.",
+   "parentNodeId": "file-heritage_spending_by_level.app.jsx",
+   "actionId": "exploreDataFromNL_1794707800000",
+   "createdAt": 1794707804000,
+   "startedAt": 1794707800000,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "heritage_spending_by_level",
+   "fields": {
+    "country_id": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "latest_year": {
+     "semanticType": "Year",
+     "displayName": "Latest year with data",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+     }
+    },
+    "national": {
+     "semanticType": "Price",
+     "unit": "PPP$ per person",
+     "displayName": "National government spending per person",
+     "authored": {
+      "semanticType": "Price",
+      "unit": "PPP$ per person",
+      "displayName": "National government spending per person"
+     }
+    },
+    "local": {
+     "semanticType": "Price",
+     "unit": "PPP$ per person",
+     "displayName": "Local government spending per person",
+     "authored": {
+      "semanticType": "Price",
+      "unit": "PPP$ per person",
+      "displayName": "Local government spending per person"
+     }
+    },
+    "local_share": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Local share",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Local share"
+     }
+    }
+   }
+  }
+ ],
+ "fileNodes": [
+  {
+   "kind": "file",
+   "id": "file-heritage_spending_by_level.app.jsx",
+   "path": "heritage_spending_by_level.app.jsx",
+   "displayName": "Who pays for heritage",
+   "contentHash": "77109ac10237c395183f65e0b636750c7e3e47cd3e1928dba69a3d337f743a83",
+   "parentNodeId": "heritage_spending_by_level",
+   "createdAt": 1794707803000
+  }
+ ],
+ "focusedId": {
+  "type": "file",
+  "fileName": "heritage_spending_by_level.app.jsx"
+ },
+ "canvasTabs": [
+  {
+   "key": "file:heritage_spending_by_level.app.jsx",
+   "target": {
+    "type": "file",
+    "fileName": "heritage_spending_by_level.app.jsx"
+   },
+   "addedAt": 1794700000000,
+   "viewedAt": 1794700000000
+  }
+ ],
+ "canvasTabActive": "file:heritage_spending_by_level.app.jsx"
+}

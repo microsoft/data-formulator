@@ -12,6 +12,7 @@ import type { Chart, DictTable, FieldItem } from '../components/ComponentType';
 import { computeInsightKey } from '../components/ComponentType';
 import { resolveChartFields } from './chartRecommendation';
 import { dfActions, dfSelectors, generateFreshChart, type DataFormulatorState } from './dfSlice';
+import { getCachedChart } from './chartCache';
 
 export interface ChartFileSpec {
     chart_type: string;
@@ -62,6 +63,22 @@ export function chartFileSpec(chart: Chart, table: DictTable, fields: FieldItem[
     };
 }
 
+const PLACEHOLDER_CHART_TYPES = new Set(['Auto', 'Table']);
+
+/**
+ * The session's charts an app may draw (`<FlintChart chart="id">`): those on the tables it declares, by
+ * id, in the chart-file shape the agent reads them in.
+ */
+export function appChartSpecs(charts: Chart[], tables: DictTable[], fields: FieldItem[], declared: string[]): Record<string, ChartFileSpec> {
+    const specs: Record<string, ChartFileSpec> = {};
+    for (const chart of charts) {
+        const table = tables.find(item => item.id === chart.tableRef);
+        if (!table || PLACEHOLDER_CHART_TYPES.has(chart.chartType) || !declared.includes(workspaceName(table))) continue;
+        specs[chart.id] = chartFileSpec(chart, table, fields);
+    }
+    return specs;
+}
+
 /** State the agent's session layer is built from (py-src/.../analyst/session_layer/state.py keeps the same keys). */
 const AGENT_STATE_KEYS = [
     'inputTables', 'derivedTables', 'loadedTableNodes', 'fileNodes', 'artifactSets', 'externalTableReferences',
@@ -78,6 +95,13 @@ export function agentSessionState(state: DataFormulatorState, focus: DataFormula
     // Starting a run moves focus to its draft; the agent needs what the user had in view when they asked.
     result.focusedId = focus ?? null;
     result.derivedTables = state.derivedTables.map(({ rows: _rows, ...table }) => table);
+    // Each chart's size as drawn on the canvas, so an app the agent writes can give it room of the same shape.
+    result.charts = state.charts.map(chart => {
+        const drawn = getCachedChart(chart.id);
+        return drawn?.canvasWidth && drawn.canvasHeight
+            ? { ...chart, drawnSize: { width: drawn.canvasWidth, height: drawn.canvasHeight } }
+            : chart;
+    });
     result.activeWorkspace = state.activeWorkspace ? { id: state.activeWorkspace.id, displayName: state.activeWorkspace.displayName } : null;
     return result;
 }

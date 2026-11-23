@@ -151,6 +151,25 @@ def _available_port() -> int:
         return server_socket.getsockname()[1]
 
 
+def _app_port() -> int:
+    """The app's port, the same across launches when it is free: the window's storage (models, settings) is per origin."""
+    saved = _instance_directory() / "app_port"
+    try:
+        port = int(saved.read_text(encoding="ascii"))
+        if 0 < port < 65536:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+                # As the server binds: the last launch's closed connections must not count as the port in use.
+                if os.name != "nt":
+                    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                server_socket.bind(("127.0.0.1", port))
+            return port
+    except (OSError, ValueError):
+        pass
+    port = _available_port()
+    saved.write_text(str(port), encoding="ascii")
+    return port
+
+
 def _wait_until_ready(url: str, timeout: float = 30) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -266,7 +285,26 @@ def _run_self_test() -> int:
         print(f"self-test sandbox parquet read: FAIL - {result.get('content')}")
         return 1
 
-    return _self_test_clr()
+    return _self_test_wormhole() or _self_test_clr()
+
+
+def _self_test_wormhole() -> int:
+    """Load the session-sharing stack (design-docs/71): Twisted and txaio pick their backends at import time."""
+    try:
+        import txaio
+        from twisted.internet import reactor  # noqa: F401
+        txaio.use_twisted()
+        from autobahn.twisted.websocket import WebSocketClientFactory  # noqa: F401
+        from autobahn.websocket.utf8validator import Utf8Validator
+        from wormhole import create  # noqa: F401
+        from wormhole.transit import TransitReceiver, TransitSender  # noqa: F401
+        if not Utf8Validator().validate(b"wormhole")[0]:
+            raise RuntimeError("websocket UTF-8 validator rejected ASCII")
+    except Exception as exc:  # pragma: no cover - exercised only in frozen builds
+        print(f"self-test wormhole import: FAIL - {exc}")
+        return 1
+    print("self-test wormhole import: PASS")
+    return 0
 
 
 def _self_test_clr() -> int:
@@ -364,7 +402,7 @@ def run_desktop() -> None:
 
         activate = coordinator.activate
 
-        port = _available_port()
+        port = _app_port()
         url = f"http://127.0.0.1:{port}?desktop=1"
 
         # Show a lightweight loading page first so the user gets feedback while
@@ -388,6 +426,12 @@ def run_desktop() -> None:
             # loading page stays responsive, then swap in the real URL.
             try:
                 os.environ["DATA_FORMULATOR_DESKTOP"] = "1"
+                if sys.platform == "darwin":
+                    # Opened from Finder, the app has a bare PATH; terminal commands should see the user's tools.
+                    from data_formulator.login_shell import adopt_login_shell_environment
+                    if not adopt_login_shell_environment():
+                        logging.getLogger("data_formulator.desktop").warning(
+                            "Could not read the login shell's environment; terminal commands use the app's PATH")
                 from data_formulator.auth.azure_cli import expose_azure_cli
                 expose_azure_cli()
                 sys.argv = [sys.argv[0], "--host", "127.0.0.1", "--port", str(port)]
@@ -411,7 +455,8 @@ def run_desktop() -> None:
             webview.start(_monitor_gui_test, (window, result_path), gui="edgechromium" if sys.platform == "win32" else None)
             sys.exit(1)
         else:
-            webview.start()
+            # pywebview's default private mode forgets the page's storage (models, settings) on every launch.
+            webview.start(private_mode=False, storage_path=str(_data_home() / "webview"))
             crash_report.mark_clean_exit()
     finally:
         coordinator.close()

@@ -36,6 +36,7 @@ import { InlineLoadingStatus, LoadingStatus } from './FunComponents';
 import { fetchWithIdentity, CONNECTOR_ACTION_URLS, SourceTableRef } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { iconVar, textVar } from '../app/layout';
+import { weight } from '../app/tokens';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -459,7 +460,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
             {/* Header — name + row count */}
             {!hideHeader && <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 0.5, flexShrink: 0 }}>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontSize: textVar.lg, fontWeight: 600 }} noWrap>{displayName}</Typography>
+                    <Typography sx={{ fontSize: textVar.lg, fontWeight: weight(600) }} noWrap>{displayName}</Typography>
                     {pathBreadcrumb && (
                         <Typography sx={{ fontSize: textVar.xs, color: 'text.disabled' }} noWrap>{pathBreadcrumb}</Typography>
                     )}

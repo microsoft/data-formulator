@@ -21,6 +21,7 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
+import RemoveIcon from '@mui/icons-material/Remove';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import WbIncandescentIcon from '@mui/icons-material/WbIncandescent';
@@ -28,48 +29,20 @@ import AttachFileIcon from '@mui/icons-material/AttachFile';
 import { InteractionEntry, PlanItem, ProgressStep } from '../components/ComponentType';
 import { ShimmerText } from '../components/FunComponents';
 import { AgentIcon } from '../icons';
-import { radius, borderColor } from '../app/tokens';
+import { radius, borderColor, ink, weight } from '../app/tokens';
+import { userPromptSurface } from '../app/look';
 import { textVar } from '../app/layout';
-import { useDispatch, useSelector } from 'react-redux';
-import { dfActions, dfSelectors } from '../app/dfSlice';
-import { getCachedChart } from '../app/chartCache';
+import { ThreadReferenceChips } from '../components/ThreadReferenceIcon';
+import { AttachmentPreview, PreviewTooltip } from '../components/AttachmentPreview';
+import { parseItemName, workspaceFileName } from '../app/itemNames';
+import { ItemEmbed, ItemLink, isBlockEmbed, markdownImageSx } from './ItemReferences';
+import { BrowserTabLink } from '../components/BrowserAccess';
+import { browserTabFromHref } from '../app/browserSettings';
 
+/** A message link's workspace file, as the app names it (`x` for `files/x`, `scratch/x` itself); null for anything else. */
 export const workspaceFileFromHref = (href: string): string | null => {
-    const prefixes = ['/api/workspace/files/', '/api/agent/workspace/scratch/', '/api/workspace/scratch/', 'scratch/', './scratch/'];
-    const prefix = prefixes.find(candidate => href.startsWith(candidate));
-    if (!prefix) return null;
-    try {
-        const path = decodeURIComponent(href.slice(prefix.length).split(/[?#]/)[0]);
-        if (!path || path.split('/').some(part => !part || part === '.' || part === '..') || path.includes('\\') || Array.from(path).some(character => character.charCodeAt(0) < 32)) return null;
-        return prefix === '/api/workspace/files/' ? path : `scratch/${path}`;
-    } catch {
-        return null;
-    }
-};
-
-const WorkspaceArtifactLink: React.FC<{ href: string; fileName: string; children?: React.ReactNode }> = ({ href, fileName, children }) => {
-    const dispatch = useDispatch();
-    return <Box component="a" href={href} onClick={event => {
-        event.preventDefault();
-        event.stopPropagation();
-        dispatch(dfActions.setFocused({ type: 'file', fileName }));
-    }} sx={{ color: 'primary.main', textDecoration: 'underline', overflowWrap: 'anywhere' }}>{children}</Box>;
-};
-
-const markdownImageSx = {
-    display: 'block', width: 'auto', height: 'auto',
-    maxWidth: 'min(100%, 320px)', maxHeight: 200, objectFit: 'contain',
-} as const;
-
-const MarkdownChartImage: React.FC<{ chartId: string; alt?: string }> = ({ chartId, alt }) => {
-    const thumbnail = useSelector(dfSelectors.getChartThumbnail(chartId));
-    const cached = getCachedChart(chartId);
-    const src = cached?.fullPngDataUrl || thumbnail || cached?.thumbnailDataUrl;
-    return src
-        ? <Box component="img" src={src} alt={alt || chartId} data-chart-id={chartId}
-            sx={markdownImageSx} />
-        : <Box component="span" role="img" aria-label={alt || chartId} data-chart-id={chartId}
-            sx={{ color: 'text.secondary' }}>{alt || chartId}</Box>;
+    const target = parseItemName(href);
+    return target?.kind === 'file' ? workspaceFileName(target.path) : null;
 };
 
 export const getStepIconComponent = (step: ProgressStep | string) => {
@@ -182,19 +155,22 @@ export const RunPlanChecklist: React.FC<{ items: PlanItem[]; title?: string; act
     const counted = items.filter(item => item.status !== 'dropped').length;
     const currentIndex = items.findIndex(item => item.status === 'open');
     const current = items[currentIndex];
-    // The label leads with where the plan stands: "Plan 1/3: …" while steps are open, "Completed 3/3: …" after.
-    const stage = done < counted
+    // The label leads with where the plan stands: "Plan 1/3: …" while steps are open, "Completed 3/3: …" after
+    // (or "Completed 2/3" when the run finished with a step skipped).
+    const stage = currentIndex >= 0
         ? t('dataThread.planStage', { defaultValue: 'Plan {{done}}/{{total}}', done, total: counted })
         : t('dataThread.planCompletedStage', { defaultValue: 'Completed {{done}}/{{total}}', done, total: counted });
     const name = title ? `${stage}: ${title}` : stage;
     const stepIcon = (item: PlanItem, index: number) => item.status === 'done'
         ? <FiberManualRecordIcon aria-hidden sx={{ fontSize: 9, color: 'success.main' }} />
+        : item.status === 'skipped'
+            ? <RemoveIcon aria-hidden sx={{ fontSize: 13, color: 'text.disabled' }} />
         : active && index === currentIndex
             ? <FiberManualRecordIcon aria-label={t('workflow.currentStepRunning', { defaultValue: 'Current step running' })} sx={{ fontSize: 9, color: 'primary.main' }} />
             : <RadioButtonUncheckedIcon aria-hidden sx={{ fontSize: 13, color: 'text.disabled' }} />;
     return (
         <Box component="section" aria-label={t('dataThread.plan', { defaultValue: 'Plan' })} sx={{
-            minWidth: 0, px: 1, py: 0.5, borderRadius: '6px', bgcolor: 'rgba(0,0,0,0.035)',
+            minWidth: 0, px: 1, py: 0.5, borderRadius: 1.5, bgcolor: ink(0.035),
         }}>
             <Box component="button" type="button" aria-expanded={expanded} onClick={() => setToggled(!expanded)} sx={{
                 display: 'flex', alignItems: 'center', gap: '5px', width: '100%', m: 0, p: 0, border: 0,
@@ -223,6 +199,7 @@ export const RunPlanChecklist: React.FC<{ items: PlanItem[]; title?: string; act
                                 {item.text}
                             </Box>
                             {item.status === 'dropped' && item.note && <Box component="span" sx={{ fontStyle: 'italic' }}> ({item.note})</Box>}
+                            {item.status === 'skipped' && <Box component="span" sx={{ fontStyle: 'italic' }}> ({t('dataThread.planStepSkipped', { defaultValue: 'skipped' })})</Box>}
                         </Typography>
                     </Box>
                 </Box>)}
@@ -230,6 +207,8 @@ export const RunPlanChecklist: React.FC<{ items: PlanItem[]; title?: string; act
         </Box>
     );
 };
+
+const isItemName = (url: string) => (parseItemName(url)?.kind ?? 'web') !== 'web';
 
 /** Markdown for agent prose. Document mode expands the hierarchy for reading canvases. */
 export const CompactMarkdown: React.FC<{
@@ -255,26 +234,34 @@ export const CompactMarkdown: React.FC<{
     }}>
         <Markdown
             remarkPlugins={[remarkGfm]}
-            urlTransform={(url, key, node) => key === 'src' && node.tagName === 'img' && url.startsWith('chart://')
-                ? url : defaultUrlTransform(url)}
+            // Items by name (`session://…`, `files/…`, and the old `chart://`, `map://`, `session/…` forms) stay as written.
+            urlTransform={(url, key, node) => (((key === 'src' && node.tagName === 'img') || key === 'href') && isItemName(url))
+                || (key === 'href' && browserTabFromHref(url)) ? url : defaultUrlTransform(url)}
             components={{
-                img: ({ src, alt }) => src?.startsWith('chart://')
-                    ? <MarkdownChartImage chartId={src.slice('chart://'.length)} alt={alt} />
-                    : src ? <Box component="img" src={src} alt={alt} sx={markdownImageSx} /> : null,
+                img: ({ src, alt }) => {
+                    const target = parseItemName(src);
+                    return target && target.kind !== 'web' ? <ItemEmbed src={src!} target={target} alt={alt} />
+                        : src ? <Box component="img" src={src} alt={alt} sx={markdownImageSx} /> : null;
+                },
                 a: ({ href, children }) => {
-                    const fileName = workspaceFileFromHref(href || '');
-                    return fileName
-                        ? <WorkspaceArtifactLink href={href!} fileName={fileName}>{children}</WorkspaceArtifactLink>
+                    const browserTab = browserTabFromHref(href || '');
+                    if (browserTab) return <BrowserTabLink tab={browserTab}>{children}</BrowserTabLink>;
+                    const target = parseItemName(href);
+                    return target && target.kind !== 'web'
+                        ? <ItemLink href={href!} target={target}>{children}</ItemLink>
                         : <Box component="a" href={href} sx={{ color: 'primary.main', overflowWrap: 'anywhere' }}>{children}</Box>;
                 },
-                p: ({ children }) => (
-                    <Typography component="p" sx={{ fontSize: 'inherit', color, lineHeight: isDocument ? 1.65 : 1.6, my: isDocument ? 1 : 0.25 }}>
+                p: ({ node, children }) => (
+                    // A paragraph holding a table preview is a block of its own.
+                    <Typography component={node?.children.some(child => child.type === 'element' && child.tagName === 'img'
+                        && isBlockEmbed(parseItemName(String(child.properties?.src ?? '')))) ? 'div' : 'p'}
+                        sx={{ fontSize: 'inherit', color, lineHeight: isDocument ? 1.65 : 1.6, my: isDocument ? 1 : 0.25 }}>
                         {children}
                     </Typography>
                 ),
                 h1: ({ children }) => (
                     <Typography component="h1" sx={{
-                        fontSize: isDocument ? textVar.xxl : '1.2em', fontWeight: 600,
+                        fontSize: isDocument ? textVar.xxl : '1.2em', fontWeight: weight(600),
                         lineHeight: 1.35, mt: 0, mb: isDocument ? 1.5 : 0.5, color,
                     }}>
                         {children}
@@ -282,7 +269,7 @@ export const CompactMarkdown: React.FC<{
                 ),
                 h2: ({ children }) => (
                     <Typography component="h2" sx={{
-                        fontSize: isDocument ? textVar.xl : '1.1em', fontWeight: 600,
+                        fontSize: isDocument ? textVar.xl : '1.1em', fontWeight: weight(600),
                         lineHeight: 1.4, mt: isDocument ? 2.5 : 0.75, mb: isDocument ? 1 : 0.5, color,
                     }}>
                         {children}
@@ -290,14 +277,14 @@ export const CompactMarkdown: React.FC<{
                 ),
                 h3: ({ children }) => (
                     <Typography component="h3" sx={{
-                        fontSize: isDocument ? textVar.lg : '1em', fontWeight: 600,
+                        fontSize: isDocument ? textVar.lg : '1em', fontWeight: weight(600),
                         lineHeight: 1.45, mt: isDocument ? 2 : 0.5, mb: isDocument ? 0.75 : 0.25, color,
                     }}>
                         {children}
                     </Typography>
                 ),
                 strong: ({ children }) => (
-                    <Box component="span" sx={{ fontWeight: 600 }}>{children}</Box>
+                    <Box component="span" sx={{ fontWeight: weight(600) }}>{children}</Box>
                 ),
                 em: ({ children }) => (
                     <Box component="span" sx={{ fontStyle: 'italic' }}>{children}</Box>
@@ -322,7 +309,7 @@ export const CompactMarkdown: React.FC<{
                             whiteSpace: 'pre',
                         } : {
                             fontSize: '0.9em',
-                            bgcolor: 'rgba(0,0,0,0.04)', px: 0.4, py: 0.1, borderRadius: '3px',
+                            bgcolor: ink(0.04), px: 0.4, py: 0.1, borderRadius: 0.75,
                         }),
                     }}>
                         {children}
@@ -341,7 +328,7 @@ export const CompactMarkdown: React.FC<{
                         '& > code': {
                             display: 'block',
                             fontSize: textVar.xxs,
-                            fontWeight: 400,
+                            fontWeight: weight(400),
                             color: theme.palette.text.secondary,
                             lineHeight: 1.5,
                             letterSpacing: 0,
@@ -375,10 +362,10 @@ export const CompactMarkdown: React.FC<{
                 th: ({ children }) => (
                     <Box component="th" sx={isDocument ? {
                         borderBottom: `1px solid ${theme.palette.divider}`, px: 1, py: 0.75, pl: 0,
-                        textAlign: 'left', fontWeight: 600, fontSize: '0.9em', color: 'text.secondary',
+                        textAlign: 'left', fontWeight: weight(600), fontSize: '0.9em', color: 'text.secondary',
                     } : {
                         border: `1px solid ${theme.palette.divider}`, px: '5px', py: '2px',
-                        textAlign: 'left', fontWeight: 600, bgcolor: 'action.hover',
+                        textAlign: 'left', fontWeight: weight(600), bgcolor: 'action.hover',
                     }}>
                         {children}
                     </Box>
@@ -465,7 +452,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
     if (entry.from === 'user' && (entry.role === 'prompt' || entry.role === 'instruction')) {
         const palette = theme.palette.custom;
         const isExploreIdeas = isExploreIdeasEntry(entry);
-        if (isExploreIdeas && !entry.attachments?.length) return null;
+        if (isExploreIdeas && !entry.attachments?.length && !entry.references?.length) return null;
         // Provenance for multi-input derivations is rendered as a structural
         // "merge node" in the timeline gutter (see DataThread), so the
         // instruction card itself stays free of chip-strip chrome.
@@ -474,12 +461,9 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 fontSize: textVar.xs,
                 color: theme.palette.text.primary,
                 py: 0.5, px: 1,
-                borderRadius: radius.sm,
-                // Keep the user card visually weighted (full bgcolor tint) —
-                // user prompts/instructions are the anchors of the thread,
-                // so they should read stronger than the agent's bubbles.
-                backgroundColor: palette.bgcolor,
-                border: `1px solid ${borderColor.component}`,
+                // User prompts are the anchors of the thread, so they read stronger than the agent's
+                // bubbles: a full tint card, or (sharp) a rule in the user's colour.
+                ...userPromptSurface(theme, palette),
                 // Cap very long instructions (e.g. a replayed workflow) so the
                 // card stays compact; the full text scrolls within the cap.
                 maxHeight: 160,
@@ -499,20 +483,27 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 {entry.attachments && entry.attachments.length > 0 && (
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px', mt: 0.5 }}>
                         {entry.attachments.map((name, i) => (
-                            <Box key={i} sx={{
+                            <PreviewTooltip key={i} pinnable
+                                title={<AttachmentPreview name={name} path={entry.attachmentPaths?.[name]} sentAt={entry.timestamp} />}>
+                            <Box component="button" type="button" aria-label={name} sx={{
                                 display: 'inline-flex', alignItems: 'center', gap: '2px',
-                                maxWidth: '100%', fontSize: textVar.xxs, fontFamily: theme.typography.fontFamily,
+                                maxWidth: '100%', minWidth: 0, boxSizing: 'border-box',
+                                fontSize: textVar.xxs, fontFamily: theme.typography.fontFamily,
                                 color: theme.palette.text.secondary,
                                 backgroundColor: alpha(theme.palette.text.primary, 0.05),
                                 border: `1px solid ${borderColor.divider}`,
-                                borderRadius: '4px', px: '5px', py: '1px',
+                                borderRadius: 1, px: '5px', py: '1px', cursor: 'pointer',
+                                '&:hover': { color: theme.palette.text.primary, backgroundColor: alpha(theme.palette.text.primary, 0.08) },
+                                '&:focus-visible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1 },
                             }}>
-                                <AttachFileIcon sx={{ fontSize: textVar.xs, transform: 'rotate(45deg)' }} />
-                                <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</Box>
+                                <AttachFileIcon sx={{ fontSize: textVar.xs, transform: 'rotate(45deg)', flexShrink: 0 }} />
+                                <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</Box>
                             </Box>
+                            </PreviewTooltip>
                         ))}
                     </Box>
                 )}
+                {entry.references && entry.references.length > 0 && <ThreadReferenceChips references={entry.references} sx={{ mt: 0.5 }} />}
             </Box>
         );
     }
@@ -652,10 +643,10 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
         } : isResolvedPause ? {
             // Minimal trace: just inline padding so the text aligns with
             // the gutter icon and adjacent bubbles. No bg, no border.
-            py: '2px', px: '4px',
+            py: '2px', px: 'var(--df-thread-text-inset, 4px)',
             opacity: 0.7,
         } : isInstruction ? {
-            py: '2px', px: '4px',
+            py: '2px', px: 'var(--df-thread-text-inset, 4px)',
         } : {};
 
         return (
@@ -668,10 +659,10 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                     cursor: (clickable || isCollapsible || isActiveAgentPause) ? 'pointer' : 'default',
                     ...bubbleSx,
                     ...(isCollapsible && !isConversational ? {
-                        borderRadius: '4px',
+                        borderRadius: 1,
                         px: '2px',
                         mx: '-2px',
-                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.03)' },
+                        '&:hover': { backgroundColor: ink(0.03) },
                     } : {}),
                     ...(isCollapsible && isConversational ? {
                         '&:hover': { backgroundColor: bubbleHover },
@@ -742,7 +733,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                         {(entry.role === 'clarify' || entry.role === 'explain' || entry.role === 'delegate') && !resolved && (
                             <Box component="span" sx={{
                                 display: 'inline',
-                                fontWeight: 600,
+                                fontWeight: weight(600),
                                 fontSize: textVar.xxs,
                                 mr: '4px',
                             }}>

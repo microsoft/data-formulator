@@ -38,9 +38,14 @@ import CodeIcon from '@mui/icons-material/Code';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import OpenInFullIcon from '@mui/icons-material/OpenInFull';
+import TravelExploreRoundedIcon from '@mui/icons-material/TravelExploreRounded';
+import LinkRoundedIcon from '@mui/icons-material/LinkRounded';
+import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import { useTranslation } from 'react-i18next';
 import { AgentToyIcon } from './AgentToyIcon';
 import {
+    ClarificationOptionIcon,
     ClarificationQuestion,
     ClarificationResponse,
 } from '../components/ComponentType';
@@ -50,6 +55,7 @@ import { DataOperationCard } from '../components/DataOperationCard';
 import type { DataOperation } from '../dataOperations/models';
 import { ExecutionCodeBlock, TerminalExecutionView, TerminalMessageContent } from '../components/TerminalApprovalDialog';
 import type { TerminalExecution, CodeExecution } from '../components/ComponentType';
+import { weight } from '../app/tokens';
 
 // ---------------------------------------------------------------------------
 // Shared shell
@@ -239,7 +245,7 @@ const AgentPauseShell: FC<AgentPauseShellProps> = ({
                     {icon}
                 </Box>
                 <Typography sx={{
-                    fontSize: textVar.sm, fontWeight: 600,
+                    fontSize: textVar.sm, fontWeight: weight(600),
                     color: theme.palette.text.primary,
                     flex: 1,
                 }}>
@@ -284,7 +290,7 @@ export const ResponseOptionButton: FC<ResponseOptionButtonProps> = ({
 }) => {
     const theme = useTheme();
     return (
-        <Box sx={{ position: 'relative', overflow: 'hidden', borderRadius: '6px' }}>
+        <Box sx={{ position: 'relative', overflow: 'hidden', borderRadius: 1.5 }}>
             <Typography
                 component="button"
                 type="button"
@@ -294,12 +300,12 @@ export const ResponseOptionButton: FC<ResponseOptionButtonProps> = ({
                 sx={{
                     position: 'relative', zIndex: 1,
                     px: '8px', py: '4px',
-                    borderRadius: '6px',
+                    borderRadius: 1.5,
                     border: `1px solid ${selected ? alpha(accentColor, 0.6) : alpha(theme.palette.text.primary, 0.12)}`,
                     backgroundColor: selected ? alpha(accentColor, 0.12) : theme.palette.background.paper,
                     cursor: disabled ? 'default' : 'pointer',
                     fontSize: textVar.xs,
-                    fontWeight: selected ? 600 : 400,
+                    fontWeight: selected ? weight(600) : weight(400),
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '4px',
@@ -326,6 +332,12 @@ export const ResponseOptionButton: FC<ResponseOptionButtonProps> = ({
 
 /** Options shown before a long list collapses behind "+N more". */
 const OPTION_PREVIEW_COUNT = 8;
+
+const OPTION_ICONS: Record<ClarificationOptionIcon, typeof LinkRoundedIcon> = {
+    search_web: TravelExploreRoundedIcon,
+    connect: LinkRoundedIcon,
+    upload: UploadFileRoundedIcon,
+};
 
 interface ClarificationPanelProps {
     questions: ClarificationQuestion[];
@@ -397,16 +409,9 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
         setFreeTexts(prev => ({ ...prev, [key]: value }));
 
     const isExplain = variant === 'explain';
-    // Two-context color scheme, kept gentle. Each pause carries its own
-    // semantic hue (clarify=warning, explain=info) so the two read as distinct
-    // moments — but the hue only tints the quiet chrome (panel wash, border,
-    // chips, focus underline, field highlights, badge). The strong CTA (submit
-    // button) stays in the neutral brand primary so a clarify panel never
-    // shouts in aggressive amber. `chromeAccent` = the variant hue, used
-    // everywhere except the submit button (`submitAccent`).
-    const chromeAccent = isExplain
-        ? theme.palette.info.main
-        : theme.palette.warning.main;
+    // One quiet agent style for every message: questions and explanations share
+    // the brand hue (panel wash, border, chips, focus underline, highlights).
+    const chromeAccent = theme.palette.primary.main;
     const badgeAccent = chromeAccent;
     const submitAccent = theme.palette.primary.main;
     // Field highlights (`**name**` tokens) follow the variant hue too.
@@ -544,10 +549,10 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                     aria-pressed={isSkipped}
                     sx={{
                         flexShrink: 0, minWidth: 0, fontSize: textVar.xs, mb: '2px',
-                        px: '8px', py: '4px', borderRadius: '6px', lineHeight: 1.4,
+                        px: '8px', py: '4px', borderRadius: 1.5, lineHeight: 1.4,
                         border: `1px solid ${isSkipped ? alpha(accentColor, 0.6) : 'transparent'}`,
                         color: isSkipped ? theme.palette.text.primary : theme.palette.text.secondary,
-                        fontWeight: isSkipped ? 600 : 400,
+                        fontWeight: isSkipped ? weight(600) : weight(400),
                         backgroundColor: isSkipped ? alpha(accentColor, 0.12) : 'transparent',
                         textDecoration: 'none',
                         '&:hover': {
@@ -678,7 +683,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
         onSelectAnswer?.(idx, response, false);
     };
 
-    const title = t(isExplain ? 'chartRec.explanationTitle' : 'chartRec.clarificationTitle');
+    const title = t('chartRec.agentTitle', { defaultValue: 'Agent' });
     const selectedOperationResponse = dataOperation ? selectedAnswers?.[0] : undefined;
     const selectedPlanId = dataOperation?.plans.some(
         plan => plan.id === selectedOperationResponse?.value,
@@ -697,10 +702,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     };
     return (
         <AgentPauseShell
-            icon={<AgentToyIcon
-                variant={isExplain ? 'explain' : 'clarify'}
-                sx={{ fontSize: textVar.xl, color: badgeAccent }}
-            />}
+            icon={<AgentToyIcon sx={{ fontSize: textVar.xl, color: badgeAccent }} />}
             accentColor={chromeAccent}
             title={title}
             closeTooltip={t('chartRec.pauseClose')}
@@ -818,6 +820,10 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                                                         })}
                                                 >
                                                     {isMulti && isOptionSelected(option) && <CheckRoundedIcon sx={{ fontSize: iconVar.xs }} />}
+                                                    {option.icon && (() => {
+                                                        const OptionIcon = OPTION_ICONS[option.icon];
+                                                        return <OptionIcon aria-hidden sx={{ fontSize: iconVar.xs, color: theme.palette.text.secondary }} />;
+                                                    })()}
                                                     {renderFieldHighlights(option.label, accentColor)}
                                                 </ResponseOptionButton>
                                             ))}
@@ -826,7 +832,7 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                                                     aria-expanded={expanded}
                                                     onClick={() => setExpandedOptions(previous => ({ ...previous, [questionIndex]: !expanded }))}
                                                     sx={{
-                                                        px: '8px', py: '4px', borderRadius: '6px', fontSize: textVar.xs, lineHeight: 1.4,
+                                                        px: '8px', py: '4px', borderRadius: 1.5, fontSize: textVar.xs, lineHeight: 1.4,
                                                         color: theme.palette.text.secondary, fontFamily: theme.typography.fontFamily,
                                                         '&:hover': { color: theme.palette.text.primary, textDecoration: 'underline' },
                                                     }}
@@ -892,8 +898,12 @@ interface ExplanationPanelProps {
     content: string;
     /** Close: de-highlight the panel and switch focus to the previous chart. */
     onClose: () => void;
-    /** Delete: remove this explanation block from the thread. */
-    onDelete: () => void;
+    /** Delete: remove this explanation block from the thread (absent while the answer is still being written). */
+    onDelete?: () => void;
+    /** Open the message in the chat view, where a long answer reads in full. */
+    onOpen?: () => void;
+    /** What the user answers under the message, inside the panel (a sign-in, design-docs/72). */
+    children?: ReactNode;
 }
 
 /**
@@ -965,26 +975,31 @@ export const ToolActivityPanel: FC<{
     </AgentPauseShell>;
 };
 
-export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, onDelete }) => {
+export const ExplanationPanel: FC<ExplanationPanelProps> = ({ content, onClose, onDelete, onOpen, children }) => {
     const theme = useTheme();
     const { t } = useTranslation();
 
     return (
         <AgentPauseShell
-            icon={<AgentToyIcon
-                variant="explain"
-                sx={{ fontSize: textVar.xl, color: theme.palette.primary.main }}
-            />}
+            icon={<AgentToyIcon sx={{ fontSize: textVar.xl, color: theme.palette.primary.main }} />}
             accentColor={theme.palette.primary.main}
-            title={t('chartRec.explanationTitle')}
+            title={t('chartRec.agentTitle', { defaultValue: 'Agent' })}
             closeTooltip={t('chartRec.pauseClose')}
             deleteTooltip={t('chartRec.pauseDelete')}
             onClose={onClose}
             onDelete={onDelete}
+            headerActions={onOpen && <Tooltip title={t('chartRec.openInChat', { defaultValue: 'Open in chat' })}>
+                <IconButton size="small" onClick={onOpen} aria-label={t('chartRec.openInChat', { defaultValue: 'Open in chat' })}
+                    sx={{ p: '3px', color: 'text.secondary', '&:hover': { color: 'primary.main' } }}>
+                    <OpenInFullIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+            </Tooltip>}
         >
             <PauseScrollRegion defaultMaxHeight="clamp(120px, 32vh, 360px)" sx={{ pb: '8px', pl: '20px', pr: '8px', fontSize: textVar.sm }}>
                 <TerminalMessageContent content={content} />
             </PauseScrollRegion>
+            {/* Outside the scroll region, so the controls stay in view under a long message; in the message's text size. */}
+            {children && <Box sx={{ pl: '20px', pr: '8px', pb: '10px', fontSize: textVar.sm }}>{children}</Box>}
         </AgentPauseShell>
     );
 };
@@ -1022,7 +1037,7 @@ export const FailedDraftPanel: FC<FailedDraftPanelProps> = ({
             <Box sx={{ pb: '8px', pl: '20px', pr: '8px' }}>
                 {prompt && (
                     <Typography sx={{
-                        mb: '5px', fontSize: textVar.sm, fontWeight: 500,
+                        mb: '5px', fontSize: textVar.sm, fontWeight: weight(500),
                         color: theme.palette.text.primary, wordBreak: 'break-word',
                     }}>
                         {prompt}

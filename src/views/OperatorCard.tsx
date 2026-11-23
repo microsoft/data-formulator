@@ -17,6 +17,7 @@ import {
 } from '@mui/material';
 
 import React from 'react';
+import { paper } from '../app/tokens';
 
 export interface OperatorCardProp {
     operator: string
@@ -50,7 +51,7 @@ export const OperatorCard: FC<OperatorCardProp> = function OperatorCard({ operat
             style={{ opacity, border, fontStyle, marginLeft: '3px', }}
             color="secondary"
             className={`data-field-list-item draggable-card `}>
-            <Box ref={drag} sx={{ cursor: cursorStyle, background: 'rgba(255, 255, 255, 0.93)'}}
+            <Box ref={drag} sx={{ cursor: cursorStyle, background: paper(0.93)}}
                  className={`draggable-card-header draggable-card-inner`}>
                 <Typography className="draggable-card-title" 
                     sx={{ marginLeft: '6px !important', fontSize: textVar.sm, height: 24, width: "100%", fontStyle: 'italic' }} component={'span'} gutterBottom>

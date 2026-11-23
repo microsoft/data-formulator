@@ -150,8 +150,10 @@ class TestModelNamePrefixing:
         analyst = AnalystAgent.__new__(AnalystAgent)
         monkeypatch.setattr(analyst, "_open_stream", lambda messages, tools: iter(chunks))
         monkeypatch.setattr(analyst, "_forward_stream_delta", lambda *args: iter(()))
+        stream = analyst._stream_llm(messages, tools)
         with pytest.raises(StopIteration) as finished:
-            next(analyst._stream_llm(messages, tools))
+            while True:
+                next(stream)   # status events for the user come first
         message = finished.value.value.choices[0].message
         assert message.content == "Checking data"
         assert message.tool_calls[0].id == "call_stream"
@@ -294,6 +296,32 @@ class TestModelNamePrefixing:
         monkeypatch.setattr(client_utils.litellm, "completion", Mock(side_effect=Exception(
             "APIConnectionError - gpt-5-mini unable to complete request: max_output_tokens")))
         Client("azure", "gpt-5-mini", api_key="k", api_base="https://df.openai.azure.com").ping()
+
+    @pytest.mark.parametrize("failures,succeeds", [(2, True), (5, False)])
+    def test_requests_whose_connection_never_opened_are_resent(self, monkeypatch, failures, succeeds):
+        import httpx
+        from unittest.mock import Mock
+
+        def dropped_handshake():
+            try:
+                raise httpx.ConnectError("[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol")
+            except httpx.ConnectError:
+                # LiteLLM re-raises its own error type while handling the transport error.
+                try:
+                    raise Exception("AzureException APIError - [SSL: UNEXPECTED_EOF_WHILE_READING]")
+                except Exception as wrapped:
+                    return wrapped
+
+        completion = Mock(side_effect=[dropped_handshake() for _ in range(failures)] + ["reply"])
+        monkeypatch.setattr(client_utils.litellm, "completion", completion)
+        monkeypatch.setattr(client_utils, "CONNECT_RETRY_DELAYS", (0, 0, 0, 0))
+        client = Client("azure", "gpt-4.1", api_key="k", api_base="https://apim.example.test")
+        if succeeds:
+            assert client.get_completion([{"role": "user", "content": "hi"}]) == "reply"
+        else:
+            with pytest.raises(Exception, match="UNEXPECTED_EOF"):
+                client.get_completion([{"role": "user", "content": "hi"}])
+        assert completion.call_count == min(failures, 4) + 1
 
     @pytest.mark.parametrize("model,api_base,sent,forced", [
         ("gpt-6.1-sol", "https://df.openai.azure.com", True, False),
@@ -856,3 +884,39 @@ class TestMatchToolWireFormats:
         name, args = _match_tool_from_obj(obj, _core_action_tools())
         assert name == "execute_python_script"
         assert args["code"] == "print(1)"
+
+
+def test_responses_stream_keeps_each_messages_phase_on_its_text():
+    """LiteLLM drops a message's phase; text deltas carry it so the agent can stream the final answer."""
+    from litellm.completion_extras.litellm_responses_transformation.transformation import (
+        OpenAiResponsesToChatCompletionStreamIterator,
+    )
+    translate = OpenAiResponsesToChatCompletionStreamIterator.translate_responses_chunk_to_openai_stream
+
+    def text(item_id, delta):
+        chunk = translate({"type": "response.output_text.delta", "item_id": item_id, "output_index": 0,
+                           "content_index": 0, "delta": delta})
+        return chunk.choices[0].delta
+
+    translate({"type": "response.output_item.added", "output_index": 0,
+               "item": {"id": "msg_note", "type": "message", "role": "assistant", "phase": "commentary"}})
+    translate({"type": "response.output_item.added", "output_index": 1,
+               "item": {"id": "msg_answer", "type": "message", "role": "assistant", "phase": "final_answer"}})
+    assert text("msg_note", "Let me check").provider_specific_fields == {"phase": "commentary"}
+    answer = text("msg_answer", "India has the most")
+    assert answer.content == "India has the most" and answer.provider_specific_fields == {"phase": "final_answer"}
+    # Once the message is done its phase is forgotten; unknown messages carry none.
+    translate({"type": "response.output_item.done", "output_index": 1,
+               "item": {"id": "msg_answer", "type": "message", "role": "assistant", "phase": "final_answer"}})
+    assert not (text("msg_answer", "x").provider_specific_fields or {}).get("phase")
+    assert not (text("msg_other", "y").provider_specific_fields or {}).get("phase")
+
+
+def test_no_reasoning_effort_leaves_the_model_default():
+    from data_formulator.agents.client_utils import _set_reasoning
+
+    params = {"model": "gpt-5", "reasoning_effort": "low"}
+    _set_reasoning(params, None)
+    assert "reasoning_effort" not in params
+    _set_reasoning(params, "high")
+    assert params["reasoning_effort"] == "high"

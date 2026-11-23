@@ -77,6 +77,21 @@ def test_refuses_what_would_leave_a_dependent_broken(targets, message) -> None:
         plan_deletion(targets, _ctx())
 
 
+def test_a_chart_can_go_once_the_report_is_edited_in_the_same_run() -> None:
+    ctx = _ctx()
+    ctx.payload["session_layer"].record_edit("session://reports/r1", "# Findings\n\nNo chart any more.\n")
+    plan = plan_deletion(["chart-top"], ctx)
+    assert [chart["id"] for chart in plan["charts"]] == ["chart-top"]
+
+
+def test_a_report_made_from_a_table_is_named_as_going_with_it() -> None:
+    state = _state(with_report=False)
+    state["generatedReports"] = [{"id": "r2", "title": "Mix notes", "content": "text", "triggerTableId": "table-mix"}]
+    with pytest.raises(ValueError, match="the report Mix notes was made from Mix and would be deleted with it; "
+                                         "Mix goes because nothing would be left built on it.*only the user"):
+        plan_deletion(["chart-mix-1", "chart-mix-2"], _ctx(state=state))
+
+
 def test_a_table_and_what_was_computed_from_it_can_go_together() -> None:
     plan = plan_deletion(["sales", "d_region", "d_top"], _ctx(state=_state(with_report=False)))
     assert [table["node_id"] for table in plan["tables"]] == ["table-sales", "table-region", "table-top"]
@@ -121,6 +136,6 @@ def test_delete_items_tool_returns_the_plan_and_drops_the_items_from_the_run(tmp
     assert payload["charts"] == [{"chart_id": "chart-sales"}]
     assert payload["external_references"] == [] and payload["replaceable_artifacts"] == []
     assert "table-mix" not in {table["node_id"] for table in layer.items()["tables"]}
-    assert "session/charts/chart-mix-1.json" not in layer.paths()
+    assert "session://charts/chart-mix-1" not in layer.paths()
     with pytest.raises(ValueError, match="Not in this session: 'd_mix'"):
         skill.handle_tool("delete_items", {"items": ["d_mix"]}, ctx)

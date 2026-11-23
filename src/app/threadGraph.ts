@@ -111,6 +111,18 @@ export class ThreadGraph {
         return id ? this.nodes.get(id)?.parentId : undefined;
     }
 
+    /** The nearest report or file above `id`, through messages only: the result a message after it follows. */
+    resultAbove(id: string | undefined): { kind: 'report' | 'file'; id: string } | undefined {
+        for (let current = id, steps = 0; current && steps < 1000; steps++) {
+            const node = this.nodes.get(current);
+            if (!node) return undefined;
+            if (node.kind === 'report' || node.kind === 'file') return { kind: node.kind, id: current };
+            if (node.kind !== 'turn') return undefined;
+            current = node.parentId;
+        }
+        return undefined;
+    }
+
     isItem(id: string | undefined): boolean {
         const kind = this.kindOf(id);
         return !!kind && ITEM_KINDS.has(kind);
@@ -278,3 +290,20 @@ export function buildThreads(graph: ThreadGraph, includeStart: (id: string) => b
     }
     return threads;
 }
+
+/** A thread's nodes in order with its sets' members after their set: what its chat shows. */
+export const threadChatNodeIds = (graph: ThreadGraph, thread: ThreadSpec): string[] =>
+    thread.nodeIds.flatMap(id => [id, ...graph.membersOf(id)]);
+
+/** The thread a node is on (a set's member is on its set's thread). */
+export const threadOfNode = (graph: ThreadGraph, nodeId: string): ThreadSpec | undefined =>
+    buildThreads(graph).find(thread => thread.nodeIds.some(id => id === nodeId || graph.membersOf(id).includes(nodeId)));
+
+/**
+ * The nodes a thread's chat shows now. The chat names its thread by key, so it grows with the
+ * conversation; `fallback` (what it showed when opened) stands in once the thread is gone.
+ */
+export const conversationNodeIds = (graph: ThreadGraph, threadKey: string, fallback?: string[]): string[] | undefined => {
+    const thread = buildThreads(graph).find(item => item.key === threadKey);
+    return thread ? threadChatNodeIds(graph, thread) : fallback;
+};

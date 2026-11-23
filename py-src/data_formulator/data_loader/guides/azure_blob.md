@@ -1,23 +1,24 @@
 **Example**
 
-Storage account `mystorageacct`, container `mydata`
+account_name: `mystorageacct` · container_name: `mydata`
 
 **Sign in**
 
-Choose one method:
-
-- **Azure identity:** Enter the account and container. Run [`az login`](https://learn.microsoft.com/cli/azure/authenticate-azure-cli-interactively) locally, or use a [managed identity](https://learn.microsoft.com/azure/storage/blobs/authorize-managed-identity) in Azure.
-- **SAS token:** Enter the account, container, and a time-limited SAS token.
-- **Connection string:** Paste the connection string from **Azure Portal → Storage account → Access keys**.
-- **Account key:** Enter the account key from the same Access keys page.
+- **Azure identity:** recommended. Uses your [`az login`](https://learn.microsoft.com/cli/azure/authenticate-azure-cli-interactively) session locally, or a [managed identity](https://learn.microsoft.com/azure/storage/blobs/authorize-managed-identity) in Azure.
+- **SAS token:** a time-limited token that allows listing and reading the container.
+- **Connection string** or **Account key:** from **Storage account → Access keys** in the Azure portal.
 
 **Access**
 
-Azure identity requires the [Storage Blob Data Reader role](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/storage#storage-blob-data-reader). A SAS token must allow listing and reading blobs in the container.
+Azure identity needs the [Storage Blob Data Reader](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/storage#storage-blob-data-reader) role on the container.
 
 **Files**
 
-Supported formats: CSV, TSV, Parquet, JSON, and JSONL.
+CSV, TSV, Parquet, JSON, and JSONL.
+
+<!-- agent-notes -->
+
+**Query behavior**
 
 Parquet queries use DuckDB's native Azure reader to select columns and skip
 irrelevant row groups when the file statistics permit it. Results are returned

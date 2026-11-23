@@ -8,9 +8,12 @@ import {
     DEFAULT_QUERY_ROWS,
     MAX_QUERY_ROWS,
     buildAppDocument,
+    collectLinks,
+    collectRowLinks,
     normalizeAppQuery,
     parseAppManifest,
     stripRowIds,
+    webLink,
     type HtmlAppTheme,
 } from '../../../../src/app/htmlApp/htmlAppDocument';
 
@@ -76,6 +79,18 @@ describe('buildAppDocument', () => {
         expect(output).toContain('--df-canvas:#f6f7f9');
         expect(output.indexOf('.df-card{}')).toBeGreaterThan(output.indexOf('--df-primary'));
         expect(output.indexOf('.df-card{}')).toBeLessThan(output.indexOf('.author{}'));
+    });
+
+    it("applies the host look's variables after the kit and before author styles, keeping only --df- names", () => {
+        const output = buildAppDocument('<head><style>.author{}</style></head><body></body>', {
+            runtimeScripts: [], config: {}, kitStylesheet: ':root{--df-radius-md:8px}',
+            theme: { ...theme, lookVars: { '--df-radius-md': '2px', 'color': 'red', '--df-shadow-sm': 'none;}body{x:1' } },
+        });
+        const look = output.indexOf('--df-radius-md:2px');
+        expect(look).toBeGreaterThan(output.indexOf('--df-radius-md:8px'));
+        expect(look).toBeLessThan(output.indexOf('.author{}'));
+        expect(output).not.toContain('color:red');
+        expect(output).not.toContain('}body{');
     });
 
     it('blocks network access and keeps the container from framing external pages', () => {
@@ -150,8 +165,32 @@ describe('stripRowIds', () => {
     });
 });
 
+describe('app link addresses', () => {
+    it('collects literal web addresses from code and data, but not templated or unsafe ones', () => {
+        const links = new Set<string>();
+        collectLinks('<a href="https://neurips.cc/virtual/2026?a=1&amp;b=2">x</a> see (https://en.wikipedia.org/wiki/A_(b)).'
+            + ' `https://arxiv.org/abs/${id}` https://user:pw@example.com/ ftp://example.com/', links);
+        collectRowLinks([{ url: 'https://openreview.net/forum?id=abc', n: 3 }, 'https://ignored.example/'], links);
+        expect([...links]).toEqual(expect.arrayContaining([
+            'https://neurips.cc/virtual/2026?a=1&b=2',
+            'https://en.wikipedia.org/wiki/A_(b)',
+            'https://openreview.net/forum?id=abc',
+        ]));
+        expect(links.has('https://arxiv.org/abs/123')).toBe(false);
+        expect([...links].some(link => link.includes('user') || link.includes('ignored'))).toBe(false);
+        expect(webLink('https://user:pw@example.com/')).toBeNull();
+        expect(webLink('HTTPS://Example.com')?.href).toBe('https://example.com/');
+    });
+});
+
 describe('DF app runtime', () => {
+    const originalOpen = window.open;
     afterEach(() => {
+        for (const [type, listener, options] of vi.mocked(window.addEventListener).mock.calls) {
+            window.removeEventListener(type, listener, options);
+        }
+        window.open = originalOpen;
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
         delete (window as any).DF;
         delete (window as any).__DF_APP_CONFIG__;
         vi.restoreAllMocks();
@@ -159,6 +198,7 @@ describe('DF app runtime', () => {
 
     const load = () => {
         const posted: any[] = [];
+        vi.spyOn(window, 'addEventListener');
         vi.spyOn(window, 'postMessage').mockImplementation((message: any) => { posted.push(message); });
         (window as any).__DF_APP_CONFIG__ = { channel: 'chan', manifest, theme, hostOrigin: '*' };
         new Function(runtimeSource)();
@@ -166,6 +206,162 @@ describe('DF app runtime', () => {
             window.dispatchEvent(new MessageEvent('message', { data, source: source as Window }));
         return { DF: (window as any).DF, posted, deliver };
     };
+
+    it('keeps fragment links inside the app, including nested link content and encoded section IDs', () => {
+        load();
+        const section = document.createElement('section');
+        section.id = 'all papers';
+        section.scrollIntoView = vi.fn();
+        const link = document.createElement('a');
+        link.href = '#all%20papers';
+        link.innerHTML = '<span>All papers</span>';
+        document.body.append(link, section);
+        try {
+            const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+            link.firstElementChild!.dispatchEvent(click);
+            expect(click.defaultPrevented).toBe(true);
+            expect(window.location.hash).toBe('#all%20papers');
+            expect(section.scrollIntoView).toHaveBeenCalledOnce();
+        } finally {
+            link.remove();
+            section.remove();
+        }
+    });
+
+    it('supports hash routes without section elements and leaves app-handled clicks alone', () => {
+        load();
+        const link = document.createElement('a');
+        link.href = '#/papers/42';
+        document.body.append(link);
+        try {
+            link.click();
+            expect(window.location.hash).toBe('#/papers/42');
+            link.href = '#/papers/43';
+            link.onclick = event => event.preventDefault();
+            link.click();
+            expect(window.location.hash).toBe('#/papers/42');
+        } finally {
+            link.remove();
+        }
+    });
+
+    it('reports malformed fragments instead of attempting navigation', () => {
+        const { posted } = load();
+        const link = document.createElement('a');
+        link.href = '#%zz';
+        document.body.append(link);
+        try {
+            const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+            link.dispatchEvent(click);
+            expect(click.defaultPrevented).toBe(true);
+            expect(posted).toContainEqual({ dfApp: 'chan', type: 'error', message: 'Cannot navigate to an invalid section link: #%zz' });
+        } finally {
+            link.remove();
+        }
+    });
+
+    it.each(['click', 'auxclick'])('does not forward scripted external-link %s events', type => {
+        const { posted } = load();
+        const link = document.createElement('a');
+        link.href = 'https://neurips.cc/virtual/2026';
+        document.body.append(link);
+        try {
+            const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: type === 'click' ? 0 : 1 });
+            link.dispatchEvent(event);
+            expect(event.defaultPrevented).toBe(true);
+            expect(posted.some(message => message.type === 'openExternal')).toBe(false);
+            expect(posted).toContainEqual({ dfApp: 'chan', type: 'error', message: 'External links must be opened by a user click.' });
+        } finally {
+            link.remove();
+        }
+    });
+
+    it.each(['data:text/html,test', 'file:///tmp/test.html', './papers.html'])('prevents unsupported link navigation: %s', href => {
+        const { posted } = load();
+        const link = document.createElement('a');
+        link.href = href;
+        document.body.append(link);
+        try {
+            const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+            link.dispatchEvent(event);
+            expect(event.defaultPrevented).toBe(true);
+            expect(posted.some(message => message.type === 'openExternal')).toBe(false);
+            expect(posted.some(message => message.type === 'error')).toBe(true);
+        } finally {
+            link.remove();
+        }
+    });
+
+    it('leaves javascript: links and middle clicks on section links to the browser', () => {
+        const { posted } = load();
+        const link = document.createElement('a');
+        link.href = 'javascript:void(0)';
+        document.body.append(link);
+        try {
+            const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+            link.dispatchEvent(click);
+            link.href = '#library';
+            const middle = new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 });
+            link.dispatchEvent(middle);
+            expect(click.defaultPrevented).toBe(false);
+            expect(middle.defaultPrevented).toBe(false);
+            expect(window.location.hash).toBe('');
+            expect(posted.some(message => message.type === 'error')).toBe(false);
+        } finally {
+            link.remove();
+        }
+    });
+
+    it('keeps links in the app when an app handler stops propagation, unless it prevents the default', async () => {
+        load();
+        const card = document.createElement('div');
+        const link = document.createElement('a');
+        link.href = '#/papers/42';
+        card.append(link);
+        document.body.append(card);
+        let prevent = false;
+        card.addEventListener('click', event => {
+            event.stopPropagation();
+            if (prevent) event.preventDefault();
+        });
+        try {
+            const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+            link.dispatchEvent(click);
+            expect(click.defaultPrevented).toBe(true);
+            await new Promise(resolve => setTimeout(resolve, 0));
+            expect(window.location.hash).toBe('#/papers/42');
+            prevent = true;
+            link.href = '#/papers/43';
+            link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+            await new Promise(resolve => setTimeout(resolve, 0));
+            expect(window.location.hash).toBe('#/papers/42');
+        } finally {
+            card.remove();
+        }
+    });
+
+    it('opens window.open web pages through the host and reports unsupported addresses', () => {
+        const { posted } = load();
+        expect(window.open(' https://openreview.net/forum?id=abc ', '_blank')).toBeNull();
+        expect(posted).toContainEqual({ dfApp: 'chan', type: 'openExternal', url: 'https://openreview.net/forum?id=abc' });
+        window.open('javascript:alert(1)');
+        expect(posted).toContainEqual({ dfApp: 'chan', type: 'error', message: 'Only HTTP(S) web links without embedded credentials can be opened.' });
+    });
+
+    it('reports download links, which the sandbox cannot save', () => {
+        const { posted } = load();
+        const link = document.createElement('a');
+        link.href = 'https://example.com/papers.csv';
+        link.setAttribute('download', '');
+        document.body.append(link);
+        try {
+            link.click();
+            expect(posted).toContainEqual({ dfApp: 'chan', type: 'error', message: 'Downloads are not available in apps.' });
+            expect(posted.some(message => message.type === 'openExternal')).toBe(false);
+        } finally {
+            link.remove();
+        }
+    });
 
     it('handshakes, sends declared queries, and resolves results', async () => {
         const { DF, posted, deliver } = load();
@@ -227,5 +423,12 @@ describe('DF app runtime', () => {
         const request = posted.find(message => message.type === 'query');
         deliver({ dfApp: 'chan', type: 'result', id: request.id, error: 'boom' });
         await expect(pending).rejects.toThrow('boom');
+    });
+
+    it('never runs code sent in a capture request; the capture library comes with the document', () => {
+        const { posted, deliver } = load();
+        deliver({ dfApp: 'chan', type: 'capture', id: 'shot', script: 'window.__ranFromMessage = true' });
+        expect((window as any).__ranFromMessage).toBeUndefined();
+        expect(posted).toContainEqual(expect.objectContaining({ type: 'captured', id: 'shot', error: 'The capture library did not load.' }));
     });
 });

@@ -38,20 +38,18 @@ export const LoadingStatus: React.FC<{ label: string; sx?: SxProps<Theme> }> = (
     </Box>
 );
 
-export const WorkflowGears: React.FC<{ running: boolean; color?: string; label?: string; size?: number; showTooltip?: boolean }> = ({ running, color = 'currentColor', label = running ? 'Workflow running' : 'Workflow', size = 22, showTooltip = true }) => {
-    const outline = Array.from({ length: 32 }, (_, index) => {
-        const angle = (Math.floor(index / 4) * 45 + [-17, -9, 9, 17][index % 4]) * Math.PI / 180;
-        const radius = index % 4 === 1 || index % 4 === 2 ? 7.5 : 5.6;
-        return `${index ? 'L' : 'M'}${(Math.cos(angle) * radius).toFixed(3)},${(Math.sin(angle) * radius).toFixed(3)}`;
-    }).join(' ') + 'Z M2.6,0 A2.6,2.6 0 1,0 -2.6,0 A2.6,2.6 0 1,0 2.6,0 Z';
-    const icon = <Box component="svg" viewBox="0 0 28 27" role={showTooltip ? 'img' : undefined} aria-label={showTooltip ? label : undefined} aria-hidden={!showTooltip || undefined}
-        data-workflow-gears={running ? 'running' : 'idle'} sx={{ width: size, height: size, flexShrink: 0, display: 'block', color,
-            '& .workflow-gear': { animation: 'workflow-gear-turn 8s linear infinite', animationPlayState: running ? 'running' : 'paused', transformOrigin: '0 0' },
-            '& .workflow-gear-reverse': { animationDirection: 'reverse' },
-            '@keyframes workflow-gear-turn': { to: { transform: 'rotate(360deg)' } },
-            '@media (prefers-reduced-motion: reduce)': { '& .workflow-gear': { animation: 'none' } } }}>
-        <g transform="translate(8 8)"><g className="workflow-gear"><path d={outline} fill="currentColor" fillRule="evenodd" /></g></g>
-        <g transform="translate(19 18) rotate(22.5)"><g className="workflow-gear workflow-gear-reverse"><path d={outline} fill="currentColor" fillRule="evenodd" /></g></g>
+// A workflow's path, in outline like the other rail icons: three open steps on one winding line, which stops at each step's edge.
+const WORKFLOW_PATH = 'M7.2 5H15A4 4 0 0 1 15 13H14.2M9.8 13H9A4 4 0 0 0 9 21H16.8';
+
+/** A workflow: three steps on one winding path. Running, the path flows from the first step to the last. */
+export const WorkflowIcon: React.FC<{ running: boolean; color?: string; label?: string; size?: number | string; showTooltip?: boolean }> = ({ running, color = 'currentColor', label = running ? 'Workflow running' : 'Workflow', size = 22, showTooltip = true }) => {
+    const icon = <Box component="svg" viewBox="0 0 24 24" role={showTooltip ? 'img' : undefined} aria-label={showTooltip ? label : undefined} aria-hidden={!showTooltip || undefined}
+        data-workflow-icon={running ? 'running' : 'idle'} sx={{ width: size, height: size, flexShrink: 0, display: 'block', color,
+            '& .workflow-path': running ? { strokeDasharray: '2.4 2', animation: 'workflow-flow 0.9s linear infinite' } : {},
+            '@keyframes workflow-flow': { to: { strokeDashoffset: -4.4 } },
+            '@media (prefers-reduced-motion: reduce)': { '& .workflow-path': { animation: 'none' } } }}>
+        <path className="workflow-path" d={WORKFLOW_PATH} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+        {[[5, 5], [12, 13], [19, 21]].map(([cx, cy]) => <circle key={cx} cx={cx} cy={cy} r={2.2} fill="none" stroke="currentColor" strokeWidth={1.6} />)}
     </Box>;
     return showTooltip ? <Tooltip title={label}>{icon}</Tooltip> : icon;
 };

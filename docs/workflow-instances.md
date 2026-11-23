@@ -17,9 +17,9 @@ and intended execution time. Background runs do not change the open session.
 Schedules execute in the local app while its backend is running. Hosted and
 ephemeral deployments do not schedule runs; the Schedules views explain that
 scheduling is only available locally. On a hosted deployment, administrators
-publish workflows and example sessions instead: **Publish as example** on a
-session adds it to everyone's Example sessions, and opening one imports a copy
-into the viewer's own sessions, like the built-in demos.
+publish workflows instead; a session is shared by wormhole (**Share via
+wormhole…**), and opening an example session imports a copy into the viewer's
+own sessions, like the built-in demos.
 
 The scheduler stores definitions and occurrence records in
 `<data-dir>/scheduling/schedules.sqlite3`.
@@ -185,7 +185,7 @@ independently guaranteed by the runtime.
 Raw acquisition and intermediate artifacts live under session scratch
 `workflow-<run-id>/`; published data and files use normal workspace storage, and
 chart/report/turn state uses normal session persistence. Private checkpoints
-live under `_workflow_runs/` and include the original instance and active plan, model
+live under the session's `_internal/workflow_runs/` (outside scratch, never exported) and include the original instance and active plan, model
 trajectory, transition history, evidence, and cumulative budgets. Editing the
 instance affects future runs only. Resume continues the same run; a fresh run
 uses the latest saved instance and its specified data requirements.

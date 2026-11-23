@@ -32,8 +32,8 @@
     "smallModelOptional": "小模型（可选）",
     "sameAsModel": "与模型相同",
     "thinking": "思考程度",
-    "thinkingHint": "用于分析和工作流 Agent。“低”最快；“中”适合长工作流和报告；“高”最慢、成本最高。简单的辅助任务始终使用轻量思考。",
-    "thinkingLow": "低（默认）",
+    "thinkingHint": "用于分析和工作流智能体。“模型默认”使用模型自身的推荐设置；“低”更快、更省；“中”和“高”思考更久、成本更高。快速辅助任务始终使用轻量思考。",
+    "thinkingLow": "低",
     "thinkingMedium": "中",
     "thinkingHigh": "高",
     "apiBase": "基础 URL",
@@ -145,6 +145,7 @@
     "disconnectOpenRouterTitle": "断开 OpenRouter 连接？",
     "disconnectOpenRouterMessage": "这将删除 Data Formulator 中保存的密钥。使用此连接的所有模型都需要重新连接。要同时撤销 OpenRouter 上的密钥，请从 OpenRouter 密钥列表中删除它。",
     "manageOpenRouterKeys": "管理 OpenRouter 密钥",
-    "configuredMessage": "服务端已配置，点击可验证连通性"
+    "configuredMessage": "服务端已配置，点击可验证连通性",
+    "thinkingDefault": "模型默认"
   }
 }
