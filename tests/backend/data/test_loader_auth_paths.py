@@ -6,6 +6,7 @@ from data_formulator.data_loader.athena_data_loader import AthenaDataLoader
 from data_formulator.data_loader.azure_blob_data_loader import AzureBlobDataLoader
 from data_formulator.data_loader.bigquery_data_loader import BigQueryDataLoader
 from data_formulator.data_loader.external_data_loader import ConnectorParamError
+from data_formulator.data_loader.google_analytics_data_loader import GoogleAnalyticsDataLoader
 from data_formulator.data_loader.mongodb_data_loader import MongoDBDataLoader
 from data_formulator.data_loader.s3_data_loader import S3DataLoader
 from data_formulator.data_loader.search_console_data_loader import SearchConsoleDataLoader
@@ -26,6 +27,7 @@ def _paths(loader):
         (MongoDBDataLoader, {"none", "credentials"}),
         (BigQueryDataLoader, {"default_credentials", "service_account_file"}),
         (SearchConsoleDataLoader, {"default_credentials", "service_account_file"}),
+        (GoogleAnalyticsDataLoader, {"default_credentials", "service_account_file"}),
         (AthenaDataLoader, {"profile", "access_keys"}),
     ],
 )
@@ -41,6 +43,7 @@ def test_multi_auth_loaders_expose_expected_paths(loader, expected):
     MongoDBDataLoader,
     BigQueryDataLoader,
     SearchConsoleDataLoader,
+    GoogleAnalyticsDataLoader,
     AthenaDataLoader,
 ])
 def test_auth_path_fields_do_not_overlap(loader):

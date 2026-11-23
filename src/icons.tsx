@@ -307,7 +307,7 @@ const FallbackConnectorIcon = glyphIcon('Data source', 'cylinder');
 
 /** Map source_type string to its icon: its own logo where Simple Icons has a legible one, otherwise a glyph. */
 export const CONNECTOR_ICON_MAP: Record<string, React.FC<SvgIconProps>> = {
-    // Brands: clickhouse, sqlite, mongodb, databricks, bigquery, search_console, snowflake, superset
+    // Brands: clickhouse, sqlite, mongodb, databricks, bigquery, google_analytics, search_console, snowflake, superset
     ...Object.fromEntries(Object.entries(CONNECTOR_BRANDS).map(([type, brand]) => [type, logoIcon(brand)])),
     // Their logos are unreadable at icon size (a wordmark, a detailed elephant).
     mysql: glyphIcon('MySQL', 'cylinder'),
@@ -363,6 +363,7 @@ const CONNECTOR_CATEGORY_ORDER: Record<string, number> = {
     cube: 4, CubeDataLoader: 4,
     powerbi: 4, PowerBIDataLoader: 4,
     search_console: 4, SearchConsoleDataLoader: 4,
+    google_analytics: 4, GoogleAnalyticsDataLoader: 4,
 };
 
 /** Sort comparator: group by category, then alphabetical within each group. */
