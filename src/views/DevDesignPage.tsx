@@ -4,20 +4,24 @@
 /**
  * /dev/design: an exploded, product-style illustration of Data Formulator's four layers. Each layer is an
  * upright slide in an oblique projection (faces keep their true proportions), stacked front to back: the user
- * interaction layer in front, the data connector at the back. Everything is laid out in design units
- * (DW x DH) and scales with the page width.
+ * interaction layer in front, the data connector at the back. Everything is laid out in design units: the
+ * page height is DH units, and the stack sits in a DW-wide frame. Wider windows give the extra width to the
+ * callouts (up to CALLOUT_MAX); windows narrower than DW scroll sideways.
  */
 
 import React, { useEffect, useState } from 'react';
 import { Box, useTheme } from '@mui/material';
+import { useSelector } from 'react-redux';
 import { DEV_NAV_HEIGHT, DevNav } from './DevNav';
 import { alpha } from '@mui/material/styles';
 import GitHubIcon from '@mui/icons-material/GitHub';
+import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded';
 import uiScreenshot from './DevDesignPage.ui.png';
-import { fontSans, ink, paper } from '../app/tokens';
+import { fontSans, identText, ink, paper } from '../app/tokens';
+import type { DataFormulatorState } from '../app/dfSlice';
 import { LayerSketch, type LayerSketchKind } from './DevDesignSketch';
 
-const DW = 1640;
+const DW = 1740;
 const DH = 1080;
 const W = 720;
 /** The slides share the UI screenshot's proportions (3224 x 1722). */
@@ -25,29 +29,33 @@ const H = (W * 1722) / 3224;
 const SCALE = 1.05;
 const RADIUS = 20;
 const THICKNESS = 3;
-/** Screen offset from one slide to the one behind it. */
-const STEP: [number, number] = [70, -150];
+/** Screen offset from one slide to the one behind it: the stack runs from the back (top left) to the front
+ *  (bottom right), so the callouts read 1 to 4 from left to right. */
+const STEP: [number, number] = [-70, -150];
 const STEP_LENGTH = Math.hypot(...STEP);
-const STACK_WIDTH = W * SCALE + 3 * STEP[0];
-const ORIGIN: [number, number] = [(DW - STACK_WIDTH) / 2, 630];
-const LEFT_COLUMN = ORIGIN[0] - 28;
-const RIGHT_COLUMN = ORIGIN[0] + STACK_WIDTH + 28;
-const CALLOUT_WIDTH = 290;
+const STACK_WIDTH = W * SCALE + 3 * Math.abs(STEP[0]);
+const STACK_LEFT = (DW - STACK_WIDTH) / 2;
+/** The front slide's top-left corner. */
+const ORIGIN: [number, number] = [STACK_LEFT - 3 * Math.min(STEP[0], 0), 630];
+const LEFT_COLUMN = STACK_LEFT - 28;
+const RIGHT_COLUMN = STACK_LEFT + STACK_WIDTH + 28;
+/** Callout width: the narrowest, and the widest it grows to when the window has room. */
+const CALLOUT_WIDTH = 340;
+const CALLOUT_MAX = 460;
+const DW_MAX = DW + 2 * (CALLOUT_MAX - CALLOUT_WIDTH);
 /** The title sketch, on the sketches' 4:3 board. */
 const SKETCH_W = 80;
 const SKETCH_H = 60;
 const SKETCH_GAP = 6;
 /** Design-unit height of each callout title row. Row 0 meets the connector's protocol bar; each row must also
- *  meet the visible part of its slide (the discovery slide shows on the left only between y 330 and 480). */
+ *  meet the visible part of its slide (the discovery slide shows on the right only between y 330 and 480). */
 const ROW_Y0 = 289;
 const ROW_GAP = 170;
 const TITLE_LINE = 32;
-/** Left edge of the left callouts; the header lines up with it. */
-const LEFT_EDGE = LEFT_COLUMN - 16 - CALLOUT_WIDTH;
 
 const MONO = '"SF Mono", ui-monospace, Menlo, Consolas, monospace';
 const INK = 'rgba(0, 0, 0, 0.87)';
-const MUTED = 'rgba(0, 0, 0, 0.58)';
+const MUTED = 'rgba(0, 0, 0, 0.7)';
 const LINE = 'rgba(0, 0, 0, 0.1)';
 const FILL = 'rgba(0, 0, 0, 0.045)';
 const BAR = 'rgba(0, 0, 0, 0.13)';
@@ -62,15 +70,21 @@ const slideTransform = (depth: number, dx = 0, dy = 0) => {
     const [ox, oy] = slideOrigin(depth);
     return `translate(${ox + dx} ${oy + dy}) scale(${SCALE})`;
 };
-const u = (px: number) => `${(px / DW) * 100}cqw`;
+const u = (px: number) => `${(px / DH) * 100}cqh`;
+/** The stage's height; one design unit is this over DH. */
+const STAGE_HEIGHT = `(100vh - ${DEV_NAV_HEIGHT + 32}px)`;
+/** Callouts take an even share of the stage width beyond the stack, within [CALLOUT_WIDTH, CALLOUT_MAX]. */
+const CALLOUT_SPAN = `clamp(${u(CALLOUT_WIDTH)}, calc((100cqw - ${u(DW - 2 * CALLOUT_WIDTH)}) / 2), ${u(CALLOUT_MAX)})`;
+/** The page's only type sizes, in design units. */
+const TYPE = { display: 52, heading: 28, body: 18 } as const;
 
 interface Layer {
     id: string;
     /** Position in the stack, 0 = front. */
     depth: number;
     title: string;
-    /** Shown as a short list under the title; a point may replace the dash with its own marker. */
-    points: (React.ReactNode | { marker: string; content: React.ReactNode })[];
+    /** Shown as a short list under the title. */
+    points: React.ReactNode[];
     side: 'left' | 'right';
     /** Row of the callout's title, top to bottom; rows are evenly spaced down the page. */
     row: number;
@@ -257,46 +271,86 @@ const Term: React.FC<{ children: React.ReactNode }> = ({ children }) => <Box com
     color: INK, fontWeight: 500, whiteSpace: 'nowrap', textDecoration: 'underline', textDecorationThickness: '1px',
     textUnderlineOffset: '0.22em', textDecorationColor: ink(0.35),
 }}>{children}</Box>;
-const Soon: React.FC = () => <Box component="span" sx={{
-    ml: u(4), px: u(6), py: u(1), borderRadius: u(4), border: `1px solid ${ink(0.18)}`, fontSize: '0.72em',
-    fontWeight: 600, letterSpacing: '0.06em', color: MUTED, verticalAlign: 'middle',
-}}>TBA</Box>;
+/** GitHub star counts, fetched once per repo per page load (the public API allows 60 requests an hour). */
+const starCounts = new Map<string, Promise<number | null>>();
+const fetchStars = (repo: string) => {
+    if (!starCounts.has(repo)) {
+        starCounts.set(repo, fetch(`https://api.github.com/repos/${repo}`)
+            .then(res => res.ok ? res.json() : null)
+            .then(data => typeof data?.stargazers_count === 'number' ? data.stargazers_count : null, () => null));
+    }
+    return starCounts.get(repo)!;
+};
+const useStarCount = (repo: string) => {
+    const [stars, setStars] = useState<number | null>(null);
+    useEffect(() => {
+        let live = true;
+        fetchStars(repo).then(count => { if (live) setStars(count); });
+        return () => { live = false; };
+    }, [repo]);
+    return stars;
+};
+const formatStars = (n: number) => n < 1000 ? `${n}` : `${(n / 1000).toFixed(n < 10000 ? 1 : 0).replace(/\.0$/, '')}k`;
+
+/** A repo's star count after a thin divider; nothing until (or unless) GitHub answers. */
+const Stars: React.FC<{ repo: string }> = ({ repo }) => {
+    const stars = useStarCount(repo);
+    if (stars === null) return null;
+    return <Box component="span" sx={{
+        display: 'inline-flex', alignItems: 'center', gap: '0.2em', ml: '0.15em', pl: '0.5em', borderLeft: `1px solid ${LINE}`,
+        color: MUTED, fontVariantNumeric: 'tabular-nums',
+    }}>
+        <StarBorderRoundedIcon sx={{ fontSize: '1.15em' }} />{formatStars(stars)}
+    </Box>;
+};
+
+/** An inline link to a GitHub repo, styled as a small chip. */
+const RepoChip: React.FC<{ repo: string }> = ({ repo }) => <Box component="a" href={`https://github.com/${repo}`} target="_blank"
+    rel="noreferrer" sx={{
+        display: 'inline-flex', alignItems: 'center', gap: '0.3em', mx: '0.15em', px: '0.5em', py: '0.05em',
+        verticalAlign: 'baseline', borderRadius: 999, border: `1px solid ${LINE}`, bgcolor: paper(),
+        fontSize: '0.82em', lineHeight: 1.5, color: INK, textDecoration: 'none', whiteSpace: 'nowrap',
+        transition: 'border-color .2s ease', '&:hover': { borderColor: ink(0.3) },
+    }}>
+    <GitHubIcon sx={{ fontSize: '1.05em' }} />{repo.split('/')[1]}<Stars repo={repo} />
+</Box>;
 const Code: React.FC<{ children: React.ReactNode }> = ({ children }) => <Box component="span" sx={{ fontFamily: MONO, fontSize: '0.92em', color: INK }}>{children}</Box>;
 
 const LAYERS: Layer[] = [
     {
-        id: 'connector', depth: 3, side: 'right', row: 0, anchorX: 692, title: 'Data connector',
+        id: 'connector', depth: 3, side: 'left', row: 0, anchorX: 28, title: 'Data connector',
         points: [
-            <>A <Term>unified protocol</Term> for agents to work with databases, warehouses, lakes, and files the same way:{' '}
+            <>A <Term>unified protocol</Term> for agents to work with databases, warehouses, lakes, semantic models, and files the same way:{' '}
                 <Code>ls</Code>, <Code>search</Code>, <Code>read</Code>, <Code>probe</Code>, <Code>load</Code>.</>,
             <><Term>Lazy virtual connections</Term> let Data Formulator work with extremely large data directly.</>,
         ],
         Content: ConnectorSlide, sketch: ['connector', 'Databases wired into one protocol'],
     },
     {
-        id: 'discovery', depth: 2, side: 'left', row: 1, anchorX: 24, title: 'Data discovery tools',
+        id: 'discovery', depth: 2, side: 'right', row: 1, anchorX: 696, title: 'Data discovery tools',
         points: [
             <><Term>Terminal</Term> and <Term>browser use</Term> let agents discover new data on demand, and <Term>skills</Term> keep
                 the toolbox extensible.</>,
-            { marker: '+', content: <><Term>Self-evolving tools</Term> <Soon /></> },
+            <><Term>Data memo</Term> lets agents actively manage and reuse data during exploration, reducing cost and improving
+                reliability.</>,
         ],
         Content: DiscoverySlide, sketch: ['discovery', 'A browser and a terminal with a magnifier'],
     },
     {
-        id: 'harness', depth: 1, side: 'right', row: 2, anchorX: 696, title: 'Data agent harness',
+        id: 'harness', depth: 1, side: 'left', row: 2, anchorX: 24, title: 'Data agent harness',
         points: [
             <>An interactive <Term>coding harness</Term> where agents transform data, create charts, and build artifacts.</>,
-            <>Data is organized as <Term>virtual files</Term>, with dedicated tools to manage and explore it.</>,
-            <><Term>Flint</Term> lets Data Formulator create high-quality visualizations reliably and token-efficiently.</>,
+            <>The <Term>Flint language</Term> <RepoChip repo="microsoft/flint-chart" /> lets agents compose expressive, interactive charts reliably and token-efficiently.</>,
         ],
         Content: HarnessSlide, sketch: ['harness', 'Notebook cells leading to a chart'],
     },
     {
-        id: 'interaction', depth: 0, side: 'left', row: 3, anchorX: 44, title: 'User interaction',
+        id: 'interaction', depth: 0, side: 'right', row: 3, anchorX: 676, title: 'User interaction',
         points: [
             <><Term>Data threads</Term> take an <Box component="span" sx={{ whiteSpace: 'nowrap' }}>artifact-centric</Box> approach to managing long‑horizon exploration and
                 analysis.</>,
-            <>The <Term>interactive canvas</Term> lets users explore or directly edit visual artifacts.</>,
+            <>The <Term>interactive canvas</Term> lets users explore data with visualizations and artifacts.</>,
+            <><Term>Self-evolving</Term>: agents grow new artifact types, making future creation more reliable and efficient.</>,
         ],
         Content: InteractionSlide, sketch: ['interaction', 'A data thread branching into an editable chart'],
     },
@@ -308,14 +362,11 @@ const CORNERS: [number, number][] = [[4, 4], [W - 4, 4], [4, H - 4], [W - 4, H -
 const LIFT = 22;
 const LIFT_TRANSITION = 'transform .35s cubic-bezier(.2,.8,.2,1)';
 
-const Slide: React.FC<{ layer: Layer; accent: string; lifted: boolean; settled: boolean; onHover: (id: string | null) => void }> = ({
-    layer, accent, lifted, settled, onHover,
+const Slide: React.FC<{ layer: Layer; accent: string; lifted: boolean; onHover: (id: string | null) => void }> = ({
+    layer, accent, lifted, onHover,
 }) => {
-    const collapse = (1.5 - layer.depth) * 0.85;
     const { Content } = layer;
-    return <g className={settled ? undefined : 'df-slide'} style={{
-        '--dx': `${collapse * STEP[0]}px`, '--dy': `${collapse * STEP[1]}px`, animationDelay: `${layer.depth * 0.06}s`,
-    } as React.CSSProperties}>
+    return <g>
         <g style={{ transform: `translateY(${lifted ? -LIFT : 0}px)`, transition: LIFT_TRANSITION }}
             onMouseEnter={() => onHover(layer.id)} onMouseLeave={() => onHover(null)}>
             <g transform={slideTransform(layer.depth, 8, 16)} filter="url(#df-soft-shadow)">
@@ -335,7 +386,7 @@ const Slide: React.FC<{ layer: Layer; accent: string; lifted: boolean; settled: 
 };
 
 /** Dashed exploded-view guides joining a slide's corners to the slide in front of it. */
-const Guides: React.FC<{ back: Layer; front: Layer; settled: boolean }> = ({ back, front, settled }) => <g className={settled ? undefined : 'df-fade'}>
+const Guides: React.FC<{ back: Layer; front: Layer }> = ({ back, front }) => <g>
     {CORNERS.map(([x, y], i) => {
         const [x1, y1] = project(x, y, back.depth), [x2, y2] = project(x, y, front.depth);
         return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(0,0,0,0.28)" strokeDasharray="2 5" />;
@@ -345,38 +396,43 @@ const Guides: React.FC<{ back: Layer; front: Layer; settled: boolean }> = ({ bac
 /** Where a layer's leader line starts on its slide, in design units. */
 const anchorPoint = (layer: Layer): [number, number] => [project(layer.anchorX, 0, layer.depth)[0], ROW_Y0 + layer.row * ROW_GAP];
 
-const Callout: React.FC<{ layer: Layer; dimmed: boolean; onHover: (id: string | null) => void }> = ({ layer, dimmed, onHover }) => {
+const Callout: React.FC<{ layer: Layer; accent: string; highlighted: boolean; onHover: (id: string | null) => void }> = ({
+    layer, accent, highlighted, onHover,
+}) => {
     const [, y] = anchorPoint(layer);
     const left = layer.side === 'left';
-    return <Box className="df-fade" onMouseEnter={() => onHover(layer.id)} onMouseLeave={() => onHover(null)} sx={{
-        position: 'absolute', top: `${(y / DH) * 100}%`, width: u(CALLOUT_WIDTH),
+    return <Box onMouseEnter={() => onHover(layer.id)} onMouseLeave={() => onHover(null)} sx={{
+        position: 'absolute', top: `${(y / DH) * 100}%`, width: CALLOUT_SPAN,
         ...(left ? { right: `${((DW - LEFT_COLUMN + 16) / DW) * 100}%` } : { left: `${((RIGHT_COLUMN + 16) / DW) * 100}%` }),
-        transform: `translateY(-${u(SKETCH_H + SKETCH_GAP + TITLE_LINE / 2)})`, opacity: dimmed ? 0.4 : 1, transition: 'opacity .35s ease', cursor: 'default',
+        transform: `translateY(-${u(SKETCH_H + SKETCH_GAP + TITLE_LINE / 2)})`, cursor: 'default',
     }}>
         <Box sx={{ width: u(SKETCH_W), height: u(SKETCH_H), mb: u(SKETCH_GAP), ml: u(-6) }}>
             <LayerSketch kind={layer.sketch[0]} label={layer.sketch[1]} />
         </Box>
-        <Box sx={{ fontSize: u(24), lineHeight: u(TITLE_LINE), fontWeight: 600, letterSpacing: '-0.015em', color: INK, whiteSpace: 'nowrap' }}>{layer.title}</Box>
-        <Box component="ul" sx={{ m: 0, mt: u(10), p: 0, listStyle: 'none', fontSize: u(16), lineHeight: 1.55, color: MUTED }}>
-            {layer.points.map((point, i) => {
-                const { marker, content } = point && typeof point === 'object' && 'marker' in point ? point : { marker: '–', content: point };
-                return <Box component="li" key={i} sx={{ display: 'flex', gap: u(8), mt: i > 0 ? u(6) : 0 }}>
-                    <Box component="span" aria-hidden sx={{ color: ink(0.28), flexShrink: 0, width: '0.6em', textAlign: 'center' }}>{marker}</Box>
-                    <span>{content}</span>
-                </Box>;
-            })}
+        <Box sx={{ fontSize: u(TYPE.heading), lineHeight: u(TITLE_LINE), fontWeight: 600, letterSpacing: '-0.015em', whiteSpace: 'nowrap',
+            color: highlighted ? accent : INK, transition: 'color .25s ease' }}>
+            <Box component="span" sx={{ mr: u(10), fontVariantNumeric: 'tabular-nums' }}>{layer.row + 1}</Box>
+            {layer.title}
+        </Box>
+        <Box component="ul" sx={{ m: 0, mt: u(12), p: 0, listStyle: 'none', fontSize: u(TYPE.body), lineHeight: 1.5, color: MUTED }}>
+            {layer.points.map((point, i) => <Box component="li" key={i} sx={{ display: 'flex', gap: u(8), mt: i > 0 ? u(12) : 0 }}>
+                <Box component="span" aria-hidden sx={{ color: ink(0.28), flexShrink: 0, width: '0.6em', textAlign: 'center' }}>–</Box>
+                <span>{point}</span>
+            </Box>)}
         </Box>
     </Box>;
 };
 
-const Leader: React.FC<{ layer: Layer; accent: string; dimmed: boolean; lifted: boolean; settled: boolean }> = ({ layer, accent, dimmed, lifted, settled }) => {
+const Leader: React.FC<{ layer: Layer; accent: string; lifted: boolean }> = ({ layer, accent, lifted }) => {
     const [x, y] = anchorPoint(layer);
     const end = layer.side === 'left' ? LEFT_COLUMN : RIGHT_COLUMN;
-    return <g className={settled ? undefined : 'df-fade'} style={{ opacity: dimmed ? 0.35 : 1, transition: 'opacity .3s ease' }}>
-        <line x1={x} y1={y} x2={end} y2={y} stroke="rgba(0,0,0,0.35)" strokeWidth={1} />
-        <circle cx={end} cy={y} r={2} fill="rgba(0,0,0,0.45)" />
+    const stroke = lifted ? accent : 'rgba(0,0,0,0.35)';
+    const colorTransition = 'stroke .25s ease, fill .25s ease';
+    return <g>
+        <line x1={x} y1={y} x2={end} y2={y} stroke={stroke} strokeWidth={lifted ? 1.5 : 1} style={{ transition: colorTransition }} />
+        <circle cx={end} cy={y} r={lifted ? 2.5 : 2} fill={lifted ? accent : 'rgba(0,0,0,0.45)'} style={{ transition: colorTransition }} />
         {/* While the slide is lifted, a short tick joins the line to the dot riding up with it. */}
-        <line x1={x} y1={y} x2={x} y2={y - LIFT} stroke="rgba(0,0,0,0.35)" strokeWidth={1}
+        <line x1={x} y1={y} x2={x} y2={y - LIFT} stroke={stroke} strokeWidth={1.5}
             style={{ opacity: lifted ? 1 : 0, transition: 'opacity .2s ease' }} />
         <g style={{ transform: `translateY(${lifted ? -LIFT : 0}px)`, transition: LIFT_TRANSITION }}>
             <circle cx={x} cy={y} r={8} fill={accent} opacity={0.15} />
@@ -385,86 +441,79 @@ const Leader: React.FC<{ layer: Layer; accent: string; dimmed: boolean; lifted: 
     </g>;
 };
 
-// Keep the SVG still once the intro has played: while anything in it animates, Chrome scales the UI screenshot with a
-// low-quality filter and it looks blurry.
-const STYLES = `
-@keyframes df-explode { from { transform: translate(var(--dx), var(--dy)); } to { transform: translate(0, 0); } }
-@keyframes df-fade-in { from { opacity: 0; } to { opacity: 1; } }
-.df-slide { animation: df-explode 1.3s cubic-bezier(.2,.75,.15,1) both; }
-.df-fade { animation: df-fade-in .7s ease 1.1s both; }
-@media (prefers-reduced-motion: reduce) {
-  .df-slide, .df-fade { animation: none !important; }
-}
-`;
-
 export default function DevDesignPage() {
     const accent = useTheme().palette.primary.main;
     const [active, setActive] = useState<string | null>(null);
-    // Drop the intro animations once they have run, so later style changes can't replay them.
-    const [settled, setSettled] = useState(false);
-    useEffect(() => {
-        const timer = window.setTimeout(() => setSettled(true), 1800);
-        return () => window.clearTimeout(timer);
-    }, []);
+    const version = useSelector((state: DataFormulatorState) => state.serverConfig?.VERSION);
     const slide = (layer: Layer) => <Slide key={layer.id} layer={layer} accent={accent} lifted={active === layer.id}
-        settled={settled} onHover={setActive} />;
-    const leader = (layer: Layer) => <Leader key={`leader-${layer.id}`} layer={layer} accent={accent} dimmed={active !== null && active !== layer.id}
-        lifted={active === layer.id} settled={settled} />;
+        onHover={setActive} />;
+    const leader = (layer: Layer) => <Leader key={`leader-${layer.id}`} layer={layer} accent={accent}
+        lifted={active === layer.id} />;
     const [groundX, groundY] = project(W / 2, H, 1.5);
     return <Box sx={{
         height: '100vh', overflowY: 'auto', fontFamily: fontSans, color: INK, WebkitFontSmoothing: 'antialiased', bgcolor: 'background.paper',
         backgroundImage: theme => `linear-gradient(90deg, ${alpha(theme.palette.text.primary, 0.02)} 1px, transparent 1px), linear-gradient(0deg, ${alpha(theme.palette.text.primary, 0.02)} 1px, transparent 1px)`,
         backgroundSize: '24px 24px',
     }}>
-        <style>{STYLES}</style>
         <DevNav />
-        <Box component="section" sx={{ height: `calc(100vh - ${DEV_NAV_HEIGHT}px)`, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2, boxSizing: 'border-box' }}>
+        <Box component="section" sx={{ height: `calc(100vh - ${DEV_NAV_HEIGHT}px)`, overflowX: 'auto', p: 2, boxSizing: 'border-box' }}>
             <Box sx={{
-                position: 'relative', width: `min(100%, calc((100vh - ${DEV_NAV_HEIGHT + 32}px) * ${DW / DH}))`, aspectRatio: `${DW} / ${DH}`, containerType: 'inline-size',
+                position: 'relative', mx: 'auto', height: `calc${STAGE_HEIGHT}`, containerType: 'size',
+                width: '100%', minWidth: `calc(${STAGE_HEIGHT} * ${DW / DH})`, maxWidth: `calc(${STAGE_HEIGHT} * ${DW_MAX / DH})`,
             }}>
-                <Box component="header" sx={{
-                    position: 'absolute', top: u(40), left: u(LEFT_EDGE), right: u(DW - RIGHT_COLUMN - 16 - CALLOUT_WIDTH),
-                    display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: u(24),
-                }}>
-                    <Box>
-                        <Box component="h1" sx={{
-                            m: 0, display: 'flex', alignItems: 'center', gap: u(14),
-                            fontSize: u(50), fontWeight: 650, letterSpacing: '-0.03em', lineHeight: 1.05, color: INK,
-                        }}>
-                            <Box component="img" src="/data-formulator-logo-128.png" alt="" sx={{ width: u(52), height: u(52) }} />
-                            Data Formulator 1.0-alpha
+                <Box sx={{ position: 'absolute', top: 0, bottom: 0, left: '50%', width: u(DW), transform: 'translateX(-50%)' }}>
+                    <Box component="header" sx={{
+                        position: 'absolute', top: u(40),
+                        left: `calc(${u(LEFT_COLUMN - 16)} - ${CALLOUT_SPAN})`, right: `calc(${u(DW - RIGHT_COLUMN - 16)} - ${CALLOUT_SPAN})`,
+                        display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: u(24),
+                    }}>
+                        <Box>
+                            <Box component="h1" sx={{
+                                m: 0, display: 'flex', alignItems: 'center', gap: u(14),
+                                fontSize: u(TYPE.display), fontWeight: 650, letterSpacing: '-0.03em', lineHeight: 1.05, color: INK,
+                            }}>
+                                <Box component="img" src="/data-formulator-logo-128.png" alt="" sx={{ width: u(52), height: u(52) }} />
+                                <span>
+                                    Data Formulator
+                                    {version && <Box component="span" sx={{
+                                        ml: u(14), fontSize: u(TYPE.body), fontWeight: 400, letterSpacing: 0, color: 'text.disabled',
+                                        ...identText, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+                                    }}>v{version}</Box>}
+                                </span>
+                            </Box>
+                            <Box sx={{ mt: u(10), ml: u(52 + 14), fontSize: u(TYPE.heading), fontWeight: 500, letterSpacing: '-0.01em', lineHeight: 1.25, color: MUTED }}>
+                                An evolving, interactive data agent harness
+                            </Box>
                         </Box>
-                        <Box sx={{ mt: u(12), fontSize: u(19), lineHeight: 1.4, color: MUTED }}>
-                            Explore data with visualizations, powered by AI agents.
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: u(8), flexShrink: 0 }}>
+                            <Box component="a" href="https://github.com/microsoft/data-formulator" target="_blank" rel="noreferrer" sx={{
+                                display: 'flex', alignItems: 'center', gap: u(10), px: u(18), py: u(10), borderRadius: u(999),
+                                border: `1px solid ${LINE}`, bgcolor: paper(), color: INK, textDecoration: 'none',
+                                fontSize: u(TYPE.body), fontWeight: 500, boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+                                transition: 'border-color .2s ease, box-shadow .2s ease',
+                                '&:hover': { borderColor: ink(0.3), boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' },
+                            }}>
+                                <GitHubIcon sx={{ fontSize: u(22) }} />
+                                microsoft/data-formulator
+                                <Stars repo="microsoft/data-formulator" />
+                            </Box>
+                            <Box sx={{ fontSize: u(TYPE.body), color: MUTED, pr: u(4) }}>Open source · MIT License</Box>
                         </Box>
                     </Box>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: u(8), flexShrink: 0 }}>
-                        <Box component="a" href="https://github.com/microsoft/data-formulator" target="_blank" rel="noreferrer" sx={{
-                            display: 'flex', alignItems: 'center', gap: u(10), px: u(18), py: u(10), borderRadius: u(999),
-                            border: `1px solid ${LINE}`, bgcolor: paper(), color: INK, textDecoration: 'none',
-                            fontSize: u(17), fontWeight: 500, boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-                            transition: 'border-color .2s ease, box-shadow .2s ease',
-                            '&:hover': { borderColor: ink(0.3), boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' },
-                        }}>
-                            <GitHubIcon sx={{ fontSize: u(22) }} />
-                            microsoft/data-formulator
-                        </Box>
-                        <Box sx={{ fontSize: u(13.5), color: MUTED, pr: u(4) }}>Open source · MIT License</Box>
-                    </Box>
+                    <svg viewBox={`0 0 ${DW} ${DH}`} width="100%" height="100%" style={{ position: 'absolute', inset: 0, overflow: 'visible', fontFamily: fontSans }}>
+                        <defs>
+                            <filter id="df-soft-shadow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="14" /></filter>
+                            <filter id="df-ground-blur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="28" /></filter>
+                        </defs>
+                        <ellipse cx={groundX} cy={groundY + 40} rx={520} ry={44} fill="#000" opacity={0.07} filter="url(#df-ground-blur)" />
+                        {LAYERS.flatMap((layer, i) => [
+                            i > 0 && <Guides key={`guides-${layer.id}`} back={LAYERS[i - 1]} front={layer} />,
+                            slide(layer),
+                        ])}
+                        {LAYERS.map(leader)}
+                    </svg>
+                    {LAYERS.map(layer => <Callout key={layer.id} layer={layer} accent={accent} highlighted={active === layer.id} onHover={setActive} />)}
                 </Box>
-                <svg viewBox={`0 0 ${DW} ${DH}`} width="100%" height="100%" style={{ position: 'absolute', inset: 0, overflow: 'visible', fontFamily: fontSans }}>
-                    <defs>
-                        <filter id="df-soft-shadow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="14" /></filter>
-                        <filter id="df-ground-blur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="28" /></filter>
-                    </defs>
-                    <ellipse cx={groundX} cy={groundY + 40} rx={520} ry={44} fill="#000" opacity={0.07} filter="url(#df-ground-blur)" />
-                    {LAYERS.flatMap((layer, i) => [
-                        i > 0 && <Guides key={`guides-${layer.id}`} back={LAYERS[i - 1]} front={layer} settled={settled} />,
-                        slide(layer),
-                    ])}
-                    {LAYERS.map(leader)}
-                </svg>
-                {LAYERS.map(layer => <Callout key={layer.id} layer={layer} dimmed={active !== null && active !== layer.id} onHover={setActive} />)}
             </Box>
         </Box>
     </Box>;

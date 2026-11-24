@@ -134,11 +134,13 @@ describe('styles and themes', () => {
     });
 
     it('formats a number as a year only when its field is declared one, never by its value', () => {
-        const rows = [{ iso3: 'FRA', year: 2020, visitors: 1999 }];
-        const map = parseMapSpec(JSON.stringify({ data: { d: { values: rows } }, fields: { year: 'Year' },
+        const rows = [{ iso3: 'FRA', year: 2020, visitors: 1999, rank: 1200 }];
+        const map = parseMapSpec(JSON.stringify({ data: { d: { values: rows } }, fields: { year: 'Year', rank: 'Rank' },
             layers: [{ id: 'r', type: 'regions', data: 'd', key: 'iso3', color: { field: 'visitors' } }] })).spec!;
         const model = buildLayer(map, map.layers[0], { d: rows }, {}, {});
         expect(model.describe('year').format(2020)).toBe('2020');
+        // Maps show the same plain numbers as tables do (a rank, an ID, a month).
+        expect(model.describe('rank').format(1200)).toBe('1200');
         expect(model.describe('visitors').format(1999)).toBe('1,999');
         expect(formatter()(2020)).toBe('2,020');
     });

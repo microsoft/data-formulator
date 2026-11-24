@@ -5,7 +5,7 @@
 pandas `DataFrame.to_json(orient='records')` defaults to `date_format='epoch'`,
 which serializes `datetime64` columns as **epoch milliseconds** (e.g.
 `1773532800000`).  When the frontend receives these numbers, `formatCellValue`
-treats them as plain integers and displays `1,773,532,800,000` instead of a
+treats them as plain integers and displays `1773532800000` instead of a
 formatted date.
 
 `DataFrame.to_dict(orient='records')` is even worse — it returns Python

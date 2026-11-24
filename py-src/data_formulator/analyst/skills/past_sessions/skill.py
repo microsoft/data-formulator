@@ -265,8 +265,16 @@ def _copy_table(past: PastSession, name: str, ctx: SkillContext) -> dict[str, An
     input_tables.append({"name": saved.name, "virtual": True,
                          "rows": json.loads(frame.head(20).to_json(orient="records", date_format="iso"))})
     ctx.payload["workspace_inputs"] = WorkspaceInputEngine(ctx.workspace, input_tables).manifest
+    # The columns' semantic types there, for the app to apply to the copy at once.
+    original = next((table for table in past.layer.tables if past.layer.table_name(table) == name), None)
+    semantics = next((info.get("fields") or {} for info in past.layer.state.get("tableSemantics") or []
+                      if original is not None and info.get("tableId") == original["id"]), {})
+    field_metadata = {column: {key: value for key, value in annotation.items() if key != "authored"}
+                      for column, annotation in semantics.items()
+                      if column in frame.columns and isinstance(annotation, dict)}
     return {"kind": "table", "table_name": saved.name, "display_name": saved.original_name,
-            "item": names.table(saved.name), "row_count": saved.row_count, "content_hash": saved.content_hash}
+            "item": names.table(saved.name), "row_count": saved.row_count, "content_hash": saved.content_hash,
+            **({"field_metadata": field_metadata} if field_metadata else {})}
 
 
 def _copy_file(past: PastSession, path: str, ctx: SkillContext) -> dict[str, Any]:

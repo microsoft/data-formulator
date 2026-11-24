@@ -7,7 +7,7 @@ import { HTML5Backend } from 'react-dnd-html5-backend';
 import { createTheme, ThemeProvider } from '@mui/material';
 import { describe, expect, it, vi } from 'vitest';
 
-import { ChartEditorFC, checkChartAvailabilityOnPreparedData, normalizeOperationPreview, VisualizationViewFC } from '../../../../src/views/VisualizationView';
+import { ChartEditorFC, checkChartAvailabilityOnPreparedData, normalizeOperationPreview, renderTableChart, VisualizationViewFC } from '../../../../src/views/VisualizationView';
 import { dataFormulatorReducer, dfActions, dfSelectors, generateFreshChart } from '../../../../src/app/dfSlice';
 import { computeDisplayRowsCacheKey, displayRowsCache } from '../../../../src/app/displayRowsCache';
 import { ConversationCanvas } from '../../../../src/views/ConversationCanvas';
@@ -20,6 +20,18 @@ import { DataThread } from '../../../../src/views/DataThread';
 import { buildDictTableFromWorkspace } from '../../../../src/app/tableThunks';
 
 const CONVERSATION_ROOT_ID = 'conversation-root:test';
+
+it('shows a Table chart with its columns\' display names and raw values', () => {
+    const chart = generateFreshChart('sales', 'Table');
+    const fields = [{ id: 'year', name: 'year', source: 'original', tableRef: 'sales' },
+        { id: 'units', name: 'units', source: 'original', tableRef: 'sales' }] as any;
+    render(React.createElement(ThemeProvider, { theme: createTheme(),
+        children: renderTableChart(chart, fields, [{ year: 2022, units: 1500 }], 120, 120,
+            { year: { semanticType: 'Year', displayName: 'Year of sale' } }) }));
+    expect(screen.getByText('Year of sale')).toBeTruthy();
+    expect(screen.getByText('2022')).toBeTruthy();
+    expect(screen.getByText('1500')).toBeTruthy();
+});
 
 it.each([false, true])('preserves locally prepared chart aggregates after refresh (virtual=%s)', async virtual => {
     vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });

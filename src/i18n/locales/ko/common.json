@@ -429,7 +429,13 @@
     "running_other": "백그라운드 작업 {{count}}개 실행 중",
     "status": {
       "stopping": "중지 중…",
-      "running": "실행 중"
+      "running": "실행 중",
+      "completed": "완료",
+      "failed": "실패",
+      "stopped": "중지됨",
+      "timed_out": "시간 초과",
+      "unknown": "상태 알 수 없음(서버가 다시 시작됨)",
+      "not_started": "시작되지 않음"
     },
     "stop": "중지",
     "log": "로그",
@@ -441,7 +447,21 @@
     "alsoStop": "이 작업도 중지",
     "stopAgent": "에이전트 중지",
     "stopAgentAndTasks_one": "에이전트와 작업 {{count}}개 중지",
-    "stopAgentAndTasks_other": "에이전트와 작업 {{count}}개 중지"
+    "stopAgentAndTasks_other": "에이전트와 작업 {{count}}개 중지",
+    "checkIn": "진행 확인",
+    "checkInHint": "에이전트를 멈추지 않고 진행 상황 묻기",
+    "checkInSent": "진행 상황을 요청함",
+    "askUpdate": "진행 상황 묻기",
+    "wake": {
+      "ended_one": "백그라운드 작업 {{count}}개가 끝났습니다",
+      "ended_other": "백그라운드 작업 {{count}}개가 끝났습니다",
+      "checkIn_one": "백그라운드 작업 {{count}}개 중간 확인",
+      "checkIn_other": "백그라운드 작업 {{count}}개 중간 확인",
+      "update": "백그라운드 작업에 확인이 필요합니다",
+      "asked": "백그라운드 작업 진행 상황을 요청함"
+    },
+    "group_one": "백그라운드 작업 {{count}}개",
+    "group_other": "백그라운드 작업 {{count}}개"
   },
   "dataThread": {
     "tableSet_one": "테이블 {{count}}개",
@@ -503,6 +523,8 @@
     "completed": "완료",
     "workspace": "워크스페이스",
     "thinking": "생각 중...",
+    "stopped": "중지됨",
+    "stoppedHint": "실행이 끝나기 전에 중지되었습니다. 에이전트는 지금까지 한 작업을 유지하고 여기서부터 이어갑니다.",
     "status": {
       "actionFailed": "시도 실패: {{reason}}",
       "chartFailed": "차트 시도 실패: {{reason}}",
@@ -1271,7 +1293,8 @@
       "paused": "일시 중지됨",
       "retry": "다시 시도 중",
       "running": "실행 중",
-      "skipped": "건너뜀"
+      "skipped": "건너뜀",
+      "missed": "놓침"
     },
     "runsOf": "{{name}}의 실행",
     "saveFailed": "스케줄을 저장할 수 없습니다.",
@@ -1299,7 +1322,8 @@
     "runOnSchedule": "스케줄에 따라 실행",
     "notScheduled": "스케줄 없음",
     "instructions": "지침",
-    "instructionsPlaceholder": "선택 사항: 사용할 입력, 집중할 내용"
+    "instructionsPlaceholder": "선택 사항: 사용할 입력, 집중할 내용",
+    "runMissed": "{{time}} 실행을 놓쳤습니다. 클릭하면 지금 실행합니다."
   },
   "administration": {
     "addConnection": "데이터 연결 추가",

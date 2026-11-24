@@ -15,6 +15,7 @@ import { Autocomplete, Box, ButtonBase, Checkbox, CircularProgress, Select,
 import PauseIcon from '@mui/icons-material/Pause';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
+import EventBusyOutlinedIcon from '@mui/icons-material/EventBusyOutlined';
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
@@ -130,7 +131,7 @@ export const clockTime = (time: string) => {
 export const defaultScheduleConfig = (models: { id: string }[], selectedModelId?: string, parameters: WorkflowParameter[] = []): ScheduleConfig => ({
     model_id: models.find(model => model.id === selectedModelId)?.id || models[0]?.id || '', time: '09:00',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, weekdays: [0, 1, 2, 3, 4, 5, 6], enabled: true,
-    auto_approve: true, max_retries: 2, catch_up: false, language: getAgentLanguage(),
+    auto_approve: true, max_retries: 2, language: getAgentLanguage(),
     setup: { parameters: Object.fromEntries(parameters.flatMap(parameter => parameter.default === undefined ? [] : [[parameter.name, parameter.default]])),
         instructions: '' },
 });
@@ -396,6 +397,7 @@ const runStatusDisplay = (value: string) => {
         paused: { color: 'warning.main', icon: <PauseIcon /> },
         failed: { color: 'error.main', icon: <ErrorOutlineIcon /> },
         retry: { color: 'text.secondary', icon: <HistoryOutlinedIcon /> },
+        missed: { color: 'warning.main', icon: <EventBusyOutlinedIcon /> },
         running: { color: 'primary.main', icon: <CircularProgress size={11} color="inherit" /> },
     } as Record<string, { color: string; icon: React.ReactNode }>)[value] ?? { color: 'text.secondary', icon: <HistoryOutlinedIcon /> };
     return { ...display, label: i18n.t(`schedule.runStatus.${value}`, { defaultValue: value.replaceAll('_', ' ') }) };
@@ -411,7 +413,7 @@ export const CardRuns: React.FC<{ label: string; runs: RunEntry[] }> = ({ label,
 const RunLink: React.FC<{ status: string; time: string; label?: string; disabled?: boolean; dateOnly?: boolean; onOpen: () => void }> = ({
     status, time, label, disabled, dateOnly, onOpen }) => {
     const display = runStatusDisplay(status);
-    return <Tooltip title={`${display.label} · ${shortRunTime(time)}`}>
+    return <Tooltip title={label ?? `${display.label} · ${shortRunTime(time)}`}>
         <ButtonBase disabled={disabled} aria-label={label ?? `${display.label}, ${shortRunTime(time)}`}
             onClick={event => { event.stopPropagation(); onOpen(); }}
             sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, minWidth: 0, px: 0.625, borderRadius: 0.5, bgcolor: mutedChipBg,

@@ -193,7 +193,6 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
         const cols = targetTable.names.map((name) => {
             const { minWidth, width } = calculateColumnWidth(name);
             const dataType = targetTable.metadata[name].type as Type;
-            const semanticType = tableSemantics?.fields[name]?.semanticType;
             return {
                 id: name,
                 label: tableSemantics?.fields[name]?.displayName || name,
@@ -201,7 +200,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({ maximiz
                 minWidth,
                 width,
                 align: getColumnAlign(dataType),
-                format: (value: any) => <Typography fontSize="inherit">{formatCellValue(value, dataType, semanticType)}</Typography>,
+                format: (value: any) => <Typography fontSize="inherit">{formatCellValue(value, dataType)}</Typography>,
                 dataType,
                 source: conceptShelfItems.find(f => f.name == name)?.source || "original",
             };

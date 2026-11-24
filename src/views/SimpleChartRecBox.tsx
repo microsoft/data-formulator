@@ -25,6 +25,7 @@ import {
     MenuItem,
     ClickAwayListener,
     ButtonBase,
+    Button,
 } from '@mui/material';
 
 import { useDispatch, useSelector, useStore } from 'react-redux';
@@ -70,7 +71,8 @@ import { agentSessionState, applySessionUpdate, type SessionUpdate } from '../ap
 import { referencedAskEnd, resolveConversationParentNodeId, resolveDerivedTriggerTableId, resolveRunParentNodeId, shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
 import { ThreadReferenceIcon } from '../components/ThreadReferenceIcon';
 import { BackgroundTasksPill, StopAgentDialog } from '../components/BackgroundTasks';
-import { refreshBackgroundTasks, stopBackgroundTasks, useBackgroundTasks } from '../app/backgroundTasks';
+import { checkInAgent, isTaskStart, refreshBackgroundTasks, startRecord, stopBackgroundTasks, taskUpdateRequest, taskWakeRequest,
+    useBackgroundTasks, useTaskWakeUps, type SeenTask } from '../app/backgroundTasks';
 import { ClarificationPanel, ExplanationPanel, ToolActivityPanel, FailedDraftPanel } from './AgentPausePanel';
 import { CARD_WIDTH } from './threadLayout';
 import { iconVar, textVar } from '../app/layout';
@@ -161,7 +163,7 @@ const WRITING_STATUS: Record<string, string> = {
 const FOLLOW_MIN_VIEW_MS = 4000;
 
 const AgentWorkingOverlay: FC<{ message?: string; theme: Theme; onCancel?: () => void; color?: 'primary' | 'warning'; sx?: Record<string, any>;
-    latest?: { count: number; onShow: () => void } }> = ({ message, theme, onCancel, color = 'primary', sx, latest }) => {
+    latest?: { count: number; onShow: () => void }; checkIn?: { onCheckIn: () => void; sent: boolean } }> = ({ message, theme, onCancel, color = 'primary', sx, latest, checkIn }) => {
     const { t } = useTranslation();
     // `message` is the running plan: steps joined by the STEP_SEP control char
     // ('\x1E'), which renders invisibly and would otherwise collapse every step
@@ -218,6 +220,16 @@ const AgentWorkingOverlay: FC<{ message?: string; theme: Theme; onCancel?: () =>
                     >
                         <StopIcon sx={{ fontSize: iconVar.sm }} />
                     </IconButton>
+                </Tooltip>
+            )}
+            {checkIn && (
+                <Tooltip title={t('backgroundTasks.checkInHint')} placement="top">
+                    <span style={{ position: 'absolute', bottom: 8, right: 38 }}>
+                        <Button size="small" variant="text" disabled={checkIn.sent} onClick={checkIn.onCheckIn}
+                            sx={{ minWidth: 0, height: 24, px: 1, fontSize: textVar.xxs, textTransform: 'none', color: 'text.secondary' }}>
+                            {checkIn.sent ? t('backgroundTasks.checkInSent') : t('backgroundTasks.checkIn')}
+                        </Button>
+                    </span>
                 </Tooltip>
             )}
             <Typography variant="body2" sx={{
@@ -486,7 +498,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         : undefined;
     const analystChatPending = useSelector((state: DataFormulatorState) => state.analystChatPending);
     // Set while a queued request the app sends on the user's behalf is being submitted (see the prompt turn's `auto`).
-    const autoPromptRef = useRef<TextTurn['auto']>(undefined);
+    // What the app sends on its own (not typed) marks the message it becomes: its kind, and the tasks it is about.
+    const autoPromptRef = useRef<Pick<TextTurn, 'auto' | 'taskIds'> | undefined>(undefined);
 
     const focusedTableId = useCallback(() => {
         if (!focusedId) return undefined;
@@ -941,11 +954,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 .sort((left, right) => right.createdAt - left.createdAt)[0]?.id
             : undefined;
         const askedFromNode = stoppedMessage ?? requestedParentNode;
+        // The new message continues a stopped run (the agent keeps what it did); the thread marks the stop before it.
+        const followsStop = continuesStopped && failedDraftIds(askedFromNode)
+            .some(draftId => draftNodes.find(draft => draft.id === draftId)?.derive.status === 'interrupted');
         if (continuesStopped) failedDraftIds(askedFromNode).forEach(draftId => dispatch(dfActions.removeDraftNode(draftId)));
-        // What a stop before any reply puts back: the focus the message was sent from, and whether the
-        // message it followed counted as answered before (sending marks it).
-        const focusBeforeRun = focusedId;
-        const askedFromAnswered = textTurns.find(turn => turn.id === askedFromNode)?.answered;
         runLastNodeRef.current = askedFromNode;
         // The TABLE the pending draft anchors to (drafts are table-keyed): the
         // asked-from node resolved to its thread table, so the "working…" banner
@@ -1115,11 +1127,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             && !clarificationContext?.retry) {
             const promptId = `textTurn_${runKey}_prompt`;
             promptTurnId = promptId;
-            const auto = autoPromptRef.current;
+            const auto = autoPromptRef.current?.auto;
+            const autoTaskIds = autoPromptRef.current?.taskIds;
             dispatch(dfActions.addTextTurn({
                 kind: 'text', id: promptId, displayId: promptId, textKind: 'explain', content: '',
                 prompt: cleanDisplay || agentPrompt,
+                ...(followsStop ? { afterStop: true as const } : {}),
                 ...(auto ? { auto } : {}),
+                ...(autoTaskIds?.length ? { taskIds: autoTaskIds } : {}),
                 ...(attachmentNames.length ? { attachments: attachmentNames } : {}),
                 ...(Object.keys(attachmentPaths).length ? { attachmentPaths } : {}),
                 ...(clarificationContext?.references?.length ? { references: clarificationContext.references } : {}),
@@ -1688,6 +1703,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     id: proposal.id, argv: proposal.argv, cwd: proposal.cwd, purpose: proposal.purpose,
                     dangerouslyDisableSandbox: proposal.dangerouslyDisableSandbox, sandboxDisablingReason: proposal.sandboxDisablingReason,
                     sandboxFilesystem: outcome?.sandboxFilesystem ?? proposal.sandboxFilesystem,
+                    ...(proposal.background ? { background: true } : {}),
                     status, ...(outcome ? { result: outcome } : {}),
                 });
                 // An approved command resumes on the message that proposed it.
@@ -1696,7 +1712,11 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 if (result.type === 'terminal_result') {
                     runningTerminalExecutions.delete(proposal.id);
                     terminalResultReceived = true;
-                    const outcome = result.result || {};
+                    const received = result.result || {};
+                    // A started background task: listed at once (not at the next idle poll), and its record kept on the
+                    // command from the start.
+                    if (isTaskStart(received)) void refreshBackgroundTasks();
+                    const outcome = isTaskStart(received) ? { ...received, task: startRecord(received) } : received;
                     const failed = !!(outcome.error || outcome.timed_out || (outcome.exit_code != null && outcome.exit_code !== 0));
                     const execution = terminalExecution(outcome.rejected ? 'rejected' : failed ? 'failed' : 'completed', outcome);
                     const turnId = knownTurnId || addToolCall(proposal.purpose, {}, true);
@@ -1965,7 +1985,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             // ── tool_start: agent is calling a tool (explore/inspect) ──
             if (result.type === "tool_start" && result.tool === 'wait_tasks') restartRunTimer(runTimeoutMs + 30 * 60 * 1000);
             if (result.type === "tool_result" && result.tool === 'wait_tasks') restartRunTimer();
-            if (result.type === 'terminal_result' && result.result?.background_task) void refreshBackgroundTasks();
             if (result.type === "tool_start") {
                 const toolCallId = result.tool_call_id || (result.tool === 'run_terminal'
                     ? clarificationContext?.terminalResponse?.request_id : undefined);
@@ -2081,7 +2100,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             table.displayId = existing?.displayId || output.display_name || table.displayId;
                             runSourceTables.set(table.id, table);
                             dispatch(dfActions.addTableToStore(table));
-                            // The semantic types the agent gave (a Year reads 2022 at once); inference fills in the rest.
+                            // The semantic types the agent gave, for charts and maps at once; inference fills in the rest.
                             const semanticFields = authoredFieldSemantics(table.names, output.field_metadata as any, undefined);
                             if (Object.keys(semanticFields).length > 0) {
                                 dispatch(dfActions.applyAuthoredFieldSemantics({ tableId: table.id, fields: semanticFields }));
@@ -2555,39 +2574,16 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         }));
                     }
                 }
-                // Stopped before anything came back: the message is unsent. It goes back into the chat box to
-                // edit, and the focus returns to where it was sent from, so sending it again follows the same
-                // message (no second copy, no new thread).
-                const stoppedBeforeReply = isCancelled && !!promptTurnId && dfSelectors.getThreadGraph(currentStore.getState() as DataFormulatorState)
-                    .childrenOf(promptTurnId).every(node => node.id === currentDraftId);
-                if (stoppedBeforeReply) {
-                    if (currentDraftId) dispatch(dfActions.removeDraftNode(currentDraftId));
-                    currentDraftId = null;
-                    dispatch(dfActions.removeTextTurn(promptTurnId!));
-                    sentAttachmentsRef.current.delete(promptTurnId!);
-                    if (textTurns.some(turn => turn.id === askedFromNode)) {
-                        dispatch(dfActions.updateTextTurn({ id: askedFromNode, answered: askedFromAnswered }));
-                    }
-                    setChatPrompt(previous => previous.trim() ? previous : agentPrompt);
-                    if (explicitAttachments) {
-                        setAttachedFiles(previous => previous.length ? previous : explicitAttachments.files);
-                        setAttachedImages(previous => previous.length ? previous
-                            : explicitAttachments.images.map(url => ({ url, scratchPath: '' })));
-                    }
-                    const state = currentStore.getState() as DataFormulatorState;
-                    const focusRemains = focusBeforeRun?.type === 'draft' ? state.draftNodes.some(draft => draft.id === focusBeforeRun.draftId)
-                        : focusBeforeRun?.type === 'text' ? state.textTurns.some(turn => turn.id === focusBeforeRun.textId) : true;
-                    if (focusRemains) dispatch(dfActions.setFocused(focusBeforeRun));
-                }
                 if (currentDraftId) {
                     if (isCancelled) {
-                        // A run stopped after it produced something keeps its place: the message stays in the
-                        // chat box to edit and send again, which follows on from where the run stopped.
+                        // A stopped run keeps its place, even before any reply: the agent keeps what it did, and the
+                        // thread marks the stop. The chat box is cleared for the next message, which continues from it.
                         dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
                             from: 'data-agent', to: 'user', role: 'error', content: errorMessage, timestamp: Date.now(),
                         }}));
                         dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'interrupted' }));
                         dispatch(dfActions.setFocused({ type: 'draft', draftId: currentDraftId }));
+                        clearSentMessage();
                     } else {
                         dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
                             from: 'data-agent', to: 'user', role: 'error', content: errorMessage, timestamp: Date.now(),
@@ -2777,11 +2773,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     files: attachments.map(name => ({ name, scratchPath: `scratch/${name}` })) });
                 return;
             }
-            autoPromptRef.current = analystChatPending.auto;
-            submitChat(text, analystChatPending.displayText, {
-                images,
-                files: attachments.map(name => ({ name, scratchPath: `scratch/${name}` })),
-            });
+            autoPromptRef.current = { auto: analystChatPending.auto, taskIds: analystChatPending.taskIds };
+            const sentFiles = { images, files: attachments.map(name => ({ name, scratchPath: `scratch/${name}` })) };
+            // A follow-up the app sends for a run's background tasks continues that run's thread, wherever the user is.
+            if (analystChatPending.parentNodeId) exploreFromChat(text, { parentNodeId: analystChatPending.parentNodeId },
+                analystChatPending.displayText, sentFiles);
+            else submitChat(text, analystChatPending.displayText, sentFiles);
             autoPromptRef.current = undefined;
         }
     }, [analystChatPending, isChatFormulating, attachmentUploads, submitChat, exploreFromChat, dispatch]);
@@ -2798,6 +2795,17 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // Background tasks this request started outlive it; stopping it asks whether to stop them too.
     const backgroundTasks = useBackgroundTasks();
     const runTasks = backgroundTasks.filter(task => task.status === 'running' && task.conversation_id === agentActionIdRef.current);
+    // Each task's record on the command that started it follows its status, so the thread still shows how the task
+    // went once the server no longer lists it (after a restart).
+    useEffect(() => {
+        for (const turn of textTurns) for (const execution of turn.executions || []) {
+            if (!isTaskStart(execution.result)) continue;
+            const task = backgroundTasks.find(item => item.id === execution.result!.background_task);
+            if (!task || (execution.result?.task as SeenTask | undefined)?.status === task.status) continue;
+            const seen: SeenTask = { status: task.status, started: task.started, ended: task.ended, exit_code: task.exit_code };
+            dispatch(dfActions.upsertTurnExecution({ turnId: turn.id, execution: { ...execution, result: { ...execution.result, task: seen } } }));
+        }
+    }, [backgroundTasks, textTurns, dispatch]);
     const [stopDialogOpen, setStopDialogOpen] = useState(false);
     const cancelAgent = useCallback(() => {
         if (runTasks.length) setStopDialogOpen(true);
@@ -2807,6 +2815,41 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         const turn = textTurns.find(item => item.actionId === conversationId && item.prompt);
         return turn ? { text: turn.prompt!, open: () => dispatch(dfActions.setFocused({ type: 'text', textId: turn.id })) } : undefined;
     }, [textTurns, dispatch]);
+    /** Where a follow-up about a run's tasks goes: the end of the thread that run is in (not a stopped run's draft). */
+    const runThreadEnd = useCallback((conversationId: string | undefined): string | undefined => {
+        const state = currentStore.getState() as DataFormulatorState;
+        const last = state.textTurns.filter(turn => turn.actionId === conversationId)
+            .sort((left, right) => left.createdAt - right.createdAt).at(-1);
+        if (!last) return undefined;
+        const drafts = new Set(state.draftNodes.map(draft => draft.id));
+        const thread = threadOfNode(dfSelectors.getThreadGraph(state), last.id);
+        return [...(thread?.nodeIds ?? [])].reverse().find(id => !drafts.has(id)) ?? last.id;
+    }, [currentStore]);
+    // Tasks that need the agent with no run following them wake it: one follow-up for all of them, continuing the thread
+    // of the run that started the latest. Held while a run works, a message is queued, or the user writes one (their
+    // message then delivers the news, with the request's task note).
+    const composing = chatPrompt.trim().length > 0 || attachedImages.length > 0 || attachedFiles.length > 0;
+    useTaskWakeUps(isChatFormulating || !!analystChatPending || workspaceReadOnly || composing, due => {
+        const latest = [...due].sort((left, right) => (left.ended ?? left.started) - (right.ended ?? right.started)).at(-1)!;
+        dispatch(dfActions.queueAnalystTask({ ...taskWakeRequest(due, t), images: [], attachments: [], auto: 'task-wake',
+            taskIds: due.map(task => task.id), parentNodeId: runThreadEnd(latest.conversation_id) }));
+    });
+    // Ask the agent how the tasks are going (Check in by Stop, or the task list): a working run is asked without being
+    // stopped; otherwise the app sends it a follow-up.
+    const [checkInSent, setCheckInSent] = useState(false);
+    const sessionTasksRunning = backgroundTasks.some(task => task.status === 'running');
+    const askForUpdate = useCallback(() => {
+        const conversationId = agentActionIdRef.current;
+        if (isChatFormulating && conversationId) {
+            setCheckInSent(true);
+            void checkInAgent(conversationId);
+            setTimeout(() => setCheckInSent(false), 8000);
+            return;
+        }
+        const running = backgroundTasks.filter(task => task.status === 'running');
+        dispatch(dfActions.queueAnalystTask({ ...taskUpdateRequest(t), images: [], attachments: [], auto: 'task-wake',
+            taskIds: running.map(task => task.id), parentNodeId: runThreadEnd(running.at(-1)?.conversation_id) }));
+    }, [isChatFormulating, backgroundTasks, runThreadEnd, dispatch, t]);
 
     // A text panel can open over a file the canvas is already showing (an app or
     // document the turn follows); closing the panel should leave that file in focus.
@@ -3115,7 +3158,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 />
             )}
             {/* Background tasks stay in reach above the input, over the working veil. */}
-            <BackgroundTasksPill requestOf={taskRequestOf} sx={{ display: 'flex', px: 0.5, pb: 0.5, position: 'relative', zIndex: 3 }} />
+            <BackgroundTasksPill requestOf={taskRequestOf} onAskUpdate={askForUpdate} sx={{ display: 'flex', px: 0.5, pb: 0.5, position: 'relative', zIndex: 3 }} />
             <StopAgentDialog open={stopDialogOpen} tasks={runTasks} onClose={() => setStopDialogOpen(false)}
                 onStop={ids => { setStopDialogOpen(false); void stopBackgroundTasks(ids); stopAgentNow(); }} />
             {/* Input area wrapper */}
@@ -3457,6 +3500,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     theme={theme}
                     color={'primary'}
                     onCancel={cancelAgent}
+                    // While the session's tasks run, the user can ask the working run for an update without stopping it.
+                    checkIn={sessionTasksRunning ? { onCheckIn: askForUpdate, sent: checkInSent } : undefined}
                     latest={{ count: unseenResults.count, onShow: showLatestResult }}
                     sx={{
                         left: -10, right: -10, bottom: -4, borderRadius: 0,

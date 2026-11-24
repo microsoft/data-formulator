@@ -157,6 +157,22 @@ def resolve_cwd(cwd: Any, workspace_root: Path | None) -> Path:
     return directory
 
 
+def _wake_options(spec: dict[str, Any]) -> dict[str, Any]:
+    """A background task's wake options: whether its end wakes the agent, and a check-in time."""
+    from data_formulator.analyst.background_tasks import CHECK_IN_RANGE
+
+    wake = spec.get("wake", "on_end")
+    if wake not in ("on_end", "none"):
+        raise ValueError('wake must be "on_end" or "none".')
+    options: dict[str, Any] = {"wake": wake}
+    check_in = spec.get("check_in_seconds")
+    if check_in is not None:
+        if type(check_in) is not int or not CHECK_IN_RANGE[0] <= check_in <= CHECK_IN_RANGE[1]:
+            raise ValueError(f"check_in_seconds must be a whole number of seconds from {CHECK_IN_RANGE[0]} to {CHECK_IN_RANGE[1]}.")
+        options["check_in_seconds"] = check_in
+    return options
+
+
 class TerminalRequests:
     def __init__(self) -> None:
         self._pending: dict[str, dict[str, Any]] = {}
@@ -192,11 +208,12 @@ class TerminalRequests:
         sandbox_missing = terminal_sandbox() is None
         if sandbox_missing and not disable_sandbox:
             disable_sandbox, reason = True, NO_SANDBOX_REASON
+        wake = _wake_options(spec) if background else {}
         proposal = {"id": secrets.token_urlsafe(32), "argv": list(argv), "cwd": str(directory),
                     "purpose": purpose.strip(), "decision": "ask", "timeout_seconds": 60,
                     "dangerouslyDisableSandbox": disable_sandbox, "sandboxDisablingReason": reason.strip(),
                     "policy_revision": read_configuration()["revision"], "policy_mode": mode,
-                    "sandboxFilesystem": sandbox_filesystem_policy(), **({"background": True} if background else {}),
+                    "sandboxFilesystem": sandbox_filesystem_policy(), **({"background": True} if background else {}), **wake,
                     **({"sandboxUnavailable": True, "sandboxInstallHint": sandbox_install_hint()} if sandbox_missing else {})}
         with self._lock:
             now = time.monotonic()
@@ -479,14 +496,27 @@ def _run_command(proposal: dict[str, Any], *, scratch_dir: Path, runtime_dir: Pa
 
 
 def start_background(proposal: dict[str, Any], *, scratch_dir: Path, owner: str, workspace_id: str, conversation: str) -> dict[str, Any]:
-    """Start an approved proposal as a background task; returns the result a terminal call reports."""
+    """Start an approved proposal as a background task; returns the result a terminal call reports. A command that
+    ends at once (a missing program, a bad argument) is reported as ended, with its output, not as running."""
     from data_formulator.analyst.background_tasks import task_manager
 
-    task = task_manager().start(proposal, scratch_dir=scratch_dir, owner=owner, workspace_id=workspace_id,
-                                conversation=conversation)
-    return {"background_task": task.id, "exit_code": None, "log": f"scratch/{task.log_name}",
-            "output": f"Running in the background as {task.id}; its output is logged to scratch/{task.log_name}.",
-            "sandboxed": task.sandboxed}
+    manager = task_manager()
+    task = manager.start(proposal, scratch_dir=scratch_dir, owner=owner, workspace_id=workspace_id,
+                         conversation=conversation)
+    manager.wait([task], STARTUP_CHECK_SECONDS)
+    result = {"background_task": task.id, "started": task.started, "log": f"scratch/{task.log_name}", "sandboxed": task.sandboxed}
+    if task.running:
+        return {**result, "exit_code": None,
+                "output": f"Running in the background as {task.id}; its output is logged to scratch/{task.log_name}."}
+    # The agent hears of this ending in the start result.
+    manager.tell([task])
+    output = "\n".join(task.last_lines())
+    return {**result, "ended": task.ended, "exit_code": task.exit_code, "task_status": task.status, **({"error": task.error} if task.error else {}),
+            "output": f"The task {task.status} right away (exit {task.exit_code}); it is not running.\n{output}".rstrip()}
+
+
+# How long starting a task waits to catch a command that fails at once.
+STARTUP_CHECK_SECONDS = 1.5
 
 
 def _task_scope(ctx: SkillContext) -> tuple[str, str, str] | str:
@@ -523,11 +553,13 @@ class TerminalSkill:
             if task is None:
                 return ToolResult(text="No such background task.")
             manager.wait([task], STOP_GRACE + 1)
+            manager.tell([task])
             return ToolResult(text=describe_tasks([task]))
         ids = [str(item) for item in args.get("task_ids") or [] if item]
         known = manager.list(owner, workspace_id)
-        own = [task for task in known if task.conversation == conversation]
-        tasks = [task for task in known if task.id in ids] if ids else [task for task in own if task.running] or own
+        # By default, the session's tasks the agent still has news of: those running and those that ended untold,
+        # whichever run started them (a request after a stop follows the earlier one's tasks).
+        tasks = [task for task in known if task.id in ids] if ids else [task for task in known if task.running or not task.told]
         if ids and not tasks:
             return ToolResult(text="None of those background tasks exist.")
         try:
@@ -539,15 +571,18 @@ class TerminalSkill:
         if cancel is None:
             from data_formulator.data_loader.query_runtime import cancellation
             cancel = cancellation.get()
-        before = {task.id: task.status for task in tasks}
-        why = manager.wait(tasks, timeout, cancel=cancel)
-        ended = [task for task in tasks if before[task.id] == "running" and not task.running]
-        head = {"ended": "A task ended: " + ", ".join(f"{task.id} ({task.status}"
+        # A task that ended since the agent last heard (between waits) is news now; no need to wait.
+        why = "ended" if any(not task.running and not task.told for task in tasks) else \
+            manager.wait(tasks, timeout, cancel=cancel, nudge=(owner, workspace_id, conversation))
+        ended = [task for task in tasks if not task.running and not task.told]
+        head = {"ended": "Ended since you last heard: " + ", ".join(f"{task.id} ({task.status}"
                     + (f" by the {task.stopped_by}" if task.stopped_by else "") + ")" for task in ended) + ".",
                 "timeout": f"No task ended in {round(timeout)}s.",
+                "checkin": "The user asked for an update now.",
                 "cancelled": "The run was stopped; background tasks keep running."}[why]
         if why == "ended" and not ended:
             head = "No background task is running."
+        manager.tell(tasks)
         guidance = ("Tell the user briefly how the tasks are going (progress, rate, anything wrong), then wait again "
                     "with a timeout suited to the work, or act on what ended. A task the user stopped was their decision: "
                     "do not restart it unless they ask.")
@@ -593,8 +628,16 @@ class TerminalSkill:
                 result = start_background(proposal, scratch_dir=ctx.workspace.confined_scratch.root, owner=owner,
                                           workspace_id=workspace_id, conversation=conversation)
                 yield {"type": "terminal_result", "request": proposal, "result": result}
-                return ("Background task started; it runs on its own and keeps running if this run stops. Use wait_tasks to "
-                        "follow it and report progress to the user.\n" + json.dumps({"request": proposal, "result": result}))
+                if result.get("task_status") == "completed":
+                    return ("The background task already finished; its output is below.\n"
+                            + json.dumps({"request": proposal, "result": result}))
+                if result.get("task_status"):
+                    return ("The background task ended right away and is not running; its output is below.\n"
+                            + json.dumps({"request": proposal, "result": result}))
+                wakes = proposal.get("wake", "on_end") != "none"
+                return ("Background task started; it keeps running if this run stops"
+                        + (" and wakes you when it ends if no run of yours is following it." if wakes else ".")
+                        + "\n" + json.dumps({"request": proposal, "result": result}))
             cancel = getattr(ctx.runtime, "cancel", None)
             execution = run_command(proposal, scratch_dir=ctx.workspace.confined_scratch.root,
                                     **({"cancel": cancel} if cancel is not None else {}))

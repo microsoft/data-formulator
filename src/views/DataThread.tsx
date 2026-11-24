@@ -88,6 +88,9 @@ import { buildTableCard, buildTableRefChip, buildChartCards, BuildTableCardProps
 import { SourceTableShelf, useFittingItems } from './SourceTableShelf';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import { isTaskStart, isTaskStartCall } from '../app/backgroundTasks';
+import { BackgroundTaskGroup, TaskEventRow } from '../components/BackgroundTasks';
+import { ThreadEventRow } from '../components/ThreadEventRow';
 import ChecklistIcon from '@mui/icons-material/Checklist';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
 
@@ -126,33 +129,35 @@ const openToolActivity = (nodeId: string, execution: NonNullable<TextTurn['execu
  */
 const AppRepairRow: React.FC<{ error: string; notes: string[]; live: boolean }> = ({ error, notes, live }) => {
     const { t } = useTranslation();
-    const [expanded, setExpanded] = useState(false);
     const label = live ? t('dataThread.appRepairRunning', { defaultValue: 'Fixing an error in the app…' })
         : notes.length ? t('dataThread.appRepairDone', { defaultValue: 'Fixed an error in the app' })
             : t('dataThread.appRepairFound', { defaultValue: 'Found an error in the app' });
     const textSx = { fontSize: textVar.xxs, ...quietText } as const;
-    return <Box data-auto-repair sx={{ width: '100%', minWidth: 0 }}>
-        <ButtonBase onClick={() => setExpanded(previous => !previous)} aria-expanded={expanded} title={label}
-            sx={{ display: 'flex', width: '100%', minWidth: 0, justifyContent: 'flex-start', gap: 0.5, py: '2px', color: 'text.secondary',
-                textAlign: 'left', '&:hover': { bgcolor: 'action.hover' }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
-            <ChevronRightIcon sx={{ width: 10, height: 10, flexShrink: 0, transform: expanded ? 'rotate(90deg)' : undefined }} />
-            {live ? <CircularProgress size={8} color="inherit" sx={{ flexShrink: 0 }} />
-                : <BuildCircleOutlinedIcon sx={{ width: 10, height: 10, flexShrink: 0 }} />}
-            <Typography component="span" sx={{ minWidth: 0, ...textSx, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {label}
-            </Typography>
-        </ButtonBase>
-        <Collapse in={expanded} unmountOnExit>
-            <Box sx={{ pl: 1.75, py: 0.25, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                <Typography sx={{ ...textSx, color: 'text.disabled', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{error}</Typography>
-                {notes.map((note, index) => <Typography key={index} sx={{ ...textSx, color: 'text.secondary', whiteSpace: 'pre-wrap',
-                    overflowWrap: 'anywhere' }}>{note}</Typography>)}
-            </Box>
-        </Collapse>
-    </Box>;
+    return <ThreadEventRow data-event="app-repair" icon={<BuildCircleOutlinedIcon />} live={live} label={label}>
+        <Box sx={{ py: 0.25, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+            <Typography sx={{ ...textSx, color: 'text.disabled', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{error}</Typography>
+            {notes.map((note, index) => <Typography key={index} sx={{ ...textSx, color: 'text.secondary', whiteSpace: 'pre-wrap',
+                overflowWrap: 'anywhere' }}>{note}</Typography>)}
+        </Box>
+    </ThreadEventRow>;
+};
+
+/** Where a run was stopped before it finished: a quiet marker, since the agent continues from its work. */
+const StoppedRow: React.FC<{ onSelect?: () => void }> = ({ onSelect }) => {
+    const { t } = useTranslation();
+    return <ThreadEventRow data-event="stopped" icon={<PauseCircleOutlineIcon />} onClick={onSelect}
+        label={t('dataThread.stopped', { defaultValue: 'Stopped' })}
+        hint={t('dataThread.stoppedHint', { defaultValue: 'The run was stopped before it finished. The agent keeps what it did and continues from here.' })} />;
 };
 
 const ToolActivitySelectionContext = React.createContext<{ nodeId: string; executionId: string } | null>(null);
+
+/**
+ * Entries of folded stretches of chat the user opened, kept by the thread panel: a thread view is remounted when the
+ * columns re-pack (opening a long stack makes its thread taller and moves it), and its own state would fold it again.
+ */
+type OpenedChat = [Set<string>, React.Dispatch<React.SetStateAction<Set<string>>>];
+const OpenedChatContext = React.createContext<OpenedChat | null>(null);
 
 type ToolCall = NonNullable<TextTurn['executions']>[number] | CodeExecution;
 /** The tool calls of one agent step. */
@@ -758,8 +763,9 @@ let SingleThreadGroupView: FC<{
     // Conversation chains keyed by their first message; folded until opened.
     const [deletingFiles, setDeletingFiles] = useState<Set<string>>(new Set());
     // Entries of folded stretches of chat the user opened; a stack holding any of them stays open (even when
-    // focusing one of its entries splits it). Folded again on reload.
-    const [openedChat, setOpenedChat] = useState<Set<string>>(new Set());
+    // focusing one of its entries splits it). Kept by the thread panel (OpenedChatContext); folded again on reload.
+    const localOpenedChat = useState<Set<string>>(new Set());
+    const [openedChat, setOpenedChat] = React.useContext(OpenedChatContext) ?? localOpenedChat;
     // The stack the user just opened or folded, so only that change animates.
     const [stackMotion, setStackMotion] = useState<{ keys: Set<string>; opening: boolean }>();
     // The opened stack whose fold link is hovered: its entries tint to show what folding hides.
@@ -1084,6 +1090,17 @@ let SingleThreadGroupView: FC<{
             });
             return;
         }
+        // A follow-up the app sent because background tasks needed the agent: an event row (its tasks behind it, as
+        // they are now); the agent's reply follows.
+        if (turn.auto === 'task-wake') {
+            const live = threadRunning && thread.nodeIds.indexOf(turn.id) >= lastPromptIndex;
+            timelineItems.push({
+                key: `textturn-prompt-${turn.id}-0`, turnId: turn.id, type: 'trigger', highlighted, secondaryActivity: true,
+                isRunning: live, live: live ? 'running' : undefined,
+                element: <TaskEventRow label={turn.prompt!} taskIds={turn.taskIds || []} live={live} />,
+            });
+            return;
+        }
         const card = <InteractionEntryCard entry={entry} highlighted={focusedId?.type !== 'conversation' && highlighted} />;
         // A prompt nothing answers (its replies were deleted) can be removed too.
         timelineItems.push({
@@ -1187,7 +1204,33 @@ let SingleThreadGroupView: FC<{
             });
         }
     };
+    /**
+     * A step's background tasks are their own group, after its tool calls (they keep running and changing after the
+     * step); the rest of the step shows as before. A start that was refused (the task did not start) is one of them too.
+     * A step that only started tasks is just its group: its label was the first task's purpose, which the group shows.
+     */
     const pushAgentMessageContent = (turn: TextTurn, highlighted: boolean, nextNodeId: string | undefined) => {
+        const taskStarts = (turn.executions || []).filter(isTaskStartCall);
+        if (!taskStarts.length) return pushStepContent(turn, highlighted, nextNodeId);
+        const taskIds = new Set(taskStarts.map(execution => execution.id));
+        // A refused start the agent made again later in the step (the same command) is that task; only one that never
+        // ran stays. The step keeps its calls in the order they were made.
+        const sameCommand = (left: typeof taskStarts[number], right: typeof taskStarts[number]) =>
+            left.cwd === right.cwd && JSON.stringify(left.argv) === JSON.stringify(right.argv);
+        const shownTasks = taskStarts.filter((execution, index) => isTaskStart(execution.result) || !taskStarts.some((other, later) =>
+            later > index && isTaskStart(other.result) && sameCommand(other, execution)));
+        pushStepContent({ ...turn,
+            executions: (turn.executions || []).filter(execution => !taskIds.has(execution.id)),
+            progressSteps: turn.progressSteps?.filter(step => !step.executionId || !taskIds.has(step.executionId)),
+            content: taskStarts.some(execution => execution.purpose === turn.content) ? '' : turn.content,
+        }, highlighted, nextNodeId);
+        timelineItems.push({
+            key: `textturn-${turn.id}-tasks`, type: 'trigger', highlighted, secondaryActivity: true,
+            element: <BackgroundTaskGroup tasks={shownTasks.map(execution => ({ call: execution, purpose: execution.purpose,
+                onOpen: () => openToolActivity(turn.id, execution) }))} />,
+        });
+    };
+    const pushStepContent = (turn: TextTurn, highlighted: boolean, nextNodeId: string | undefined) => {
         // Shown in its repair's row (AppRepairRow).
         if (repairReplyIds.has(turn.id)) return;
         const executions = turn.executions || [];
@@ -1354,11 +1397,15 @@ let SingleThreadGroupView: FC<{
         }
         if (status !== 'error' && status !== 'interrupted') return;
         const isFocusedDraft = focusedId?.type === 'draft' && focusedId.draftId === draft.id;
+        if (status === 'interrupted') {
+            timelineItems.push({
+                key: `agent-stopped-${draft.id}`, type: 'trigger', highlighted, secondaryActivity: true,
+                element: <StoppedRow onSelect={() => dispatch(dfActions.setFocused({ type: 'draft', draftId: draft.id }))} />,
+            });
+            return;
+        }
         const errorEntry = [...(draft.derive.trigger.interaction || [])].reverse().find(entry => entry.role === 'error');
-        const errorText = errorEntry?.content
-            || (status === 'interrupted'
-                ? 'Interrupted by page refresh. You can retry or delete this step.'
-                : 'This analysis run failed.');
+        const errorText = errorEntry?.content || 'This analysis run failed.';
         timelineItems.push({
             key: `agent-failed-${draft.id}`, type: 'trigger', highlighted, artifactTone: 'error',
             gutterIcon: <ErrorOutlineIcon sx={{ width: 13, height: 13,
@@ -1382,6 +1429,12 @@ let SingleThreadGroupView: FC<{
             const next = messageIds[index + 1] ?? nextNodeId;
             const draft = draftNodes.find(item => item.id === id);
             const turn = draft ? undefined : turnById.get(id)!;
+            // The stop a message continues from closes the stopped run's exchange, before the message starts its own.
+            if (turn?.afterStop) {
+                timelineItems.push({ key: `stopped-before-${turn.id}`, type: 'trigger', highlighted: isHL(id),
+                    secondaryActivity: true, element: <StoppedRow />,
+                    ...(round >= 0 ? { exchangeId: `${messageIds[0]}-${round}` } : {}) });
+            }
             if (turn?.prompt || round < 0) round++;
             const startIndex = timelineItems.length;
             if (draft) pushDraft(draft, isHL(id));
@@ -1944,7 +1997,7 @@ let SingleThreadGroupView: FC<{
     const stackOf = new Map<number, { key: string; indices: number[] }>();
     if (!historyCollapsed) {
         // A run's live or stopped status (thinking, failed, interrupted) is not a result: the chat goes on through it.
-        const isChat = (index: number) => /^(textturn|agent-thinking|agent-failed)-/.test(timelineItems[index].key);
+        const isChat = (index: number) => /^(textturn|agent-thinking|agent-failed|agent-stopped|stopped-before)-/.test(timelineItems[index].key);
         const pinned = (index: number) => {
             const item = timelineItems[index];
             return !!item.live || !!item.isRunning || (!!focusedTimelineKey
@@ -2632,6 +2685,8 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     const { tokens: threadTokens } = useLayout();
     const [expandedColumns, setExpandedColumns] = useState(false);
     const [threadExpansion, setThreadExpansion] = useState<Record<string, boolean>>({});
+    // Opened stretches of chat, for every thread view (which the column layout may remount).
+    const openedChat = useState<Set<string>>(new Set());
     // The thread the user just collapsed or expanded, so only it plays the transition (once).
     const [toggledThreadKey, setToggledThreadKey] = useState<string>();
     const toggledTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -3244,7 +3299,9 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
             }}>
                 {entrySegments.map((entries, index) => <Box key={index}
                     data-thread-segment={index} data-thread-column={index} sx={{ minWidth: 0 }}>
-                    {entries.map((entry, entryIndex) => renderThreadEntry(entry, entries[entryIndex + 1]))}
+                    <OpenedChatContext.Provider value={openedChat}>
+                        {entries.map((entry, entryIndex) => renderThreadEntry(entry, entries[entryIndex + 1]))}
+                    </OpenedChatContext.Provider>
                 </Box>)}
             </Box>
         </Box>

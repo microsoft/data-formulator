@@ -429,7 +429,13 @@
     "running_other": "{{count}} tâches en arrière-plan en cours",
     "status": {
       "stopping": "arrêt en cours…",
-      "running": "en cours"
+      "running": "en cours",
+      "completed": "terminée",
+      "failed": "échouée",
+      "stopped": "arrêtée",
+      "timed_out": "temps écoulé",
+      "unknown": "statut inconnu (le serveur a redémarré)",
+      "not_started": "non démarrée"
     },
     "stop": "Arrêter",
     "log": "Journal",
@@ -441,7 +447,21 @@
     "alsoStop": "Arrêter aussi cette tâche",
     "stopAgent": "Arrêter l'agent",
     "stopAgentAndTasks_one": "Arrêter l'agent et {{count}} tâche",
-    "stopAgentAndTasks_other": "Arrêter l'agent et {{count}} tâches"
+    "stopAgentAndTasks_other": "Arrêter l'agent et {{count}} tâches",
+    "checkIn": "Faire le point",
+    "checkInHint": "Demander à l'agent où il en est, sans l'arrêter",
+    "checkInSent": "Point demandé",
+    "askUpdate": "Demander un point",
+    "wake": {
+      "ended_one": "{{count}} tâche en arrière-plan terminée",
+      "ended_other": "{{count}} tâches en arrière-plan terminées",
+      "checkIn_one": "Point sur {{count}} tâche en arrière-plan",
+      "checkIn_other": "Point sur {{count}} tâches en arrière-plan",
+      "update": "Des tâches en arrière-plan demandent de l'attention",
+      "asked": "Point demandé sur les tâches en arrière-plan"
+    },
+    "group_one": "{{count}} tâche en arrière-plan",
+    "group_other": "{{count}} tâches en arrière-plan"
   },
   "dataThread": {
     "tableSet_one": "{{count}} table",
@@ -503,6 +523,8 @@
     "completed": "terminé",
     "workspace": "Espace de travail",
     "thinking": "Réflexion en cours...",
+    "stopped": "Arrêté",
+    "stoppedHint": "L'exécution a été arrêtée avant la fin. L'agent conserve ce qu'il a fait et reprend à partir d'ici.",
     "status": {
       "actionFailed": "Échec de la tentative : {{reason}}",
       "chartFailed": "Échec de la tentative de graphique : {{reason}}",
@@ -1271,7 +1293,8 @@
       "paused": "Suspendu",
       "retry": "Nouvelle tentative",
       "running": "En cours",
-      "skipped": "Ignoré"
+      "skipped": "Ignoré",
+      "missed": "Manquée"
     },
     "runsOf": "Exécutions de {{name}}",
     "saveFailed": "Impossible d'enregistrer la planification.",
@@ -1299,7 +1322,8 @@
     "runOnSchedule": "Exécuter selon une planification",
     "notScheduled": "Non planifié",
     "instructions": "Instructions",
-    "instructionsPlaceholder": "Facultatif : quelles entrées utiliser, sur quoi se concentrer"
+    "instructionsPlaceholder": "Facultatif : quelles entrées utiliser, sur quoi se concentrer",
+    "runMissed": "Manquée le {{time}}. Cliquez pour l’exécuter maintenant."
   },
   "administration": {
     "addConnection": "Ajouter une connexion de données",

@@ -1,6 +1,6 @@
 import React from 'react';
 import '@testing-library/jest-dom/vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { ThemeProvider, createTheme } from '@mui/material';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -111,4 +111,137 @@ it('shows a repair the app asked for on its own as one quiet row, not as message
     expect(screen.getByText('TypeError: sortBy is not a function')).toBeInTheDocument();
     expect(screen.getByText(/Fixed in place/)).toBeInTheDocument();
     unmount();
+});
+
+it('marks a stopped run with a Stopped chip that stays when the user sends on from it', () => {
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'ask', displayId: 'ask', textKind: 'explain', content: '',
+        prompt: 'Get gas prices', createdAt: 1 } as TextTurn));
+    store.dispatch(dfActions.createDraftNode({ id: 'run', displayId: 'run', parentNodeId: 'ask', parentTableId: 'ask',
+        source: [], interaction: [], actionId: 'run' }));
+    store.dispatch(dfActions.updateDeriveStatus({ nodeId: 'run', status: 'interrupted' }));
+    const first = renderThread();
+    expect(screen.getByText('Stopped')).toBeInTheDocument();
+    expect(screen.queryByText('Exploration cancelled')).toBeNull();
+    fireEvent.click(screen.getByText('Stopped'));
+    expect(store.getState().focusedId).toEqual({ type: 'draft', draftId: 'run' });
+    first.unmount();
+
+    // Sending on replaces the stopped run's draft; the message it sent keeps the mark.
+    act(() => {
+        store.dispatch(dfActions.removeDraftNode('run'));
+        store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'next', displayId: 'next', textKind: 'explain', content: '',
+            prompt: 'continue', parentNodeId: 'ask', afterStop: true, createdAt: 2 } as TextTurn));
+    });
+    const second = renderThread();
+    const chip = document.querySelector('[data-thread-item^="stopped-before-next"]');
+    const message = document.querySelector('[data-thread-item="textturn-prompt-next-0"]');
+    expect(chip).toBeInTheDocument();
+    expect(chip!.compareDocumentPosition(message!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    second.unmount();
+});
+
+it('shows a background task on the command that started it: live while it runs, its log on click, its last status after', async () => {
+    const { apiRequest } = await import('../../../../src/app/apiClient');
+    const { refreshBackgroundTasks } = await import('../../../../src/app/backgroundTasks');
+    const running = { id: 'task-1', conversation_id: 'run', purpose: 'Count slowly', command: 'python count.py', status: 'running',
+        started: Date.now() / 1000 - 95, ended: null, elapsed_seconds: 95, exit_code: null, stopped_by: null, error: null, output_bytes: 6,
+        last_lines: ['tick 1'], log: 'scratch/tasks/task-1.log' };
+    let tasks: object[] = [running];
+    vi.mocked(apiRequest).mockImplementation(async (url: string) => (url === '/api/tasks/list' ? { data: { tasks } }
+        : url === '/api/tasks/log' ? { data: { log: 'tick 1\ntick 2', truncated: false } } : { data: { files: [], tables: [] } }) as any);
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'ask', displayId: 'ask', textKind: 'explain', content: '',
+        prompt: 'Count in the background', createdAt: 1 } as TextTurn));
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'step', displayId: 'step', textKind: 'explain', content: 'Count slowly',
+        parentNodeId: 'ask', createdAt: 2, executions: [{ id: 'cmd', argv: ['python', 'count.py'], cwd: '/w', purpose: 'Count slowly',
+            status: 'completed', result: { background_task: 'task-1', started: running.started, exit_code: null } }] } as TextTurn));
+    const view = renderThread();
+    const row = () => document.querySelector('[data-thread-background-task="task-1"]')!;
+    await waitFor(() => expect(row()).toHaveTextContent('1m 35s'));
+    // Between polls the time keeps counting.
+    await waitFor(() => expect(row()).toHaveTextContent('1m 36s'), { timeout: 2500 });
+    expect(row().querySelector('[role="progressbar"]')).toBeInTheDocument();
+
+    fireEvent.click(row());
+    expect(await screen.findByText(/tick 2/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    // It finished, then the server forgot it (a restart): the status it last showed stays.
+    const done = { ...running, status: 'completed', ended: running.started + 130, elapsed_seconds: 130, exit_code: 0 };
+    tasks = [done];
+    await act(() => refreshBackgroundTasks());
+    await waitFor(() => expect(row().querySelector('[aria-label="finished · 2m 10s"]')).toBeInTheDocument());
+    act(() => { store.dispatch(dfActions.upsertTurnExecution({ turnId: 'step', execution: { ...store.getState().textTurns[1].executions![0],
+        result: { background_task: 'task-1', exit_code: null, task: { status: 'completed', started: done.started, ended: done.ended, exit_code: 0 } } } })); });
+    tasks = [];
+    await act(() => refreshBackgroundTasks());
+    expect(row().querySelector('[aria-label="finished · 2m 10s"]')).toBeInTheDocument();
+    view.unmount();
+});
+
+it('shows a step\'s background tasks as their own group, apart from its tool calls', async () => {
+    const { apiRequest } = await import('../../../../src/app/apiClient');
+    const started = Date.now() / 1000 - 70;
+    const task = (id: string, status: string, seconds = 70) => ({ id, conversation_id: 'run', purpose: id, command: 'x', status, started,
+        ended: status === 'running' ? null : started + seconds, elapsed_seconds: seconds, exit_code: null, stopped_by: null, error: null,
+        output_bytes: 0, last_lines: [], log: '' });
+    vi.mocked(apiRequest).mockImplementation(async (url: string) => (url === '/api/tasks/list'
+        ? { data: { tasks: [task('t1', 'running'), task('t2', 'completed'), task('t3', 'failed', 0)] } }
+        : { data: { files: [], tables: [] } }) as any);
+    const command = (id: string, createdAt: number, background?: string) => ({ id, argv: ['x', id], cwd: '/w', purpose: `Purpose ${id}`,
+        status: 'completed', createdAt, result: background
+            ? { background_task: background, exit_code: null, task: { status: 'running', started, ended: null, exit_code: null } }
+            : { exit_code: 0 } });
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'ask', displayId: 'ask', textKind: 'explain', content: '',
+        prompt: 'Crawl three sites', createdAt: 1 } as TextTurn));
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'step', displayId: 'step', textKind: 'explain', content: 'Purpose t1',
+        parentNodeId: 'ask', createdAt: 2, executions: [
+            // A refused start the agent made again (below) once a slot freed: it is that task, not one more.
+            { id: 'refused-then-run', argv: ['x', 't1'], cwd: '/w', purpose: 'Purpose t1', status: 'failed', background: true,
+                result: { error: 'At most 8 background tasks can run at once, so this one did not start.', exit_code: null } },
+            command('t1', 1, 't1'), command('check', 2), command('t2', 3, 't2'),
+            command('list', 4), command('t3', 5, 't3'),
+            // A start the limit refused: the task did not start, and the group says so.
+            { id: 'refused', argv: ['x', 'never'], cwd: '/w', purpose: 'Purpose refused', status: 'failed', createdAt: 6, background: true,
+                result: { error: 'At most 8 background tasks can run at once, so this one did not start.', exit_code: null } }] } as TextTurn));
+    const view = renderThread();
+    // The tasks fold into one row that says how they are doing; the step's tool calls are its own, without them.
+    const group = await screen.findByRole('button', { name: '4 background tasks' });
+    await waitFor(() => expect(group).toHaveTextContent("1 running · 1 finished · 1 failed · 1 didn't start"));
+    expect(group).toHaveAttribute('aria-expanded', 'false');
+    expect(document.querySelector('[data-thread-background-task]')).toBeNull();
+    // The step's own calls are back to how a settled step shows them: its message (labelled by its first call, not
+    // a task it started), from which they open.
+    expect(screen.queryByText('Purpose t1')).toBeNull();
+    expect(screen.getByText('Purpose check')).toBeInTheDocument();
+    fireEvent.click(group);
+    expect(document.querySelector('[data-thread-background-task="t1"] [role="progressbar"]')).toBeInTheDocument();
+    expect(document.querySelector('[data-thread-background-task="t2"] [aria-label="finished · 1m 10s"]')).toBeInTheDocument();
+    // One that ended without finishing says so, rather than showing a time that looks stuck.
+    expect(document.querySelector('[data-thread-background-task="t3"]')).toHaveTextContent('failed · 0s');
+    expect(document.querySelector('[data-thread-background-task="refused"]')).toHaveTextContent("Purpose refuseddidn't start");
+    view.unmount();
+});
+
+it('shows a follow-up the app sent for background tasks as an event row with its tasks behind it, then the agent\'s reply', async () => {
+    const { apiRequest } = await import('../../../../src/app/apiClient');
+    const started = Date.now() / 1000 - 40;
+    vi.mocked(apiRequest).mockImplementation(async (url: string) => (url === '/api/tasks/list' ? { data: { tasks: [
+        { id: 'a', conversation_id: 'run', purpose: 'Crawl A', command: 'x', status: 'completed', started, ended: started + 30,
+            elapsed_seconds: 30, exit_code: 0, stopped_by: null, error: null, output_bytes: 0, last_lines: [], log: '' },
+        { id: 'b', conversation_id: 'run', purpose: 'Crawl B', command: 'x', status: 'completed', started, ended: started + 35,
+            elapsed_seconds: 35, exit_code: 0, stopped_by: null, error: null, output_bytes: 0, last_lines: [], log: '' },
+    ] } } : { data: { files: [], tables: [] } }) as any);
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'wake', displayId: 'wake', textKind: 'explain', content: '',
+        prompt: '2 background tasks ended', auto: 'task-wake', taskIds: ['a', 'b'], createdAt: 1 } as TextTurn));
+    store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'reply', displayId: 'reply', textKind: 'explain',
+        content: 'Both crawls finished: 58 pages.', parentNodeId: 'wake', createdAt: 2 } as TextTurn));
+    const view = renderThread();
+    const event = await screen.findByRole('button', { name: '2 background tasks ended' });
+    await waitFor(() => expect(event).toHaveTextContent('2 finished'));
+    expect(document.querySelector('[data-user-message]')).toBeNull();
+    expect(screen.getByText('Both crawls finished: 58 pages.')).toBeInTheDocument();
+    fireEvent.click(event);
+    expect(document.querySelector('[data-thread-background-task="a"]')).toHaveTextContent('Crawl A');
+    expect(document.querySelector('[data-thread-background-task="b"]')).toHaveTextContent('35s');
+    view.unmount();
 });

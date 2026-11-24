@@ -11,12 +11,11 @@
 
 import React, { createContext, useCallback, useContext, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { alpha, Box, ButtonBase, IconButton, TextField, Tooltip, TooltipProps, Typography, type Theme } from '@mui/material';
+import { alpha, Box, ButtonBase, IconButton, TextField, Tooltip, TooltipProps, Typography } from '@mui/material';
 import StarRoundedIcon from '@mui/icons-material/StarRounded';
 import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded';
 import { iconVar, textVar } from '../app/layout';
-import { sidebarRowActionSx, sidebarRowDangerActionSx, sidebarRowMetaSx, sidebarRowSx, sidebarRowTitleSx, ambientShadow, hoverLift, borderColor, ink, weight } from '../app/tokens';
-import { lineColor } from '../app/look';
+import { sidebarRowActionSx, sidebarRowDangerActionSx, sidebarRowMetaSx, sidebarRowSx, sidebarRowTitleSx, ambientShadow, hoverLift, borderColor, ink, paper, weight } from '../app/tokens';
 
 
 // Transform and shadow only, so hovering never reflows neighbouring cards.
@@ -29,7 +28,7 @@ export const cardHoverSx = {
 /** The landing page's example cards (sessions and workflows): a raised surface that lifts onto the accent border. */
 export const exampleCardSx = (disabled = false) => ({
     position: 'relative', display: 'flex', minWidth: 0,
-    border: '1px solid', borderColor: (theme: Theme) => lineColor(theme, 0.18), borderRadius: 1,
+    border: '1px solid', borderColor: borderColor.card, borderRadius: 1,
     bgcolor: 'background.paper',
     boxShadow: ambientShadow('0 1px 3px rgba(32, 33, 36, 0.06)'),
     transition: 'box-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1), border-color 150ms ease',
@@ -43,7 +42,11 @@ export const exampleCardButtonSx = {
     '&.Mui-disabled': { opacity: 0.6 }, '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' },
 } as const;
 
-export const exampleCardTitleSx = { minWidth: 0, fontSize: textVar.md, fontWeight: weight(400), lineHeight: 1.4, color: 'text.primary', overflowWrap: 'anywhere' } as const;
+/** The type of every full-size card's title (example, saved and listed items), so the landing grids read as one set. */
+export const cardTitleType = { fontSize: textVar.md, fontWeight: weight(400), lineHeight: 1.4 } as const;
+
+export const exampleCardTitleSx = { minWidth: 0, ...cardTitleType, color: 'text.primary',
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const;
 
 export const exampleCardDescriptionSx = {
     mt: 0.25, fontSize: textVar.xs, lineHeight: 1.5, color: 'text.secondary', overflowWrap: 'anywhere',
@@ -118,7 +121,7 @@ export const ViewAllButton: React.FC<{ label: string; onClick: () => void; disab
 
 /** Grid for item cards: as many ~220px columns as fit. */
 const ITEM_CARD_MIN_WIDTH_PX = 220;
-const ITEM_CARD_GAP_PX = 12;
+const ITEM_CARD_GAP_PX = 16;
 export const itemCardGridSx = {
     display: 'grid',
     gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${ITEM_CARD_MIN_WIDTH_PX}px), 1fr))`,
@@ -205,7 +208,7 @@ export interface ItemCardProps {
     compact?: boolean;
     /** One-line sidebar row. */
     mini?: boolean;
-    /** Starred by the user: a gold star before the title and, on cards, a gold-tinted surface. */
+    /** Starred by the user: a gold star before the title and, on cards, a faint warm surface. */
     starred?: boolean;
     /** Cards: let a long title wrap to this many lines (in a slightly smaller size) instead of cutting it at one. */
     titleLines?: number;
@@ -275,25 +278,26 @@ export const ItemCard: React.FC<ItemCardProps> = ({ title, badges, captions = []
         {starred && <StarredMark size={compact ? 14 : 16} />}
         <Typography component="span" noWrap={!compact && titleLines <= 1} sx={{ color: titleColor, textDecoration: inactive ? 'line-through' : 'none',
             ...(compact ? { ...sidebarRowTitleSx, flex: '0 1 auto', overflowWrap: 'anywhere' }
-                : titleLines > 1 ? { minWidth: 0, fontSize: '0.8125rem', lineHeight: 1.35, overflowWrap: 'anywhere', display: '-webkit-box',
+                : titleLines > 1 ? { minWidth: 0, ...cardTitleType, overflowWrap: 'anywhere', display: '-webkit-box',
                     WebkitLineClamp: titleLines, WebkitBoxOrient: 'vertical', overflow: 'hidden' }
-                : { minWidth: 0, fontSize: '0.875rem', lineHeight: 1.43 }) }}>{title}</Typography>
+                : { minWidth: 0, ...cardTitleType }) }}>{title}</Typography>
         {badges}
     </Box>;
     const baseSurfaceSx: Record<string, any> = compact
         ? { border: 1, borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper', ...(clickable ? cardHoverSx : {}) }
         : exampleCardSx(!clickable);
-    const surfaceSx = starred ? {
-        ...baseSurfaceSx, borderColor: alpha(starredColor, 0.6), bgcolor: alpha(starredColor, 0.06),
-        ...(baseSurfaceSx['&:hover'] ? { '&:hover': { ...baseSurfaceSx['&:hover'], borderColor: starredColor } } : {}),
-    } : baseSurfaceSx;
+    // Starred: a faint warm wash and a warm-tinted outline; hover keeps the card's own outline. `--item-surface` is the
+    // opaque fill the hover actions fade into.
+    const starredSurface = `color-mix(in srgb, ${starredColor} 5%, ${paper()})`;
+    const surfaceSx = starred ? { ...baseSurfaceSx, '--item-surface': starredSurface, bgcolor: 'var(--item-surface)',
+        borderColor: `color-mix(in srgb, ${starredColor} 45%, ${borderColor.card})` } : baseSurfaceSx;
     // The current item in a grid of cards: a primary border.
     const currentSx = current && !compact ? { borderColor: 'primary.main' } : {};
     const card = <Box component="article" onClick={handleClick} onAuxClick={handleAuxClick} className={active ? 'item-active' : undefined} sx={{
         ...surfaceSx,
         ...currentSx,
         position: 'relative', minWidth: 0, textAlign: 'left', fontFamily: theme => theme.typography.fontFamily,
-        px: compact ? 1 : 2, py: compact ? 0.75 : 1.5, display: 'flex', flexDirection: 'column', gap: compact ? 0.25 : 0,
+        px: compact ? 1 : 1.5, py: compact ? 0.75 : 1.5, display: 'flex', flexDirection: 'column', gap: 0.25,
         cursor: clickable ? 'pointer' : 'default', opacity: inactive ? 0.55 : 1,
         '& .item-overlay-actions': { opacity: 0, transition: 'opacity 90ms' },
         '&:hover .item-overlay-actions, &:has(:focus-visible) .item-overlay-actions, &.item-active .item-overlay-actions': { opacity: 1 },
@@ -317,12 +321,7 @@ export const ItemCard: React.FC<ItemCardProps> = ({ title, badges, captions = []
             <Box className="item-overlay-actions" onClick={stopClick} onAuxClick={stopClick}
                 sx={{ position: 'absolute', bottom: 0, right: 0, display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'default',
                     pl: 4, pr: 0.5, py: 0.5, borderBottomRightRadius: 'inherit',
-                    // Fade to the card's own colour (a starred card's is tinted gold).
-                    background: theme => {
-                        const paper = theme.palette.background.paper;
-                        const surface = starred ? `color-mix(in srgb, ${starredColor} 6%, ${paper})` : paper;
-                        return `linear-gradient(to right, transparent, ${surface} 2rem)`;
-                    } }}>{actions}</Box>
+                    background: theme => `linear-gradient(to right, transparent, var(--item-surface, ${theme.palette.background.paper}) 2rem)` }}>{actions}</Box>
         </RowActionContext.Provider>}
     </Box>;
     return tooltip && !rename ? <MetadataTooltip title={tooltip} placement={compact ? 'right-start' : 'bottom-start'}>{card}</MetadataTooltip> : card;

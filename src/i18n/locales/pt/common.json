@@ -429,7 +429,13 @@
     "running_other": "{{count}} tarefas em segundo plano em execução",
     "status": {
       "stopping": "a parar…",
-      "running": "em execução"
+      "running": "em execução",
+      "completed": "concluída",
+      "failed": "falhou",
+      "stopped": "parada",
+      "timed_out": "tempo esgotado",
+      "unknown": "estado desconhecido (o servidor reiniciou)",
+      "not_started": "não iniciou"
     },
     "stop": "Parar",
     "log": "Registo",
@@ -441,7 +447,21 @@
     "alsoStop": "Parar também esta tarefa",
     "stopAgent": "Parar agente",
     "stopAgentAndTasks_one": "Parar agente e {{count}} tarefa",
-    "stopAgentAndTasks_other": "Parar agente e {{count}} tarefas"
+    "stopAgentAndTasks_other": "Parar agente e {{count}} tarefas",
+    "checkIn": "Pedir ponto de situação",
+    "checkInHint": "Perguntar ao agente como está, sem o parar",
+    "checkInSent": "Atualização pedida",
+    "askUpdate": "Pedir uma atualização",
+    "wake": {
+      "ended_one": "{{count}} tarefa em segundo plano terminou",
+      "ended_other": "{{count}} tarefas em segundo plano terminaram",
+      "checkIn_one": "A verificar {{count}} tarefa em segundo plano",
+      "checkIn_other": "A verificar {{count}} tarefas em segundo plano",
+      "update": "As tarefas em segundo plano precisam de atenção",
+      "asked": "Pedida uma atualização das tarefas em segundo plano"
+    },
+    "group_one": "{{count}} tarefa em segundo plano",
+    "group_other": "{{count}} tarefas em segundo plano"
   },
   "dataThread": {
     "tableSet_one": "{{count}} tabela",
@@ -503,6 +523,8 @@
     "completed": "concluído",
     "workspace": "espaço de trabalho",
     "thinking": "a pensar...",
+    "stopped": "Parado",
+    "stoppedHint": "A execução foi parada antes de terminar. O agente mantém o que fez e continua a partir daqui.",
     "status": {
       "actionFailed": "a tentativa falhou: {{reason}}",
       "chartFailed": "a tentativa de gráfico falhou: {{reason}}",
@@ -1274,7 +1296,8 @@
       "failed": "Falhou",
       "retry": "A tentar novamente",
       "running": "Em execução",
-      "skipped": "Ignorado"
+      "skipped": "Ignorado",
+      "missed": "Perdida"
     },
     "model": "Modelo",
     "approveAll": "Aprovar pedidos automaticamente",
@@ -1299,7 +1322,8 @@
     "runOnSchedule": "Executar segundo um agendamento",
     "notScheduled": "Sem agendamento",
     "instructions": "Instruções",
-    "instructionsPlaceholder": "Opcional: quais entradas usar, no que focar"
+    "instructionsPlaceholder": "Opcional: quais entradas usar, no que focar",
+    "runMissed": "Perdida em {{time}}. Clique para executar agora."
   },
   "administration": {
     "title": "Administração",

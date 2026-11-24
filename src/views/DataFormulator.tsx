@@ -33,7 +33,7 @@ import {
     Tabs,
     Tab,
 } from '@mui/material';
-import { borderColor, canvasPattern, cardRadius, metaText, radius, transition, paper, weight } from '../app/tokens';
+import { borderColor, canvasPattern, cardRadius, ink, metaText, radius, transition, paper, weight } from '../app/tokens';
 import { inkColor } from '../app/look';
 
 
@@ -110,6 +110,8 @@ const INITIAL_SESSION_COUNT = 12;
 const homeSessionGroupHeaderSx = { m: 0, mb: 1, textAlign: 'left', fontWeight: weight(600), color: 'text.secondary',
     ...metaText({ fontSize: textVar.xs, textTransform: 'uppercase', letterSpacing: '0.04em' }) } as const;
 
+const homeSectionTitleSx = { fontSize: textVar.md, fontWeight: weight(500), color: 'text.primary', textAlign: 'left', mb: 1 } as const;
+
 type LibraryTab = 'sessions' | 'workflows';
 
 /** A heart in a space's title ("Lattice ❤ Data Formulator"): a small, muted pixel heart, not a full-size emoji. */
@@ -134,10 +136,14 @@ const LandingLibrary: React.FC<{ sessionsToolbar: React.ReactNode; sessions: Rea
     const { t } = useTranslation();
     const [tab, setTab] = useState<LibraryTab>('sessions');
     return <>
-        <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 2, rowGap: 1, mt: 3, mb: 1.5, borderBottom: 1, borderColor: 'divider' }}>
+        {/* Neutral tabs and buttons, in the app bar's greys rather than the accent colour. */}
+        <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 2, rowGap: 1, mt: 4, mb: 1.5, borderBottom: 1, borderColor: 'divider',
+            '& .MuiButton-outlined': { color: 'text.secondary', borderColor: borderColor.view, '&:hover': { color: 'text.primary', borderColor: borderColor.view, bgcolor: ink(0.04) } } }}>
             <Tabs value={tab} onChange={(_, value) => setTab(value)} aria-label="Saved items"
-                slotProps={{ indicator: { sx: { transition: 'left 120ms ease, width 120ms ease' } } }}
-                sx={{ minHeight: 40, '& .MuiTab-root': { minHeight: 40, px: 1, fontSize: textVar.sm, fontWeight: weight(400), textTransform: 'none' },
+                slotProps={{ indicator: { sx: { bgcolor: 'text.primary', transition: 'left 120ms ease, width 120ms ease' } } }}
+                sx={{ minHeight: 40, '& .MuiTab-root': { minHeight: 40, minWidth: 0, px: 1, fontSize: textVar.md, fontWeight: weight(400),
+                    textTransform: 'none', color: 'text.secondary', '&:hover': { color: 'text.primary' },
+                    '&.Mui-selected': { color: 'text.primary' } },
                     '& .MuiTouchRipple-root': { display: 'none' } }}>
                 <Tab id="home-sessions-tab" value="sessions" label={t('workspace.yourSessions')} aria-controls="home-sessions-panel" />
                 {showWorkflows && <Tab id="home-workflows-tab" value="workflows" label={t('workspace.yourWorkflows', { defaultValue: 'Your workflows' })} aria-controls="home-workflows-panel" />}
@@ -984,7 +990,7 @@ export const DataFormulatorFC = ({ }) => {
     const homeLibrary = ({ examples, saved, toolbar }: { examples?: React.ReactNode; saved?: React.ReactNode; toolbar?: React.ReactNode }) => <Box data-home-library sx={{ mt: 3 }}>
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: examples !== undefined ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)' }, gap: 4, alignItems: 'start' }}>
             <Box component="section" aria-label={t('landing.exampleSessions', { defaultValue: 'Example sessions' })} sx={{ minWidth: 0 }}>
-                <Typography component="h2" sx={{ fontSize: textVar.xl, fontWeight: weight(400), textAlign: 'left', minHeight: 40, display: 'flex', alignItems: 'center', mb: 1.5 }}>
+                <Typography component="h2" sx={homeSectionTitleSx}>
                     {t('landing.exampleSessions', { defaultValue: 'Example sessions' })}
                 </Typography>
                 <Box sx={itemCardGridSx}>
@@ -1000,7 +1006,7 @@ export const DataFormulatorFC = ({ }) => {
                 </Box>
             </Box>
             {examples !== undefined && <Box sx={{ minWidth: 0 }}>
-                <Typography component="h2" sx={{ fontSize: textVar.xl, fontWeight: weight(400), textAlign: 'left', minHeight: 40, display: 'flex', alignItems: 'center', mb: 1.5 }}>
+                <Typography component="h2" sx={homeSectionTitleSx}>
                     {t('landing.exampleWorkflows', { defaultValue: 'Example workflows' })}
                 </Typography>
                 {examples}
@@ -1058,7 +1064,7 @@ export const DataFormulatorFC = ({ }) => {
                     )}
                 </>}
                 sessions={<>
-                {starredSavedWorkspaces.length > 0 && <Box component="section" aria-labelledby="home-starred-sessions" sx={{ mb: 2.5 }}>
+                {starredSavedWorkspaces.length > 0 && <Box component="section" aria-labelledby="home-starred-sessions" sx={{ mb: 3.5 }}>
                     <Typography id="home-starred-sessions" component="h3" sx={homeSessionGroupHeaderSx}>{t('workspace.starred')}</Typography>
                     <Box ref={starredGridRef} sx={itemCardGridSx}>
                         {starredSavedWorkspaces.slice(0, starredGridColumns * 2).map(w => workspaceCard(w))}
@@ -1069,8 +1075,9 @@ export const DataFormulatorFC = ({ }) => {
                             {t('workspace.showAllStarred', { count: starredSavedWorkspaces.length })}
                         </Button>
                     )}
-                    <Typography component="h3" sx={{ ...homeSessionGroupHeaderSx, mt: 2.5 }}>{t('workspace.sessions')}</Typography>
                 </Box>}
+                {starredSavedWorkspaces.length > 0
+                    && <Typography component="h3" sx={homeSessionGroupHeaderSx}>{t('workspace.sessions')}</Typography>}
                 <Box id="saved-session-grid" sx={itemCardGridSx}>
                     {sortedSavedWorkspaces.slice(0, INITIAL_SESSION_COUNT).map(w => workspaceCard(w))}
                 </Box>

@@ -12,6 +12,7 @@
 
 import { getRecommendedColorScheme, getRegistryEntry, resolveColorSchemeHint, resolveFieldSemantics } from 'flint-chart';
 
+import { canonicalSemanticType } from '../app/fieldSemantics';
 import type { Aggregate, ColorEncoding, SizeEncoding } from './spec';
 
 export interface FieldAnnotation {
@@ -94,7 +95,7 @@ export const humanize = (field: string): string => {
 export interface ResolvedField {
     /** Legend and tooltip label: display name, else the humanized field, with its unit. */
     label: string;
-    /** Number format: a declared Year, Decade, ID or ZipCode reads as a plain integer (2020, not 2,020). */
+    /** Number format: a declared Year, Rank, ID or other naming number reads as a plain integer (2020, not 2,020). */
     format?: FormatSpec;
     aggregate?: Aggregate;
     colorType: 'sequential' | 'diverging' | 'categorical';
@@ -112,12 +113,15 @@ export interface ResolvedField {
 
 const UNIT_LABELS: Record<string, string> = { USD: 'US$', EUR: '€', GBP: '£' };
 
-/** Types whose numbers are names, not amounts: no thousands separator. Only when declared, never guessed. */
-const PLAIN_INTEGER_TYPES = new Set(['Year', 'Decade', 'ID', 'ZipCode']);
+/** Types whose numbers are names, not amounts, show plain (2022, not 2,022): only when declared, never guessed. */
+const PLAIN_NUMBER_TYPES = new Set([
+    'Year', 'Quarter', 'Month', 'Week', 'Day', 'Hour', 'Decade', 'YearMonth', 'YearQuarter', 'YearWeek',
+    'ID', 'ZipCode', 'Rank',
+]);
 
 export function resolveField(field: string, values: unknown[], declared?: FieldAnnotation): ResolvedField {
     const annotation = annotateField(field, values, declared);
-    const plainInteger = !!declared?.semanticType && PLAIN_INTEGER_TYPES.has(declared.semanticType);
+    const plainInteger = PLAIN_NUMBER_TYPES.has(canonicalSemanticType(declared?.semanticType) ?? '');
     const type = annotation.semanticType ?? 'Unknown';
     let semantics: ReturnType<typeof resolveFieldSemantics> | null = null;
     try { semantics = resolveFieldSemantics(annotation as never, field, values as never[]); } catch { semantics = null; }

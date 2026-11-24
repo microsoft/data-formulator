@@ -431,7 +431,13 @@
     "running_other": "Выполняется {{count}} фоновой задачи",
     "status": {
       "stopping": "остановка…",
-      "running": "выполняется"
+      "running": "выполняется",
+      "completed": "завершена",
+      "failed": "ошибка",
+      "stopped": "остановлена",
+      "timed_out": "время истекло",
+      "unknown": "статус неизвестен (сервер перезапущен)",
+      "not_started": "не запущена"
     },
     "stop": "Остановить",
     "log": "Журнал",
@@ -447,7 +453,27 @@
     "stopAgentAndTasks_one": "Остановить агента и {{count}} задачу",
     "stopAgentAndTasks_few": "Остановить агента и {{count}} задачи",
     "stopAgentAndTasks_many": "Остановить агента и {{count}} задач",
-    "stopAgentAndTasks_other": "Остановить агента и {{count}} задачи"
+    "stopAgentAndTasks_other": "Остановить агента и {{count}} задачи",
+    "checkIn": "Узнать статус",
+    "checkInHint": "Спросить агента, как идут дела, не останавливая его",
+    "checkInSent": "Статус запрошен",
+    "askUpdate": "Запросить статус",
+    "wake": {
+      "ended_one": "Завершилась {{count}} фоновая задача",
+      "ended_few": "Завершились {{count}} фоновые задачи",
+      "ended_many": "Завершились {{count}} фоновых задач",
+      "ended_other": "Завершилось фоновых задач: {{count}}",
+      "checkIn_one": "Проверка {{count}} фоновой задачи",
+      "checkIn_few": "Проверка {{count}} фоновых задач",
+      "checkIn_many": "Проверка {{count}} фоновых задач",
+      "checkIn_other": "Проверка фоновых задач: {{count}}",
+      "update": "Фоновые задачи требуют внимания",
+      "asked": "Запрошен статус фоновых задач"
+    },
+    "group_one": "{{count}} фоновая задача",
+    "group_few": "{{count}} фоновые задачи",
+    "group_many": "{{count}} фоновых задач",
+    "group_other": "Фоновых задач: {{count}}"
   },
   "dataThread": {
     "tableSet_one": "{{count}} таблица",
@@ -513,6 +539,8 @@
     "completed": "завершено",
     "workspace": "рабочее пространство",
     "thinking": "thinking...",
+    "stopped": "Остановлено",
+    "stoppedHint": "Запуск был остановлен до завершения. Агент сохраняет сделанное и продолжает отсюда.",
     "status": {
       "actionFailed": "попытка не удалась: {{reason}}",
       "chartFailed": "не удалось построить диаграмму: {{reason}}",
@@ -1290,7 +1318,8 @@
       "failed": "не удалось",
       "retry": "Retrying",
       "running": "Выполняется",
-      "skipped": "Skipped"
+      "skipped": "Skipped",
+      "missed": "Пропущен"
     },
     "model": "Модель",
     "approveAll": "Подтверждать запросы автоматически",
@@ -1315,7 +1344,8 @@
     "runOnSchedule": "Запускать по расписанию",
     "notScheduled": "Без расписания",
     "instructions": "Инструкции",
-    "instructionsPlaceholder": "Необязательно: какие входные данные и на чём сосредоточиться"
+    "instructionsPlaceholder": "Необязательно: какие входные данные и на чём сосредоточиться",
+    "runMissed": "Пропущен запуск {{time}}. Нажмите, чтобы запустить сейчас."
   },
   "administration": {
     "title": "Administration",

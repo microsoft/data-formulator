@@ -279,6 +279,18 @@ def test_resuming_an_approval_allows_the_site_for_the_chat_or_always(tmp_path, d
         assert browser_allowed_sites() == (["example.com"] if decision == "always" else [])
 
 
+def test_allowing_a_site_in_the_chat_covers_the_session_not_one_request():
+    from data_formulator.analyst.skills.browser.skill import allow_site, approval_scope, site_allowed
+
+    app = flask.Flask(__name__)
+    with app.test_request_context(headers={"X-Workspace-Id": "session-1"}):
+        allow_site("local:me", approval_scope("request-1"), "example.com", always=False)
+        # A stopped task asked again is a new request in the same session.
+        assert site_allowed("local:me", approval_scope("request-2"), "example.com")
+    with app.test_request_context(headers={"X-Workspace-Id": "session-2"}):
+        assert not site_allowed("local:me", approval_scope("request-1"), "example.com")
+
+
 def test_registry_shows_the_skill_only_when_on():
     from data_formulator.analyst.skills import build_registry
 

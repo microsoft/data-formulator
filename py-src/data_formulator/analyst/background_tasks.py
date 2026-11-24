@@ -8,8 +8,11 @@ limit (a budget of hours instead). It keeps running when the agent stops; only f
 user, the agent, or its budget ends it. Its full output goes to a log in the workspace scratch
 folder, so the agent and the user can read it while it runs and after.
 
-The agent manages tasks with ``wait`` (park until a task ends, the timeout passes, or the run is
-stopped; then read a digest and report progress) instead of re-running chunks of work.
+The agent manages tasks with ``wait`` (park until a task ends, the timeout passes, the run is
+stopped, or the user asks for an update; then read a digest and report progress) instead of
+re-running chunks of work. A run that does not wait can end its turn: when a task ends (or at a
+check-in time it asked for), the browser sends the agent a follow-up (``wake_due``). Each ending is
+told to the agent once, by whichever of these reaches it first (``told``).
 Tasks live in this server process: a server restart loses track of them.
 """
 
@@ -31,6 +34,12 @@ STOP_GRACE_SECONDS = 5.0
 LOG_DIR = "tasks"
 TAIL_LINES = 40
 MAX_TASKS_PER_WORKSPACE = 8
+# How long the user's request for an update waits for a step of the run to pick it up.
+NUDGE_SECONDS = 120.0
+# The check-in times a task can ask for (seconds after it starts).
+CHECK_IN_RANGE = (30, 2 * 60 * 60)
+# How long a task's news (its end, or its check-in time) can still wake the agent.
+WAKE_WINDOW_SECONDS = 60 * 60
 _ENDED = ("completed", "failed", "stopped", "timed_out")
 
 
@@ -57,10 +66,29 @@ class BackgroundTask:
         self._partial = ""
         self._stop = threading.Event()
         self._process: subprocess.Popen | None = None
+        # Waking the agent when no run is following the task (the browser sends it a follow-up): when the task
+        # ends, unless it says not to, and once at its check-in time while it still runs.
+        self.wake = proposal.get("wake", "on_end") != "none"
+        check_in = proposal.get("check_in_seconds")
+        self.check_in_at: float | None = self.started + float(check_in) if check_in else None
+        # Whether the agent has been told the task ended (a wait, the request's task note, or the start result).
+        self.told = False
 
     @property
     def running(self) -> bool:
         return self.status == "running"
+
+    def wake_due(self, now: float | None = None) -> str | None:
+        """Why the agent should be woken for this task now: it ended untold ("ended"), or its check-in time came.
+        Only recent news wakes it (WAKE_WINDOW_SECONDS): opening a session a day later does not start a run to
+        report an old ending; the agent hears of it with the user's next message."""
+        now = now or time.time()
+        if self.running:
+            due = self.check_in_at is not None and self.check_in_at <= now < self.check_in_at + WAKE_WINDOW_SECONDS
+            return "check_in" if due else None
+        # A task the user stopped was their decision: the agent hears of it with their next message.
+        recent = self.ended is not None and now - self.ended < WAKE_WINDOW_SECONDS
+        return "ended" if self.wake and not self.told and self.stopped_by != "user" and recent else None
 
     def record(self, chunk: bytes) -> None:
         self.output_bytes += len(chunk)
@@ -81,6 +109,7 @@ class BackgroundTask:
             "elapsed_seconds": round(now - self.started), "exit_code": self.exit_code, "stopped_by": self.stopped_by,
             "error": self.error, "output_bytes": self.output_bytes, "last_lines": self.last_lines(lines),
             "log": f"scratch/{self.log_name}", "sandboxed": self.sandboxed,
+            "wake": self.wake, "check_in_at": self.check_in_at, "wake_due": self.wake_due(),
         }
 
 
@@ -90,6 +119,8 @@ class TaskManager:
     def __init__(self) -> None:
         self._tasks: dict[str, BackgroundTask] = {}
         self._changed = threading.Condition()
+        # The user's requests for an update, by (owner, workspace, run): when each was made.
+        self._nudges: dict[tuple[str, str, str], float] = {}
 
     # -- starting -----------------------------------------------------------------------------
 
@@ -98,7 +129,8 @@ class TaskManager:
         from data_formulator.analyst.skills.terminal.skill import prepare_command
 
         if sum(task.running for task in self.list(owner, workspace_id)) >= MAX_TASKS_PER_WORKSPACE:
-            raise ValueError(f"At most {MAX_TASKS_PER_WORKSPACE} background tasks can run at once; wait for or stop one first.")
+            raise ValueError(f"At most {MAX_TASKS_PER_WORKSPACE} background tasks can run at once, so this one did not start. "
+                             "Start it again once one of them ends (wait_tasks returns when one does), or stop one first.")
         scratch_dir = scratch_dir.resolve(strict=True)
         (scratch_dir / LOG_DIR).mkdir(exist_ok=True)
         runtime = tempfile.TemporaryDirectory(prefix="df-task-")
@@ -187,8 +219,10 @@ class TaskManager:
             self._changed.notify_all()
         return task
 
-    def wait(self, tasks: list[BackgroundTask], timeout: float, *, cancel: threading.Event | None = None) -> str:
-        """Park until one of ``tasks`` ends, ``timeout`` seconds pass, or ``cancel`` is set; returns why."""
+    def wait(self, tasks: list[BackgroundTask], timeout: float, *, cancel: threading.Event | None = None,
+             nudge: tuple[str, str, str] | None = None) -> str:
+        """Park until one of ``tasks`` ends, ``timeout`` seconds pass, ``cancel`` is set, or the user asks for an
+        update on ``nudge`` (a run); returns why."""
         running = {task.id for task in tasks if task.running}
         if not running:
             return "ended"
@@ -199,10 +233,36 @@ class TaskManager:
                     return "ended"
                 if cancel is not None and cancel.is_set():
                     return "cancelled"
+                if nudge is not None and self._take_nudge_locked(nudge):
+                    return "checkin"
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     return "timeout"
                 self._changed.wait(timeout=min(0.5, remaining))
+
+    def tell(self, tasks: list[BackgroundTask]) -> None:
+        """The agent was just shown ``tasks``: endings it saw are told, and check-ins that came are done."""
+        now = time.time()
+        for task in tasks:
+            if not task.running:
+                task.told = True
+            elif task.check_in_at is not None and now >= task.check_in_at:
+                task.check_in_at = None
+
+    def nudge(self, owner: str, workspace_id: str, conversation: str) -> None:
+        """The user asks the run ``conversation`` for an update: a wait ends at once, else its next step hears it."""
+        with self._changed:
+            self._nudges[(owner, workspace_id, conversation)] = time.monotonic()
+            self._changed.notify_all()
+
+    def take_nudge(self, owner: str, workspace_id: str, conversation: str) -> bool:
+        with self._changed:
+            return self._take_nudge_locked((owner, workspace_id, conversation))
+
+    def _take_nudge_locked(self, key: tuple[str, str, str]) -> bool:
+        asked = self._nudges.pop(key, None)
+        # A request no step picked up (the run ended first) is stale.
+        return asked is not None and time.monotonic() - asked < NUDGE_SECONDS
 
 
 def task_manager(app=None) -> TaskManager:

@@ -412,6 +412,11 @@ export async function publishWorkflowRun(run: Run, workspaceId: string, focus = 
             const existingTable = dfSelectors.getAllTables(store.getState()).find(item => item.id === table.id);
             table.displayId = existingTable?.displayId || metadata.display_name || table.displayId;
             store.dispatch(dfActions.addTableToStore(table));
+            // The semantic types the agent gave, for charts and maps at once; inference fills in the rest.
+            const declared = authoredFieldSemantics(table.names, metadata.field_metadata, undefined);
+            if (Object.keys(declared).length > 0) {
+                store.dispatch(dfActions.applyAuthoredFieldSemantics({ tableId: table.id, fields: declared }));
+            }
             store.dispatch(fetchFieldSemanticType(table));
             const nodeId = `workflow-data-${run.id}-${table.id}`;
             const placed = store.getState().loadedTableNodes.find(node => node.id === nodeId)?.parentNodeId;
@@ -1478,9 +1483,18 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
             && items.filter(candidate => candidate.name === item.name).length === 1)
             .map(run => ({ key: run.id, status: run.status, time: run.started_at, disabled: busy, open: () => { beforeOpen?.(); void openRun(run); } })),
         ...(openRunSession ? (schedules[item.path]?.history || [])
-            .map(run => ({ key: `scheduled-${run.id}`, status: run.status, time: run.scheduled_for,
-                open: () => { beforeOpen?.(); void openRunSession(`scheduled-${run.id}`); } })) : []),
+            .map(run => run.status === 'missed'
+                // A missed run has no session yet: opening it runs it now.
+                ? { key: `scheduled-${run.id}`, status: run.status, time: run.scheduled_for, disabled: busy,
+                    label: t('schedule.runMissed', { time: new Date(run.scheduled_for).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) }),
+                    open: () => void runMissed(run.id) }
+                : { key: `scheduled-${run.id}`, status: run.status, time: run.scheduled_for,
+                    open: () => { beforeOpen?.(); void openRunSession(`scheduled-${run.id}`); } }) : []),
     ].sort((left, right) => Date.parse(right.time) - Date.parse(left.time));
+    const runMissed = async (id: string) => {
+        try { await post('run-missed', { id }); } catch (reason) { handleApiError(reason, 'Run missed workflow'); }
+        await refresh(true);
+    };
     /** The card's bottom line: its schedule, where this app runs schedules. */
     const scheduleLineOf = (item: WorkflowLibraryItem) => scheduling && item.schedule
         ? <ScheduleLine schedule={item.schedule} nextAt={schedules[item.path]?.next_at} /> : null;
@@ -1560,7 +1574,7 @@ export const WorkflowPanel: React.FC<{ onCreateSession: (name: string) => void; 
                     <Box component="span" className="workflow-card-icon" sx={{ display: 'flex', flexShrink: 0, color: 'text.secondary', transition: 'color 120ms ease' }}>
                         <WorkflowIcon running={false} size={16} color="inherit" showTooltip={false} />
                     </Box>
-                    <Typography sx={exampleCardTitleSx}>{item.name}</Typography>
+                    <Typography title={item.name} sx={exampleCardTitleSx}>{item.name}</Typography>
                 </Box>
                 {(item.error || item.overview) && <Typography sx={item.error
                     ? { ...exampleCardDescriptionSx, display: 'block', overflow: 'visible', color: 'error.main' } : exampleCardDescriptionSx}>

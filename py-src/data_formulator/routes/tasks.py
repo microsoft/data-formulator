@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-"""The user's view of background tasks in the active session: list them, read a log, stop one."""
+"""The user's view of background tasks in the active session: list them, read a log, stop one, ask the agent for an update."""
 
 from __future__ import annotations
 
@@ -48,6 +48,19 @@ def stop_tasks():
     stopped = [task.summary(lines=3) for task_id in ids
                if (task := manager.stop(task_id, identity, workspace_id, by="user")) is not None]
     return json_ok({"tasks": stopped})
+
+
+@task_bp.route("/checkin", methods=["POST"])
+def check_in():
+    """The user asks a running agent request for an update: its wait on tasks ends at once, else its next step hears it."""
+    from data_formulator.analyst.background_tasks import task_manager
+
+    identity, workspace_id = _scope()
+    conversation = (request.get_json(silent=True) or {}).get("conversation_id")
+    if not isinstance(conversation, str) or not conversation.strip():
+        raise AppError(ErrorCode.INVALID_REQUEST, "conversation_id is required.")
+    task_manager().nudge(identity, workspace_id, conversation.strip())
+    return json_ok({"conversation_id": conversation.strip()})
 
 
 @task_bp.route("/log", methods=["POST"])

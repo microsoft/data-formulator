@@ -26,6 +26,8 @@ def _state(name: str) -> dict:
         "generatedReports": [{"id": "report-1", "title": "ENSO and snow",
                               "content": "# ENSO\n\n![Snow](session://charts/chart-1)\n", "parentNodeId": "t-snow"}],
         "textTurns": [{"id": "ask", "prompt": "secret question about la nina", "parentNodeId": "conversation-root:c"}],
+        "tableSemantics": [{"tableId": "t-snow", "fields": {
+            "snow_in": {"semanticType": "Quantity", "unit": "in", "authored": {"semanticType": "Quantity", "unit": "in"}}}}],
     }
 
 
@@ -78,6 +80,8 @@ def test_copies_tables_files_and_charts_here_with_provenance_and_reuses_a_copy(s
     copied = _call({"session": "session_enso", "item": ["tables/snow_by_phase", "files/stations.csv"],
                     "copy": "session"}, sessions)["copied"]
     assert [entry["kind"] for entry in copied] == ["table", "file"] and copied[1]["path"] == "files/stations.csv"
+    # The copy keeps the semantic types its columns had there, for the app to apply at once.
+    assert copied[0]["field_metadata"] == {"snow_in": {"semanticType": "Quantity", "unit": "in"}}
     current = sessions.open_workspace("session_current", IDENTITY)
     table = current.get_table_metadata(copied[0]["table_name"])
     assert table.import_options["acquisition"]["source"] == 'Data Formulator session "ENSO snowfall" (session_enso)'

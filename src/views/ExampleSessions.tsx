@@ -153,19 +153,6 @@ export const exampleSessions: ExampleSession[] = [
             'Which directors have the most hits?',
         ],
     },
-    {
-        id: 'unemployment',
-        title: 'Unemployment',
-        description: 'Unemployment rates across different industries over time',
-        previewImage: '/demos/unemployment-thumbnail.webp',
-        workspace: '/demos/demo_unemployment.zip',
-        live: false,
-        followUps: [
-            'Which industries recovered first by 2010?',
-            'Is unemployment in construction seasonal?',
-            'Show the average yearly rate by industry.',
-        ],
-    }
 ];
 
 // ── Published example sessions ─────────────────────────────────────────────

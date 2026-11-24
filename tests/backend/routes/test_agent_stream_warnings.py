@@ -34,3 +34,24 @@ def test_a_warning_collected_during_a_long_wait_is_sent_at_the_next_heartbeat():
     assert waited < 2
     assert rest[-1]["type"] == "completion"
     assert not any(event["type"] == "warning" for event in rest)
+
+
+def test_a_cancelled_stream_calls_on_cancel_at_once_and_a_finished_one_does_not():
+    release = Event()
+    cancelled = []
+
+    def stuck():
+        yield json.dumps({"type": "tool_start"}) + "\n"
+        release.wait(5)
+        yield json.dumps({"type": "late"}) + "\n"
+
+    with flask.Flask(__name__).test_request_context():
+        stream = _cancellable_agent_stream(stuck(), on_cancel=lambda: cancelled.append(release.is_set()))
+        next(stream)
+        stream.close()
+        release.set()
+        # Called while the run was still stuck, before it could reach its next event.
+        assert cancelled == [False]
+
+        finished = _cancellable_agent_stream((line for line in ["done\n"]), on_cancel=lambda: cancelled.append("finished"))
+        assert list(finished) == ["done\n"] and cancelled == [False]

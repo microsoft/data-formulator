@@ -429,7 +429,13 @@
     "running_other": "{{count}} 个后台任务运行中",
     "status": {
       "stopping": "正在停止…",
-      "running": "运行中"
+      "running": "运行中",
+      "completed": "已完成",
+      "failed": "失败",
+      "stopped": "已停止",
+      "timed_out": "超时",
+      "unknown": "状态未知（服务器已重启）",
+      "not_started": "未启动"
     },
     "stop": "停止",
     "log": "日志",
@@ -441,7 +447,21 @@
     "alsoStop": "同时停止此任务",
     "stopAgent": "停止智能体",
     "stopAgentAndTasks_one": "停止智能体和 {{count}} 个任务",
-    "stopAgentAndTasks_other": "停止智能体和 {{count}} 个任务"
+    "stopAgentAndTasks_other": "停止智能体和 {{count}} 个任务",
+    "checkIn": "询问进度",
+    "checkInHint": "不停止智能体，询问当前进展",
+    "checkInSent": "已询问进度",
+    "askUpdate": "询问进度",
+    "wake": {
+      "ended_one": "{{count}} 个后台任务已结束",
+      "ended_other": "{{count}} 个后台任务已结束",
+      "checkIn_one": "检查 {{count}} 个后台任务的进度",
+      "checkIn_other": "检查 {{count}} 个后台任务的进度",
+      "update": "后台任务需要处理",
+      "asked": "已询问后台任务的进度"
+    },
+    "group_one": "{{count}} 个后台任务",
+    "group_other": "{{count}} 个后台任务"
   },
   "dataThread": {
     "tableSet_one": "{{count}} 个表",
@@ -503,6 +523,8 @@
     "completed": "已完成",
     "workspace": "工作区",
     "thinking": "思考中...",
+    "stopped": "已停止",
+    "stoppedHint": "运行在完成前被停止。智能体会保留已完成的工作，并从这里继续。",
     "status": {
       "actionFailed": "尝试失败：{{reason}}",
       "chartFailed": "图表尝试失败：{{reason}}",
@@ -1274,7 +1296,8 @@
       "failed": "失败",
       "retry": "重试中",
       "running": "运行中",
-      "skipped": "已跳过"
+      "skipped": "已跳过",
+      "missed": "已错过"
     },
     "model": "模型",
     "approveAll": "自动批准请求",
@@ -1299,7 +1322,8 @@
     "runOnSchedule": "按定时运行",
     "notScheduled": "未设定时",
     "instructions": "说明",
-    "instructionsPlaceholder": "可选：使用哪些输入、关注什么"
+    "instructionsPlaceholder": "可选：使用哪些输入、关注什么",
+    "runMissed": "错过了 {{time}} 的运行。点击立即运行。"
   },
   "administration": {
     "title": "管理",

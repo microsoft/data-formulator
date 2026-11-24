@@ -61,6 +61,35 @@ def compact(messages: list[dict[str, Any]], starts: list[int]) -> list[dict[str,
     return compacted
 
 
+_UNANSWERED = "[No result: the run stopped before this call finished.]"
+
+
+def close_unfinished(turn: list[dict[str, Any]], note: str) -> list[dict[str, Any]]:
+    """A turn cut short (stopped or failed), made valid to continue from: every tool call gets a result
+    right after its call, then ``note`` says how the run ended."""
+    closed: list[dict[str, Any]] = []
+    index = 0
+    while index < len(turn):
+        message = turn[index]
+        index += 1
+        if message.get("role") == "tool":
+            # A result with no call before it cannot be sent.
+            continue
+        closed.append(message)
+        calls = [call.get("id") for call in message.get("tool_calls") or [] if isinstance(call, dict)]
+        if message.get("role") != "assistant" or not calls:
+            continue
+        answered = set()
+        while index < len(turn) and turn[index].get("role") == "tool":
+            result = turn[index]
+            index += 1
+            if result.get("tool_call_id") in calls and result.get("tool_call_id") not in answered:
+                answered.add(result["tool_call_id"])
+                closed.append(result if result.get("content") else {**result, "content": _UNANSWERED})
+        closed += [{"role": "tool", "tool_call_id": call, "content": _UNANSWERED} for call in calls if call not in answered]
+    return closed + [{"role": "user", "content": note}]
+
+
 def _without_images(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out = []
     for message in messages:

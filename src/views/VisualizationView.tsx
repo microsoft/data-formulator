@@ -376,7 +376,7 @@ export { generateChartSkeleton, getDataTable, checkChartAvailability };
 export let renderTableChart = (
     chart: Chart, conceptShelfItems: FieldItem[], extTable: any[], 
     width: number = 120, height: number = 120,
-    fieldDisplayNames?: Record<string, string>) => {
+    fieldSemantics?: Record<string, FieldSemanticsInfo>) => {
 
     let fields = Object.entries(chart.encodingMap).filter(([channel, encoding]) => {
         return encoding.fieldID != undefined;
@@ -392,7 +392,7 @@ export let renderTableChart = (
         let name = field.name;
         const isNumeric = rows.some(row => typeof row[name] === 'number');
         return {
-            id: name, label: fieldDisplayNames?.[name] || name, minWidth: 30,
+            id: name, label: fieldSemantics?.[name]?.displayName || name, minWidth: 30,
             align: (isNumeric ? 'right' : undefined) as 'right' | undefined, 
             format: (value: any) => formatCellValue(value), source: field.source
         }
@@ -785,13 +785,13 @@ const VegaChartRenderer: FC<{
     }
 
     if (chart.chartType === "Table") {
-        const displayNames: Record<string, string> = {};
-        if (tableMetadata) {
-            for (const [k, v] of Object.entries(tableMetadata)) {
-                if ((v as any)?.displayName) displayNames[k] = (v as any).displayName;
-            }
+        // Display names and semantic types live in the table's semantics; older tables kept names in metadata.
+        const semantics: Record<string, FieldSemanticsInfo> = { ...fieldSemantics };
+        for (const [k, v] of Object.entries(tableMetadata || {})) {
+            const legacyName = (v as any)?.displayName;
+            if (legacyName && !semantics[k]?.displayName) semantics[k] = { ...semantics[k], displayName: legacyName };
         }
-        return visTableRows.length > 0 ? renderTableChart(chart, conceptShelfItems, visTableRows, 120, 120, Object.keys(displayNames).length > 0 ? displayNames : undefined) : <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }} >
+        return visTableRows.length > 0 ? renderTableChart(chart, conceptShelfItems, visTableRows, 120, 120, semantics) : <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }} >
             <InsightIcon fontSize="large"/>
         </Box>;
     }

@@ -505,7 +505,9 @@ def derive_starter_questions_request():
         logger.error("Error in derive-starter-questions", exc_info=e)
         raise classify_and_wrap_llm_error(e) from e
 
-def _cancellable_agent_stream(events):
+def _cancellable_agent_stream(events, on_cancel=None):
+    """Stream ``events`` from a worker thread; a client that goes away (Stop, or a lost connection) cancels it, and
+    ``on_cancel`` runs right then, while the worker may still be inside a slow call."""
     from data_formulator.data_loader.query_runtime import QueryCancelled, QueryWorker, query_worker_scope
     from data_formulator.error_handler import flush_stream_warnings, stream_error_event
 
@@ -542,6 +544,7 @@ def _cancellable_agent_stream(events):
 
     worker = Thread(target=context.run, args=(produce,), daemon=True)
     worker.start()
+    done = False
     try:
         while True:
             try:
@@ -552,10 +555,16 @@ def _cancellable_agent_stream(events):
                 yield from pending or [json.dumps({"type": "heartbeat"}) + '\n']
                 continue
             if message is finished:
+                done = True
                 break
             yield message
     finally:
         signal.set()
+        if not done and on_cancel is not None:
+            try:
+                on_cancel()
+            except Exception:
+                logger.warning("Could not keep the cancelled run's work", exc_info=True)
         query_worker.close()
         worker.join(timeout=3)
 
@@ -713,6 +722,9 @@ def analyst_streaming():
 
     language_instruction = get_language_instruction(mode="full")
 
+    # The run's agent, so a cancelled stream can keep what it did (AnalystAgent.save_unfinished).
+    running: dict = {}
+
     def generate():
         nonlocal user_question
         load_observation = None
@@ -760,14 +772,14 @@ def analyst_streaming():
                     + json.dumps({"request": terminal_proposal, "result": terminal_result})
                 )
             if mcp_proposal is not None and mcp_proposal.get("kind") == "browser":
-                from data_formulator.analyst.skills.browser.skill import resume_browser_call
+                from data_formulator.analyst.skills.browser.skill import approval_scope, resume_browser_call
 
                 decision = mcp_response["decision"]
                 mcp_proposal["decision"] = decision
                 if decision != "reject":
                     yield json.dumps({"type": "mcp_started", "request": mcp_proposal}) + '\n'
                 mcp_result, mcp_observation = resume_browser_call(
-                    mcp_proposal, decision, owner=identity_id, conversation=conversation_id,
+                    mcp_proposal, decision, owner=identity_id, conversation=approval_scope(conversation_id),
                     scratch_root=workspace.confined_scratch.root)
                 yield json.dumps({"type": "mcp_result", "request": mcp_proposal, "result": mcp_result}) + '\n'
                 user_question = (
@@ -889,6 +901,7 @@ def analyst_streaming():
                 space=space_id,
                 mcp=True,
             )
+            running["agent"] = agent
 
             trajectory = None
             if resume_trajectory:
@@ -941,7 +954,9 @@ def analyst_streaming():
         logger.setLevel(logging.WARNING)
 
     return Response(
-        stream_with_context(_cancellable_agent_stream(_with_warnings(generate()))),
+        stream_with_context(_cancellable_agent_stream(
+            _with_warnings(generate()),
+            on_cancel=lambda: running["agent"].save_unfinished() if "agent" in running else None)),
         mimetype='application/x-ndjson',
     )
 

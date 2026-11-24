@@ -191,16 +191,21 @@ def _schedule_in(content: str | None) -> dict | None:
     return definition.get("schedule") if isinstance(definition, dict) else None
 
 
-def check_schedule_write(schedule: dict):
-    """Adding or changing a schedule sets up unattended runs (``auto_approve`` approves terminal commands), so it is
-    accepted only from the application itself, for a model this server has."""
-    from data_formulator.model_registry import model_registry
-
+def _require_app_origin():
+    """Unattended runs (``auto_approve`` approves terminal commands) are set up or started only from the application."""
     origin = request.headers.get("Origin")
     if request.headers.get("Sec-Fetch-Site") == "cross-site" or (
         origin and urlsplit(origin).hostname not in {"localhost", "127.0.0.1", "::1"}
     ):
         raise AppError(ErrorCode.ACCESS_DENIED, "Schedules must be managed from the application.")
+
+
+def check_schedule_write(schedule: dict):
+    """Adding or changing a schedule sets up unattended runs, so it is accepted only from the application itself, for a
+    model this server has."""
+    from data_formulator.model_registry import model_registry
+
+    _require_app_origin()
     if schedule.get("enabled", True) and model_registry.get_config(schedule["model_id"]) is None:
         raise ValueError("Choose a server-configured model connection for the schedule.")
 
@@ -258,6 +263,33 @@ def delete_instance():
     if scheduler.scheduling_available():
         scheduler.schedule_store().remove(identity, current_space(), path)
     return json_ok({"path": path})
+
+
+def _clear_missed(identity: str, workflow: str):
+    """A new run of a workflow makes its missed scheduled run moot, as a scheduled run would."""
+    from data_formulator.spaces import current_space
+    from data_formulator.workflows import scheduler
+
+    if scheduler.scheduling_available():
+        scheduler.schedule_store().clear_missed(identity, current_space(), workflow)
+
+
+@workflow_bp.route("/run-missed", methods=["POST"])
+def run_missed():
+    """Run one of the user's missed scheduled runs now, as the scheduler would have."""
+    from data_formulator.spaces import current_space
+    from data_formulator.workflows import scheduler
+
+    identity, _, _ = context(False)
+    _require_app_origin()
+    occurrence = (request.get_json() or {}).get("id")
+    try:
+        if not scheduler.scheduling_available():
+            raise ValueError("Scheduling is not available.")
+        scheduler.schedule_store().run_missed(identity, current_space(), occurrence)
+    except ValueError as exc:
+        raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
+    return json_ok({"id": occurrence})
 
 
 @workflow_bp.route("/run-state", methods=["POST"])
@@ -410,6 +442,7 @@ def run_instance():
             state = new_run(parse_definition(content), UUID(identifier).hex, body.get("setup"), _get_ui_lang())
             if isinstance(body.get("path"), str):
                 state["workflow_path"] = body["path"]
+                _clear_missed(identity, body["path"])
         if "external_references" in body:
             from data_formulator.analyst.workspace_inputs import normalize_external_references
 

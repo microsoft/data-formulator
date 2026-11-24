@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from apscheduler.triggers.cron import CronTrigger
 from jsonschema import Draft202012Validator
 
-from data_formulator.workflows.instances import SCHEDULE_SCHEMA
+from data_formulator.workflows.instances import RETIRED_SCHEDULE_KEYS, SCHEDULE_SCHEMA
 
 
 # The fields of a workflow's ``schedule:`` block that set when it runs; changing them moves the next run.
@@ -21,7 +21,7 @@ TIMING = ("time", "weekdays", "timezone")
 def schedule_trigger(config: dict) -> CronTrigger:
     """The trigger for a workflow's ``schedule:`` block (or an index row's config, which adds ``workflow`` and
     ``site``)."""
-    block = {key: value for key, value in config.items() if key not in ("workflow", "site")}
+    block = {key: value for key, value in config.items() if key not in ("workflow", "site", *RETIRED_SCHEDULE_KEYS)}
     error = next(Draft202012Validator(SCHEDULE_SCHEMA).iter_errors(block), None)
     if error:
         raise ValueError(error.message)
@@ -43,6 +43,17 @@ def next_occurrence(config: dict, after: datetime) -> str:
     return result.astimezone(timezone.utc).isoformat()
 
 
+# A run found late (the computer was asleep, or the app closed) still runs if it is at most this late; otherwise it is
+# recorded as missed, and the user can run it from its workflow.
+CATCH_UP_WINDOW = timedelta(hours=12)
+
+
+def latest_occurrence(config: dict, since: str, now: datetime) -> str:
+    """The last occurrence at or before ``now``, counting from ``since`` (itself an occurrence)."""
+    latest = since
+    while datetime.fromisoformat(following := next_occurrence(config, datetime.fromisoformat(latest))) <= now:
+        latest = following
+    return latest
 
 
 def _same_timing(left: dict, right: dict) -> bool:
@@ -208,15 +219,18 @@ class ScheduleStore:
                 config = schedule["config"]
                 active = connection.execute("SELECT 1 FROM occurrences WHERE schedule_id = ? AND status IN ('running', 'retry')",
                                             (row["id"],)).fetchone()
-                missed = now - datetime.fromisoformat(row["next_at"]) > timedelta(minutes=1)
-                occurrence_status = "skipped" if active or (missed and not config.get("catch_up")) else "running"
-                identifier = uuid5(UUID(row["id"]), row["next_at"]).hex
+                # Found late, only the latest due occurrence is considered: it runs, or is missed if too late.
+                latest = latest_occurrence(config, row["next_at"], now)
+                occurrence_status = "skipped" if active else "missed" if now - datetime.fromisoformat(latest) > CATCH_UP_WINDOW else "running"
+                identifier = uuid5(UUID(row["id"]), latest).hex
                 inserted = connection.execute("INSERT OR IGNORE INTO occurrences (id, schedule_id, scheduled_for, status, message) VALUES (?, ?, ?, ?, ?)",
-                                   (identifier, row["id"], row["next_at"], occurrence_status,
-                                    "Overlapping run" if active else "Missed occurrence" if occurrence_status == "skipped" else ""))
+                                   (identifier, row["id"], latest, occurrence_status, "Overlapping run" if active else ""))
                 connection.execute("UPDATE schedules SET next_at = ? WHERE id = ?", (next_occurrence(config, now), row["id"]))
+                if occurrence_status != "skipped":
+                    # A schedule keeps only its latest missed run, until anything runs: older misses are moot.
+                    connection.execute("DELETE FROM occurrences WHERE schedule_id = ? AND status = 'missed' AND scheduled_for < ?", (row["id"], latest))
                 if occurrence_status == "running" and inserted.rowcount:
-                    claimed.append({"id": identifier, "schedule_id": row["id"], "scheduled_for": row["next_at"], "attempts": 0})
+                    claimed.append({"id": identifier, "schedule_id": row["id"], "scheduled_for": latest, "attempts": 0})
             for row in connection.execute("""SELECT occurrences.* FROM occurrences JOIN schedules ON schedules.id=occurrences.schedule_id
                     WHERE status='retry' AND retry_at <= ? AND schedules.enabled=1""", (timestamp,)).fetchall():
                 connection.execute("UPDATE occurrences SET status='running' WHERE id=?", (row["id"],))
@@ -233,6 +247,21 @@ class ScheduleStore:
     def recover(self):
         with self.connection() as connection:
             connection.execute("UPDATE occurrences SET status='needs_attention', message='Backend stopped; inspect partial outputs before resuming.' WHERE status='running'")
+
+    def clear_missed(self, owner: str, site: str | None, workflow: str):
+        """Drop the workflow's missed run (it was run by hand)."""
+        with self.connection() as connection:
+            connection.execute("DELETE FROM occurrences WHERE status = 'missed' AND schedule_id IN "
+                               "(SELECT id FROM schedules WHERE owner = ? AND site = ? AND workflow = ?)", (owner, site or "", workflow))
+
+    def run_missed(self, owner: str, site: str | None, identifier: str, now: datetime | None = None):
+        """Queue the owner's missed run to start now; the dispatcher picks it up within a tick."""
+        timestamp = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+        with self.connection() as connection:
+            if not connection.execute("UPDATE occurrences SET status = 'retry', retry_at = ?, attempts = 0 WHERE id = ? AND status = 'missed' "
+                                      "AND schedule_id IN (SELECT id FROM schedules WHERE owner = ? AND site = ? AND enabled = 1 AND scheduled = 1)",
+                                      (timestamp, identifier, owner, site or "")).rowcount:
+                raise ValueError("Missed run not found.")
 
     def resolve(self, identifier: str):
         """Mark a needs-attention occurrence completed after its run was resumed in the session."""

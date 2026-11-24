@@ -38,6 +38,8 @@ export interface TerminalProposal {
     sandboxUnavailable?: boolean;
     /** How to install one (e.g. Bubblewrap on Linux). */
     sandboxInstallHint?: string | null;
+    /** A background task's start (start_task), not a command that runs to its end. */
+    background?: boolean;
 }
 
 export const TerminalFilesystemSummary = ({ policy, compact = false, children, inline = false }: {

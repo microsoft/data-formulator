@@ -9,6 +9,7 @@ import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/a
 import { SimpleChartRecBox } from '../../../../src/views/SimpleChartRecBox';
 import { buildTableRefChip } from '../../../../src/views/DataThreadCards';
 import { apiRequest, streamRequest } from '../../../../src/app/apiClient';
+import { TASK_WAKE_BATCH_MS } from '../../../../src/app/backgroundTasks';
 
 vi.mock('../../../../src/app/apiClient', () => ({
     apiRequest: vi.fn(),
@@ -165,7 +166,7 @@ describe('Analyst landing attachment handoff', () => {
         expect(buildThreads(dfSelectors.getThreadGraph(store.getState())).some(thread => thread.branchFromId)).toBe(false);
     });
 
-    it('unsends a message stopped before any reply: back in the chat box, focus restored, resent without a branch', async () => {
+    it('keeps a message stopped before any reply in the thread, marked stopped, and sends on from it without a branch', async () => {
         const store = configureStore({ reducer: dataFormulatorReducer });
         render(<Provider store={store}><SimpleChartRecBox /></Provider>);
         act(() => {
@@ -180,22 +181,21 @@ describe('Analyst landing attachment handoff', () => {
         const input = screen.getByRole('textbox') as HTMLTextAreaElement;
         fireEvent.change(input, { target: { value: 'use edge browswer' } });
         fireEvent.keyDown(input, { key: 'Enter' });
-        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1));
-        await waitFor(() => expect(turnWith(store, turn => turn.prompt === 'use edge browswer')).toBeUndefined());
-        expect(store.getState().draftNodes).toHaveLength(0);
-        expect(input.value).toBe('use edge browswer');
-        expect(store.getState().focusedId).toEqual({ type: 'text', textId: 'answer' });
-        expect(turnWith(store, turn => turn.id === 'answer').answered).toBeUndefined();
+        await waitFor(() => expect(store.getState().draftNodes[0]?.derive.status).toBe('interrupted'));
+        // The agent keeps the stopped run, so the message stays where it was sent and the chat box is free.
+        const stopped = turnWith(store, turn => turn.prompt === 'use edge browswer');
+        expect(stopped).toMatchObject({ parentNodeId: 'answer' });
+        expect(input.value).toBe('');
 
         fireEvent.change(input, { target: { value: 'use the Edge browser' } });
         fireEvent.keyDown(input, { key: 'Enter' });
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(2));
-        expect(store.getState().textTurns.filter(turn => turn.prompt)).toEqual([
-            expect.objectContaining({ prompt: 'use the Edge browser', parentNodeId: 'answer' })]);
+        expect(turnWith(store, turn => turn.prompt === 'use the Edge browser')).toMatchObject({ parentNodeId: stopped.id, afterStop: true });
+        expect(store.getState().draftNodes.every(draft => draft.derive.status !== 'interrupted')).toBe(true);
         expect(buildThreads(dfSelectors.getThreadGraph(store.getState())).some(thread => thread.branchFromId)).toBe(false);
     });
 
-    it('keeps a run stopped after it produced something, with the message left in the chat box to send on from there', async () => {
+    it('keeps a run stopped after it produced something, with its retry at hand and the chat box free', async () => {
         const store = configureStore({ reducer: dataFormulatorReducer });
         render(<Provider store={store}><SimpleChartRecBox /></Provider>);
         act(() => {
@@ -213,7 +213,7 @@ describe('Analyst landing attachment handoff', () => {
         await waitFor(() => expect(store.getState().draftNodes[0]?.derive.status).toBe('interrupted'));
         const stopped = store.getState().draftNodes[0];
         expect(store.getState().focusedId).toEqual({ type: 'draft', draftId: stopped.id });
-        expect(input.value).toBe('use edge browswer');
+        expect(input.value).toBe('');
         expect(turnWith(store, turn => turn.prompt === 'use edge browswer')).toBeDefined();
 
         fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
@@ -237,7 +237,7 @@ describe('Analyst landing attachment handoff', () => {
         fireEvent.change(input, { target: { value: 'use the Edge browser' } });
         fireEvent.keyDown(input, { key: 'Enter' });
         await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(2));
-        expect(turnWith(store, turn => turn.prompt === 'use the Edge browser')).toMatchObject({ parentNodeId: stoppedAt });
+        expect(turnWith(store, turn => turn.prompt === 'use the Edge browser')).toMatchObject({ parentNodeId: stoppedAt, afterStop: true });
         expect(store.getState().draftNodes.every(draft => draft.derive.status !== 'interrupted')).toBe(true);
         expect(buildThreads(dfSelectors.getThreadGraph(store.getState())).some(thread => thread.branchFromId)).toBe(false);
     });
@@ -1659,6 +1659,94 @@ describe('Analyst landing attachment handoff', () => {
             { tool: 'run_terminal', toolCallId: proposal.id, executionId: proposal.id, status: 'completed' },
         ]);
         expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('keeps the last status of a background task on the command that started it', async () => {
+        vi.mocked(apiRequest).mockImplementation(async (url: string) => (url === '/api/tasks/list' ? { data: { tasks: [{
+            id: 'task-1', conversation_id: 'run', purpose: 'Count', command: 'python count.py', status: 'completed', started: 0,
+            ended: 130, elapsed_seconds: 130, exit_code: 0, stopped_by: null, error: null, output_bytes: 6, last_lines: [], log: '' }] } }
+            : { data: {} }) as any);
+        const { store } = mountTask();
+        act(() => store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'step', displayId: 'step', textKind: 'explain',
+            content: 'Count', parentNodeId: 'conversation-root:test', createdAt: 1, executions: [{ id: 'cmd', argv: ['python'], cwd: '/w',
+                purpose: 'Count', status: 'completed', result: { background_task: 'task-1', exit_code: null } }] })));
+        await waitFor(() => expect(turnWith(store, turn => turn.id === 'step').executions[0].result.task)
+            .toEqual({ status: 'completed', started: 0, ended: 130, exit_code: 0 }));
+    });
+
+    const bgTask = (extra: Record<string, unknown>) => ({ id: 'task-1', conversation_id: 'run-a', purpose: 'Crawl the portal',
+        command: 'python crawl.py', status: 'running', started: Date.now() / 1000 - 30, ended: null, elapsed_seconds: 30,
+        exit_code: null, stopped_by: null, error: null, output_bytes: 6, last_lines: [], log: '', wake: true, check_in_at: null,
+        wake_due: null, ...extra });
+
+    it('wakes the agent in the thread that started a task once it ends with no run following it, and only once', async () => {
+        vi.mocked(apiRequest).mockImplementation(async (url: string) => (url === '/api/tasks/list'
+            ? { data: { tasks: [bgTask({ status: 'completed', ended: Date.now() / 1000, exit_code: 0, wake_due: 'ended' })] } }
+            : { data: {} }) as any);
+        const { store } = mountTask();
+        act(() => {
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'ask', displayId: 'ask', textKind: 'explain', content: '',
+                prompt: 'Crawl the portal', parentNodeId: 'conversation-root:test', actionId: 'run-a', createdAt: 1 }));
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'started', displayId: 'started', textKind: 'explain',
+                content: 'Started the crawl; I will report back.', parentNodeId: 'ask', actionId: 'run-a', createdAt: 2 }));
+            // The user has moved on to something else.
+            store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'other', displayId: 'other', textKind: 'explain', content: 'Elsewhere',
+                parentNodeId: 'conversation-root:other', createdAt: 3 }));
+            store.dispatch(dfActions.setFocused({ type: 'text', textId: 'other' }));
+        });
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1), { timeout: 6000 });
+        expect(requestBody().user_question).toContain('[Automatic message] Background tasks you started need your attention');
+        expect(requestBody().user_question).toContain('task-1 (completed): Crawl the portal');
+        expect(turnWith(store, turn => turn.auto === 'task-wake')).toMatchObject({ prompt: '1 background task ended', parentNodeId: 'started' });
+        // The server still lists it as due until the agent's run is told; the app does not wake the agent twice.
+        await new Promise(resolve => setTimeout(resolve, TASK_WAKE_BATCH_MS + 1000));
+        expect(streamRequest).toHaveBeenCalledTimes(1);
+    }, 15000);
+
+    it('holds a wake-up while the user writes a message, and sends it once the chat box is empty', async () => {
+        vi.mocked(apiRequest).mockImplementation(async (url: string) => (url === '/api/tasks/list'
+            ? { data: { tasks: [bgTask({ status: 'completed', ended: Date.now() / 1000, exit_code: 0, wake_due: 'ended' })] } }
+            : { data: {} }) as any);
+        const { store } = mountTask();
+        act(() => store.dispatch(dfActions.addTextTurn({ kind: 'text', id: 'ask', displayId: 'ask', textKind: 'explain', content: '',
+            prompt: 'Crawl the portal', parentNodeId: 'conversation-root:test', actionId: 'run-a', createdAt: 1 })));
+        const input = screen.getByRole('textbox') as HTMLTextAreaElement;
+        fireEvent.change(input, { target: { value: 'Also look at' } });
+        await new Promise(resolve => setTimeout(resolve, TASK_WAKE_BATCH_MS + 1000));
+        expect(streamRequest).not.toHaveBeenCalled();
+        // The user gave up on that message: the news goes to the agent now.
+        fireEvent.change(input, { target: { value: '' } });
+        await waitFor(() => expect(streamRequest).toHaveBeenCalledTimes(1), { timeout: 6000 });
+        expect(turnWith(store, turn => turn.auto === 'task-wake')).toBeDefined();
+    }, 15000);
+
+    it('checks in on a working run without stopping it', async () => {
+        vi.mocked(apiRequest).mockImplementation(async (url: string) => (url === '/api/tasks/list'
+            ? { data: { tasks: [bgTask({})] } } : { data: {} }) as any);
+        let release!: () => void;
+        const held = new Promise<void>(resolve => { release = resolve; });
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'tool_start', tool: 'wait_tasks', tool_call_id: 'wait' } as any;
+            await held;
+        });
+        mountTask({ text: 'How is the crawl going?', images: [], attachments: [] });
+        fireEvent.click(await screen.findByRole('button', { name: 'Check in' }));
+        await waitFor(() => expect(vi.mocked(apiRequest).mock.calls.some(([url]) => url === '/api/tasks/checkin')).toBe(true));
+        const [, options] = vi.mocked(apiRequest).mock.calls.find(([url]) => url === '/api/tasks/checkin')!;
+        expect(JSON.parse(String(options?.body)).conversation_id).toBe(requestBody().conversation_id);
+        expect(screen.getByRole('button', { name: 'Asked for an update' })).toBeDisabled();
+        release();
+    });
+
+    it('lists a background task the run started right away', async () => {
+        const proposal = { id: 'bg', argv: ['python', 'count.py'], cwd: '/data', purpose: 'Count slowly', background: true };
+        vi.mocked(streamRequest).mockImplementationOnce(async function* () {
+            yield { type: 'terminal_started', request: proposal } as any;
+            yield { type: 'terminal_result', request: proposal, result: { background_task: 'task-1', exit_code: null } } as any;
+        });
+        mountTask({ text: 'Count in the background', images: [], attachments: [] });
+        await waitFor(() => expect(vi.mocked(apiRequest).mock.calls.filter(([url]) => url === '/api/tasks/list').length)
+            .toBeGreaterThan(1));
     });
 
     it.each(['completed', 'interrupted'] as const)('records Auto terminal commands as %s without an approval dialog', async outcome => {

@@ -96,7 +96,7 @@ const scheduleChange = (before?: Partial<ScheduleConfig>, after?: Partial<Schedu
     if (!before) return 'added';
     if ((before.enabled !== false) !== (after.enabled !== false)) return after.enabled === false ? 'paused' : 'resumed';
     const same = (keys: (keyof ScheduleConfig)[]) => keys.every(key => JSON.stringify(before[key]) === JSON.stringify(after[key]));
-    return same(['time', 'weekdays', 'timezone', 'setup', 'model_id', 'auto_approve', 'catch_up', 'language', 'max_retries']) ? null : 'changed';
+    return same(['time', 'weekdays', 'timezone', 'setup', 'model_id', 'auto_approve', 'language', 'max_retries']) ? null : 'changed';
 };
 
 type SessionItem = SessionsFormArtifact['sessions']['items'][number];

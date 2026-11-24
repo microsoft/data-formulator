@@ -429,7 +429,13 @@
     "running_other": "{{count}} background tasks running",
     "status": {
       "stopping": "stopping…",
-      "running": "running"
+      "running": "running",
+      "completed": "finished",
+      "failed": "failed",
+      "stopped": "stopped",
+      "timed_out": "ran out of time",
+      "unknown": "status unknown (the server restarted)",
+      "not_started": "didn't start"
     },
     "stop": "Stop",
     "log": "Log",
@@ -441,7 +447,21 @@
     "alsoStop": "Also stop this task",
     "stopAgent": "Stop agent",
     "stopAgentAndTasks_one": "Stop agent and {{count}} task",
-    "stopAgentAndTasks_other": "Stop agent and {{count}} tasks"
+    "stopAgentAndTasks_other": "Stop agent and {{count}} tasks",
+    "checkIn": "Check in",
+    "checkInHint": "Ask the agent where things stand, without stopping it",
+    "checkInSent": "Asked for an update",
+    "askUpdate": "Ask for an update",
+    "wake": {
+      "ended_one": "{{count}} background task ended",
+      "ended_other": "{{count}} background tasks ended",
+      "checkIn_one": "Checking in on {{count}} background task",
+      "checkIn_other": "Checking in on {{count}} background tasks",
+      "update": "Background tasks need attention",
+      "asked": "Asked for an update on background tasks"
+    },
+    "group_one": "{{count}} background task",
+    "group_other": "{{count}} background tasks"
   },
   "dataThread": {
     "tableSet_one": "{{count}} table",
@@ -503,6 +523,8 @@
     "completed": "completed",
     "workspace": "workspace",
     "thinking": "thinking...",
+    "stopped": "Stopped",
+    "stoppedHint": "The run was stopped before it finished. The agent keeps what it did and continues from here.",
     "status": {
       "actionFailed": "attempt failed: {{reason}}",
       "chartFailed": "chart attempt failed: {{reason}}",
@@ -1274,7 +1296,8 @@
       "failed": "Failed",
       "retry": "Retrying",
       "running": "Running",
-      "skipped": "Skipped"
+      "skipped": "Skipped",
+      "missed": "Missed"
     },
     "model": "Model",
     "approveAll": "Approve requests automatically",
@@ -1299,7 +1322,8 @@
     "runOnSchedule": "Run on a schedule",
     "notScheduled": "Not scheduled",
     "instructions": "Instructions",
-    "instructionsPlaceholder": "Optional: which inputs to use, what to focus on"
+    "instructionsPlaceholder": "Optional: which inputs to use, what to focus on",
+    "runMissed": "Missed {{time}}. Click to run it now."
   },
   "administration": {
     "title": "Administration",

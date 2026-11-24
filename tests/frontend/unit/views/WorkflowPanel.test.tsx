@@ -356,6 +356,16 @@ describe('Workflow session publication', () => {
         expect(inferenceCalls()).toHaveLength(3);
     });
 
+    it('applies the semantic types a workflow declared with its data at once, without waiting for inference', async () => {
+        const fallback = vi.mocked(apiRequest).getMockImplementation()!;
+        vi.mocked(apiRequest).mockImplementation(async (url, options) => url === getUrls().SERVER_PROCESS_DATA_ON_LOAD
+            ? new Promise(() => {}) : fallback(url, options));
+        await publishWorkflowRun({ ...run(), outputs: [{ id: 'data', type: 'tool_result', tool: 'create_data',
+            stdout: JSON.stringify({ table_name: 'measurements', field_metadata: { value: 'Year' } }) }] }, 'session');
+        expect(store.getState().tableSemantics).toEqual([{ tableId: 'measurements',
+            fields: { value: { semanticType: 'Year', authored: { semanticType: 'Year' } } } }]);
+    });
+
     it('keeps a published derived table out of the workspace source shelf', () => {
         const source = { kind: 'table' as const, id: 'aircraft', displayId: 'Aircraft Incidents',
             names: [], rows: [], metadata: {}, description: '', virtual: { tableId: 'aircraft', rowCount: 0 } };
@@ -2674,6 +2684,18 @@ describe('Workflow session publication', () => {
         fireEvent.click(within(confirm).getByRole('button', { name: 'Delete' }));
         await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/workflows/delete',
             expect.objectContaining({ body: JSON.stringify({ path: 'review.yaml' }) })));
+    });
+
+    it('runs a missed scheduled run from its chip instead of opening a session', async () => {
+        vi.mocked(apiRequest).mockImplementation(async () => ({ data: { items: [{ path: 'review.yaml', name: 'Review', origin: 'user' }], runs: [],
+            scheduling: true, schedules: { 'review.yaml': { id: 's', scheduled: true, enabled: true, next_at: '2026-10-01T16:00:00Z',
+                history: [{ id: 'gone', status: 'missed', scheduled_for: '2026-09-30T16:00:00Z' }] } } } }) as any);
+        const openSession = vi.fn();
+        render(<Provider store={store}><WorkflowPanel onCreateSession={vi.fn()} onOpenSession={openSession} /></Provider>);
+        fireEvent.click(await screen.findByRole('button', { name: /^Missed Sep 30.*Click to run it now/ }));
+        await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/workflows/run-missed',
+            expect.objectContaining({ body: JSON.stringify({ id: 'gone' }) })));
+        expect(openSession).not.toHaveBeenCalled();
     });
 
     it('keeps a saved workflow when deletion fails', async () => {

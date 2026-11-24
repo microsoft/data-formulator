@@ -77,7 +77,7 @@ export interface LookSpec {
 
 const soft: LookSpec = {
     vars: {
-        '--df-line-view': null, '--df-line-component': null, '--df-line-divider': null, '--df-line-edge': null,
+        '--df-line-view': null, '--df-line-component': null, '--df-line-divider': null, '--df-line-edge': null, '--df-line-card': null,
         '--df-line-rail': null, '--df-icon-muted': null,
         '--df-ambient-shadow': null, '--df-hover-lift': null, '--df-rail-width': null, '--df-ring-width': null,
         '--df-pill-line': null, '--df-card-radius': null,
@@ -118,6 +118,8 @@ const sharp: LookSpec = {
         // firm slate line, so the page reads as a few drafted areas; cards and panels inside stay much lighter.
         '--df-line-view': '#8a93a3', '--df-line-component': '#e2e5ea',
         '--df-line-divider': '#e6e8ec', '--df-line-edge': '#8a93a3',
+        // Grid cards (landing examples, sessions, workflows) between the two, so many cards side by side stay calm.
+        '--df-line-card': '#d4d8df',
         // The data thread off its focused chain: its rail and icons readable rather than faint.
         '--df-line-rail': '#c8cdd5', '--df-icon-muted': '#8a93a3',
         // Flat: no decorative shadows, a small even hover lift (its outline does the rest), and finer lines.
@@ -175,7 +177,7 @@ const dark: LookSpec = {
     vars: {
         ...sharp.vars,
         '--df-line-view': '#566070', '--df-line-component': '#363d48',
-        '--df-line-divider': '#2e343e', '--df-line-edge': '#566070',
+        '--df-line-divider': '#2e343e', '--df-line-edge': '#566070', '--df-line-card': '#434a56',
         '--df-line-rail': '#465060', '--df-icon-muted': '#7d8696', '--df-rail-width': '2px',
         '--df-canvas-pattern': 'radial-gradient(rgba(255, 255, 255, 0.09) 0.75px, transparent 1px)',
         // Ink and paper (tokens.ts `ink`, `paper`): the colour of text-alpha greys and of white surfaces.

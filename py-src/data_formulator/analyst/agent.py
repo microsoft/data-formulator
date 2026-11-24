@@ -70,7 +70,7 @@ from data_formulator.analyst.skills import (
     build_registry,
 )
 from data_formulator.analyst.tools import build_tools
-from data_formulator.analyst.history import SessionHistory
+from data_formulator.analyst.history import SessionHistory, close_unfinished
 from data_formulator.analyst.plan import RunPlan, read_plan, split_plan
 
 # The agent's request to move a referenced request to a thread of its own (see AnalystAgent._reference_note).
@@ -264,6 +264,8 @@ _PROGRESS_REMINDER = (
     "results do you have, are you repeating an approach that is not working, and what is the most direct next step? "
     "If you are blocked or need a decision, {escalation}. Otherwise, continue."
 )
+# The user pressed Check in while the run was working, not waiting on its tasks.
+_CHECK_IN_NOTE = "[Automatic message] The user asked for an update: tell them briefly where things stand, then continue."
 
 # The always-on baseline profile. It composes concrete capability skills but
 # owns no tools, actions, schemas, or handlers itself.
@@ -693,6 +695,9 @@ class AnalystAgent:
         self._progress_reminder_start = 0
         # The run's checklist plan, read from the agent's narration (design-docs/64).
         self._plan = RunPlan()
+        # The run's turn until it joins the session's conversation (see save_unfinished).
+        self._open_turn: dict[str, Any] | None = None
+        self._open_turn_lock = threading.Lock()
         self._references: list[dict[str, Any]] = []
         self._placement_open = False
         self._last_run_chart_id: str | None = None
@@ -933,9 +938,13 @@ class AnalystAgent:
                     at += 1
                 trajectory[at:at] = [*self._preload_messages(preloads), {"role": "user", "content": changes}]
             self._reset_progress_reminder(trajectory)
+            with self._open_turn_lock:
+                self._open_turn = {"history": history, "trajectory": trajectory, "start": turn_start,
+                                   "continued": continued, "conversation_id": conversation_id} \
+                    if history is not None and turn_start is not None else None
 
             def commit() -> None:
-                if history is not None and turn_start is not None:
+                if self._take_open_turn() is not None:
                     history.commit(self.client.model, trajectory[turn_start:], continued=continued)
 
             while True:
@@ -971,6 +980,7 @@ class AnalystAgent:
                     # is fatal.
                     if action_reason == "llm_error":
                         final_status = "llm_error"
+                        self.save_unfinished(error=action_error or "LLM API error")
                         # The classified provider error is user-safe; the generic code would hide it.
                         yield self._error_event(
                             iteration,
@@ -1068,7 +1078,7 @@ class AnalystAgent:
                     # A deliverable that completed the run joins the conversation; a pause
                     # joins it when its resumed run finishes.
                     if self._run_end == "interact":
-                        if history is not None and turn_start is not None:
+                        if self._take_open_turn() is not None:
                             history.remember_paused(conversation_id, turn_start, continued)
                     else:
                         commit()
@@ -1078,8 +1088,45 @@ class AnalystAgent:
                     return
 
                 continue
+        except GeneratorExit:
+            self.save_unfinished()
+            raise
+        except Exception as exc:
+            self.save_unfinished(error=str(exc) or type(exc).__name__)
+            raise
         finally:
             rlog.close()
+
+    def _take_open_turn(self) -> dict[str, Any] | None:
+        """The run's turn, taken once: by its commit, its pause, or save_unfinished."""
+        with self._open_turn_lock:
+            turn, self._open_turn = self._open_turn, None
+        return turn
+
+    def save_unfinished(self, error: str | None = None) -> None:
+        """Keep a run that did not finish (stopped by the user, a lost connection, or an error) in the session's
+        conversation, so the next request continues from its work instead of redoing it. Safe to call from the
+        request's thread while the run is still unwinding; a run that already joined the conversation is left alone."""
+        turn = self._take_open_turn()
+        if turn is None:
+            return
+        history, start = turn["history"], turn["start"]
+        if self._run_end == "interact":
+            history.remember_paused(turn["conversation_id"], start, turn["continued"])
+            return
+        messages = [dict(message) for message in list(turn["trajectory"])[start:]]
+        if messages:
+            history.commit(self.client.model, close_unfinished(messages, self._unfinished_note(error)),
+                           continued=turn["continued"])
+
+    def _unfinished_note(self, error: str | None) -> str:
+        how = f"ended on an error ({error.strip()[:300]})" if error else "was stopped (by the user or a lost connection)"
+        open_steps = "; ".join(f"{number}) {item.text}" for number, item in enumerate(self._plan.items, start=1)
+                               if item.status == "open")
+        return (f"[RUN NOT FINISHED] This request {how} before it finished; any call above without a result was "
+                "cut off. What it did still holds (results, saved files, open browser tabs); Python variables are gone."
+                + (f" Plan steps left open: {open_steps}." if open_steps else "")
+                + " Build on this work rather than starting over, unless the user asks for something else.")
 
     # ------------------------------------------------------------------
     # Skill loading + dispatch
@@ -1924,6 +1971,17 @@ class AnalystAgent:
         self._progress_reminder_start = len(messages)
         return True
 
+    def _take_check_in(self) -> bool:
+        """Whether the user asked this run for an update (the Check in button) since its last step."""
+        conversation = (getattr(self, "_run_payload", None) or {}).get("conversation_id")
+        if not self.identity_id or not self.workspace_id or not conversation:
+            return False
+        try:
+            from data_formulator.analyst.background_tasks import task_manager
+            return task_manager().take_nudge(self.identity_id, self.workspace_id, conversation)
+        except Exception:  # a check-in must never break a run
+            return False
+
     def _background_task_note(self) -> str:
         """The session's background tasks: those still running, and those that ended recently (maybe while no run was there)."""
         try:
@@ -1938,6 +1996,8 @@ class AnalystAgent:
             return ""
         if not tasks:
             return ""
+        # The agent hears of these endings now, so they wake no follow-up.
+        task_manager().tell(tasks)
         return ("[BACKGROUND TASKS]\n\nLong commands started in this session (they run apart from any agent run; the user "
                 "can stop them). Use wait_tasks (terminal skill) or their logs to follow up when relevant; do not restart one the user stopped "
                 "unless they ask.\n" + describe_tasks(tasks, lines=3) + "\n\n")
@@ -2032,6 +2092,9 @@ class AnalystAgent:
             llm_calls_in_cycle += 1
             if self._remind_progress_if_due(messages, "this request", "ask the user"):
                 rlog.log("progress_reminder", iteration=outer_iteration, round=round_idx + 1)
+            if self._take_check_in():
+                messages.append({"role": "user", "content": _CHECK_IN_NOTE})
+                rlog.log("check_in", iteration=outer_iteration, round=round_idx + 1)
             tools = self._current_tools()
             rlog.log("llm_request", iteration=outer_iteration,
                      round=round_idx + 1,

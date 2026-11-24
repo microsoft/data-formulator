@@ -17,7 +17,7 @@ import { getUrls } from '../app/utils';
 import { iconVar, textVar } from '../app/layout';
 import { frameColor, heroInputLine, inkColor } from '../app/look';
 import { SPACE_COLUMN, spaceText } from '../spaces/layout';
-import { ambientShadow, cardRadius, metaText, weight } from '../app/tokens';
+import { ambientShadow, cardRadius, metaText, paper, weight } from '../app/tokens';
 
 /** A space's landing (design-docs/69): its own suggested questions and chat placeholder. */
 export interface LandingSpace {
@@ -41,15 +41,21 @@ export const chipsThatFit = (widths: number[], more: number, available: number, 
     return Math.max(1, count);
 };
 
-const chipSx = (space: boolean) => ({
-    fontSize: space ? spaceText.body : textVar.md, minHeight: space ? 34 : 30, height: { xs: 'auto', sm: space ? 34 : 30 }, maxWidth: '100%',
-    borderRadius: cardRadius('8px'),
-    // Sharp: the input below is the one near-black box; its suggestions sit a level lighter, as in the workspace.
-    color: space ? (theme: Theme) => inkColor(theme, 0.8) : 'text.secondary', borderColor: (theme: Theme) => frameColor(theme, 0.12, 'divider'),
-    '& .MuiChip-label': space ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : { whiteSpace: 'normal' },
-    '& .MuiChip-icon': { fontSize: textVar.lg, ml: 0.5, color: 'text.disabled' },
-    '&:hover': { bgcolor: 'action.hover', borderColor: (theme: Theme) => frameColor(theme, 0.2) },
-});
+const chipSx = (space: boolean) => {
+    // Opaque, so the canvas behind doesn't show through; hover and focus tint it from above.
+    const tinted = { bgcolor: paper(), backgroundImage: (theme: Theme) => `linear-gradient(${theme.palette.action.hover}, ${theme.palette.action.hover})` };
+    return {
+        fontSize: space ? spaceText.body : textVar.md, minHeight: space ? 34 : 30, height: { xs: 'auto', sm: space ? 34 : 30 }, maxWidth: '100%',
+        borderRadius: cardRadius('8px'), bgcolor: paper(),
+        // Sharp: the input below is the one near-black box; its suggestions sit a level lighter, as in the workspace.
+        color: space ? (theme: Theme) => inkColor(theme, 0.8) : 'text.secondary', borderColor: (theme: Theme) => frameColor(theme, 0.12, 'divider'),
+        '& .MuiChip-label': space ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : { whiteSpace: 'normal' },
+        '& .MuiChip-icon': { fontSize: textVar.lg, ml: 0.5, color: 'text.disabled' },
+        // `&&` outranks MUI's clickable-chip hover and focus fills, which are translucent.
+        '&&:hover': { ...tinted, borderColor: (theme: Theme) => frameColor(theme, 0.2) },
+        '&&.Mui-focusVisible': tinted,
+    };
+};
 
 const CHIP_GAP = 6;
 

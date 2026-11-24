@@ -285,6 +285,8 @@ export interface TerminalExecution {
     status: 'awaiting_approval' | 'running' | 'completed' | 'failed' | 'rejected' | 'interrupted' | 'unknown';
     commandText?: string;
     result?: Record<string, unknown>;
+    /** It starts a background task (start_task): the thread shows it with the step's tasks, started or not. */
+    background?: boolean;
 }
 
 /**
@@ -354,8 +356,13 @@ export interface TextTurn {
     /** The user's message (design-docs/58): a turn with a prompt and no
      *  content is a user message node; the agent's reply follows as its own node. */
     prompt?: string;
-    /** The message was sent by the app, not typed: a repair of an app that failed when it opened. */
-    auto?: 'app-repair';
+    /** The message continues a run that was stopped before it finished; the thread shows that stop before it. */
+    afterStop?: true;
+    /** The message was sent by the app, not typed: a repair of an app that failed when it opened, or a follow-up
+     *  because background tasks ended or reached their check-in with no run following them. */
+    auto?: 'app-repair' | 'task-wake';
+    /** The background tasks an automatic follow-up (`auto: 'task-wake'`) is about. */
+    taskIds?: string[];
     /** Files and images the user attached to `prompt`. */
     attachments?: string[];
     /** Each attachment's path in scratch/, by name, so its chip can show a preview (absent for older messages). */
@@ -510,7 +517,7 @@ export interface ConnectorFormArtifact extends SetupFormBase {
 /** A workflow's `schedule:` block (design-docs/78): when and how the local scheduler runs it unattended. */
 export interface ScheduleConfig {
     model_id: string; time: string; timezone: string; weekdays: number[];
-    enabled?: boolean; auto_approve?: boolean; max_retries?: number; catch_up?: boolean;
+    enabled?: boolean; auto_approve?: boolean; max_retries?: number;
     /** Language for the run's reports and messages; unattended runs cannot read the app language. */
     language?: string;
     setup?: { parameters: Record<string, string | number | boolean>; instructions: string };

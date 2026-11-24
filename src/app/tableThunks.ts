@@ -51,6 +51,8 @@ export const importExternalTableReference = createAsyncThunk<
             if (getState().activeWorkspace?.id !== workspaceId) return;
             const table = buildDictTableFromWorkspace(workspaceTable, undefined);
             dispatch(dfActions.replaceExternalTableReference({ referenceId, table }));
+            dispatch(fetchFieldSemanticType(table));
+            dispatch(fetchColumnStats(table));
         } finally {
             if (getState().activeWorkspace?.id === workspaceId) {
                 dispatch(dfActions.finishTableLoad(`import-copy:${referenceId}`));

@@ -66,10 +66,11 @@ SCHEDULE_SCHEMA = {
         "auto_approve": {"type": "boolean", "description": "true: unattended runs approve commands and take the first "
                          "loading option; otherwise they decline them and continue."},
         "max_retries": {"type": "integer", "minimum": 0, "maximum": 3},
-        "catch_up": {"type": "boolean"},
         "language": {"type": "string", "pattern": r"^[a-z]{2,3}$", "description": "Set from the app's language when saved."},
     },
 }
+# Keys schedules once had and no longer use (a late run now always catches up); reading or writing a workflow drops them.
+RETIRED_SCHEDULE_KEYS = ("catch_up",)
 # An agent's proposal may leave the machine's values out; the form fills them in before the file is saved.
 AUTHORED_SCHEDULE_REQUIRED = ["time", "weekdays"]
 
@@ -225,6 +226,8 @@ def set_schedule(content: str, schedule: dict | None) -> str:
     """The workflow YAML with its top-level ``schedule:`` block replaced by ``schedule`` (None removes it).
 
     Edits the text so the rest of the file (comments, order, quoting) stays as written."""
+    if schedule is not None:
+        schedule = {key: value for key, value in schedule.items() if key not in RETIRED_SCHEDULE_KEYS}
     lines = content.splitlines(keepends=True)
     kept, skipping = [], False
     for line in lines:
@@ -299,8 +302,11 @@ def load_workflow_yaml(content: str) -> Any:
     except yaml.YAMLError as exc:
         raise ValueError("Invalid workflow YAML.") from exc
     schedule = workflow.get("schedule") if isinstance(workflow, dict) else None
-    if isinstance(schedule, dict) and type(schedule.get("time")) is int and 0 <= schedule["time"] < 24 * 60:
-        schedule["time"] = f"{schedule['time'] // 60:02d}:{schedule['time'] % 60:02d}"
+    if isinstance(schedule, dict):
+        for key in RETIRED_SCHEDULE_KEYS:
+            schedule.pop(key, None)
+        if type(schedule.get("time")) is int and 0 <= schedule["time"] < 24 * 60:
+            schedule["time"] = f"{schedule['time'] // 60:02d}:{schedule['time'] % 60:02d}"
     return workflow
 
 

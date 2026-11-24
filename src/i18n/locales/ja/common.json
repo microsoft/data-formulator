@@ -429,7 +429,13 @@
     "running_other": "{{count}} 件のバックグラウンドタスクを実行中",
     "status": {
       "stopping": "停止中…",
-      "running": "実行中"
+      "running": "実行中",
+      "completed": "完了",
+      "failed": "失敗",
+      "stopped": "停止",
+      "timed_out": "時間切れ",
+      "unknown": "状態不明（サーバーが再起動しました）",
+      "not_started": "開始されず"
     },
     "stop": "停止",
     "log": "ログ",
@@ -441,7 +447,21 @@
     "alsoStop": "このタスクも停止",
     "stopAgent": "エージェントを停止",
     "stopAgentAndTasks_one": "エージェントと {{count}} 件のタスクを停止",
-    "stopAgentAndTasks_other": "エージェントと {{count}} 件のタスクを停止"
+    "stopAgentAndTasks_other": "エージェントと {{count}} 件のタスクを停止",
+    "checkIn": "状況を確認",
+    "checkInHint": "エージェントを止めずに進み具合を尋ねる",
+    "checkInSent": "状況を問い合わせました",
+    "askUpdate": "状況を尋ねる",
+    "wake": {
+      "ended_one": "バックグラウンドタスクが {{count}} 件終了しました",
+      "ended_other": "バックグラウンドタスクが {{count}} 件終了しました",
+      "checkIn_one": "バックグラウンドタスク {{count}} 件の途中確認",
+      "checkIn_other": "バックグラウンドタスク {{count}} 件の途中確認",
+      "update": "バックグラウンドタスクの確認が必要です",
+      "asked": "バックグラウンドタスクの状況を問い合わせました"
+    },
+    "group_one": "バックグラウンドタスク {{count}} 件",
+    "group_other": "バックグラウンドタスク {{count}} 件"
   },
   "dataThread": {
     "tableSet_one": "{{count}} 個のテーブル",
@@ -503,6 +523,8 @@
     "completed": "完了しました",
     "workspace": "ワークスペース",
     "thinking": "考えています...",
+    "stopped": "停止",
+    "stoppedHint": "実行は完了前に停止されました。エージェントはここまでの作業を保持し、ここから続けます。",
     "status": {
       "actionFailed": "失敗しました: {{reason}}",
       "chartFailed": "グラフの作成に失敗しました: {{reason}}",
@@ -1274,7 +1296,8 @@
       "failed": "失敗",
       "retry": "再試行中",
       "running": "実行中",
-      "skipped": "スキップ"
+      "skipped": "スキップ",
+      "missed": "未実行"
     },
     "model": "モデル",
     "approveAll": "リクエストを自動承認",
@@ -1299,7 +1322,8 @@
     "runOnSchedule": "スケジュールで実行",
     "notScheduled": "スケジュールなし",
     "instructions": "指示",
-    "instructionsPlaceholder": "任意：使う入力や重視する点"
+    "instructionsPlaceholder": "任意：使う入力や重視する点",
+    "runMissed": "{{time}} の実行を逃しました。クリックすると今すぐ実行します。"
   },
   "administration": {
     "title": "管理",

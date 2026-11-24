@@ -2,11 +2,41 @@
  * Tests for buildDictTableFromWorkspace — verifying column description
  * flows from the list-tables API response into DictTable.metadata.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
     buildDictTableFromWorkspace,
+    importExternalTableReference,
     resolveDatabaseImportLimit,
 } from '../../../../src/app/tableThunks';
+import { apiRequest } from '../../../../src/app/apiClient';
+import { store } from '../../../../src/app/store';
+import { dfActions } from '../../../../src/app/dfSlice';
+import { CONNECTOR_ACTION_URLS, getUrls } from '../../../../src/app/utils';
+
+vi.mock('../../../../src/app/apiClient', async importOriginal => ({
+    ...await importOriginal<typeof import('../../../../src/app/apiClient')>(),
+    apiRequest: vi.fn(),
+}));
+
+describe('importExternalTableReference', () => {
+    it('infers the semantic types of the imported copy, so a Year reads 2022', async () => {
+        store.dispatch(dfActions.resetState());
+        store.dispatch(dfActions.setActiveWorkspace({ id: 'session', displayName: 'Session' }));
+        store.dispatch(dfActions.upsertExternalTableReference({ kind: 'external-table-reference', id: 'external:sales',
+            connectorId: 'db', tableKey: 'sales', sourceTable: { id: 'sales', name: 'sales' }, displayName: 'Sales',
+            capturedAt: '', summary: { columns: [] } } as any));
+        vi.mocked(apiRequest).mockImplementation(async (url: string) => ({ data: {
+            [CONNECTOR_ACTION_URLS.IMPORT_DATA]: { table_name: 'sales' },
+            [getUrls().LIST_TABLES]: { tables: [{ name: 'sales', row_count: 1, columns: [{ name: 'year', type: 'INTEGER' }],
+                sample_rows: [{ year: 2022 }] }] },
+            [getUrls().SERVER_PROCESS_DATA_ON_LOAD]: { result: [{ fields: { year: { semantic_type: 'Year' } } }] },
+            [getUrls().GET_COLUMN_STATS]: { tableId: 'sales', statistics: [] },
+        }[url] }) as any);
+        await store.dispatch(importExternalTableReference('external:sales'));
+        await vi.waitFor(() => expect(store.getState().tableSemantics).toEqual([
+            { tableId: 'sales', fields: { year: { semanticType: 'Year' } } }]));
+    });
+});
 
 describe('resolveDatabaseImportLimit', () => {
     it('does not treat an intentional query limit as safety truncation', () => {

@@ -321,7 +321,7 @@ it.each(['pending', 'loaded', 'live-draft', 'interrupted-draft'] as const)(
     for (const id of ids) expect(screen.getAllByText(`${id} response`).length).toBeGreaterThan(0);
     if (hasDraft) expect(screen.getByText('Creating result')).toBeTruthy();
     if (scenario === 'live-draft') expect(screen.getByText(/Checking the result/)).toBeTruthy();
-    if (scenario === 'interrupted-draft') expect(screen.getByText(/Interrupted by page refresh/)).toBeTruthy();
+    if (scenario === 'interrupted-draft') expect(screen.getByText('Stopped')).toBeTruthy();
     if (!pending) expect(screen.getAllByText('Result').length).toBeGreaterThan(0);
     expect(store.getState().textTurns.find(turn => turn.id === 'second')?.executions?.[0].status)
       .toBe(pending ? 'awaiting_approval' : 'completed');

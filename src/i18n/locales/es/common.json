@@ -429,7 +429,13 @@
     "running_other": "{{count}} tareas en segundo plano en ejecución",
     "status": {
       "stopping": "deteniendo…",
-      "running": "en ejecución"
+      "running": "en ejecución",
+      "completed": "terminada",
+      "failed": "falló",
+      "stopped": "detenida",
+      "timed_out": "se agotó el tiempo",
+      "unknown": "estado desconocido (el servidor se reinició)",
+      "not_started": "no se inició"
     },
     "stop": "Detener",
     "log": "Registro",
@@ -441,7 +447,21 @@
     "alsoStop": "Detener también esta tarea",
     "stopAgent": "Detener agente",
     "stopAgentAndTasks_one": "Detener el agente y {{count}} tarea",
-    "stopAgentAndTasks_other": "Detener el agente y {{count}} tareas"
+    "stopAgentAndTasks_other": "Detener el agente y {{count}} tareas",
+    "checkIn": "Consultar",
+    "checkInHint": "Preguntar al agente cómo va, sin detenerlo",
+    "checkInSent": "Actualización solicitada",
+    "askUpdate": "Pedir una actualización",
+    "wake": {
+      "ended_one": "{{count}} tarea en segundo plano terminó",
+      "ended_other": "{{count}} tareas en segundo plano terminaron",
+      "checkIn_one": "Revisando {{count}} tarea en segundo plano",
+      "checkIn_other": "Revisando {{count}} tareas en segundo plano",
+      "update": "Las tareas en segundo plano requieren atención",
+      "asked": "Se pidió una actualización de las tareas en segundo plano"
+    },
+    "group_one": "{{count}} tarea en segundo plano",
+    "group_other": "{{count}} tareas en segundo plano"
   },
   "dataThread": {
     "tableSet_one": "{{count}} tabla",
@@ -503,6 +523,8 @@
     "completed": "completado",
     "workspace": "espacio de trabajo",
     "thinking": "razonando...",
+    "stopped": "Detenido",
+    "stoppedHint": "La ejecución se detuvo antes de terminar. El agente conserva lo que hizo y continúa desde aquí.",
     "status": {
       "actionFailed": "intento fallido: {{reason}}",
       "chartFailed": "intento de gráfico fallido: {{reason}}",
@@ -1274,7 +1296,8 @@
       "failed": "Fallido",
       "retry": "Reintentando",
       "running": "En ejecución",
-      "skipped": "Omitido"
+      "skipped": "Omitido",
+      "missed": "Omitida"
     },
     "model": "Modelo",
     "approveAll": "Aprobar solicitudes automáticamente",
@@ -1299,7 +1322,8 @@
     "runOnSchedule": "Ejecutar según una programación",
     "notScheduled": "Sin programar",
     "instructions": "Instrucciones",
-    "instructionsPlaceholder": "Opcional: qué entradas usar, en qué centrarse"
+    "instructionsPlaceholder": "Opcional: qué entradas usar, en qué centrarse",
+    "runMissed": "Omitida el {{time}}. Haz clic para ejecutarla ahora."
   },
   "administration": {
     "title": "Administración",

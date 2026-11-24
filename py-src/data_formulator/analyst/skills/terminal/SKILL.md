@@ -74,18 +74,24 @@ A command that may take more than a minute (a crawl, a large download, a long
 script) runs as a background task: call `start_task` with the same arguments and
 approval rules as `run_terminal`. It returns at once with a task id; the task has a
 2-hour budget, logs its full output to `scratch/tasks/<id>.log`, and keeps running
-if this run stops. Do not split a long job into repeated resumable chunks.
+if this run stops. Do not split a long job into repeated resumable chunks. At most 8
+tasks run at once; a start refused for that limit did not happen, so start it again
+once one ends.
 
-Stay in charge while it runs: do other work the plan allows, then call
-`wait_tasks`, which parks until a task ends, the timeout passes, or the user stops
-the run, and returns each task's status and last output lines. After each wait,
-tell the user in one or two sentences how it is going (progress, rate, problems),
-then wait again with a timeout suited to the work: short at first, longer once it is
-steady. Read the log or partial files for detail. When a task ends, use its results;
+Choose how to follow it:
+
+- **Wait in this run** when this answer needs the result soon: do other work the plan
+  allows, then `wait_tasks`. After each wait, tell the user briefly how it is going
+  (progress, rate, problems), then wait again with a timeout suited to the work.
+- **Launch and end your turn** for long work: tell the user what you started, then end
+  the turn. You are woken when it ends; set `check_in_seconds` to also be woken once
+  when it should be done or worth a look.
+
+Read the log or partial files for detail. When a task ends, use its results;
 if it failed, inspect why before proposing a fix. A task the user stopped was their
 decision: do not restart it unless they ask. Use `stop_task` for a task that went
 wrong or is no longer needed. Write progress (e.g. counts done) to the output so
-waits can report it.
+waits and check-ins can report it.
 The environment includes selected CLI profile/config and proxy/CA variables, not
 server API keys. Install needed packages only in an isolated scratch/runtime
 environment, never the application's environment. Leave interactive login,

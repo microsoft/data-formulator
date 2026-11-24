@@ -5,8 +5,8 @@ import { Provider } from 'react-redux';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { store } from '../../../../src/app/store';
 import { apiRequest } from '../../../../src/app/apiClient';
-import { BackgroundTasksPill, StopAgentDialog } from '../../../../src/components/BackgroundTasks';
-import type { BackgroundTask } from '../../../../src/app/backgroundTasks';
+import { BackgroundTasksPill, durationText, Elapsed, formatElapsed, StopAgentDialog } from '../../../../src/components/BackgroundTasks';
+import { backgroundTaskOf, startRecord, taskWakeRequest, type BackgroundTask } from '../../../../src/app/backgroundTasks';
 
 vi.mock('../../../../src/app/apiClient', async importOriginal => ({
     ...await importOriginal<typeof import('../../../../src/app/apiClient')>(),
@@ -21,6 +21,45 @@ const task = (id: string, extra: Partial<BackgroundTask> = {}): BackgroundTask =
 
 describe('background tasks', () => {
     afterEach(() => vi.mocked(apiRequest).mockReset());
+
+    it('counts a task\'s time from its start, until it ends', async () => {
+        expect([formatElapsed(42), formatElapsed(127), formatElapsed(3_725)]).toEqual(['42s', '2m 7s', '1h 2m']);
+        expect(durationText(1_000, 1_127.9)).toBe('2m 7s');
+        const { rerender } = render(<span data-testid="time"><Elapsed started={Date.now() / 1000 - 95} /></span>);
+        expect(screen.getByTestId('time')).toHaveTextContent('1m 35s');
+        await waitFor(() => expect(screen.getByTestId('time')).toHaveTextContent('1m 36s'), { timeout: 2500 });
+        rerender(<span data-testid="time"><Elapsed started={1_000} ended={1_030} /></span>);
+        expect(screen.getByTestId('time')).toHaveTextContent('30s');
+    });
+
+    it('words the follow-up that wakes the agent for what its tasks need', () => {
+        const t = (key: string, options?: Record<string, unknown>) => `${key}:${options?.count ?? ''}`;
+        const ended = task('a', { status: 'failed', wake_due: 'ended' });
+        const checking = task('b', { wake_due: 'check_in' });
+        const request = taskWakeRequest([ended, checking], t);
+        expect(request.text).toContain('- a (failed): Crawl a');
+        expect(request.text).toContain('- b (check-in time; still running): Crawl b');
+        expect(request.displayText).toBe('backgroundTasks.wake.update:');
+        expect(taskWakeRequest([ended], t).displayText).toBe('backgroundTasks.wake.ended:1');
+        expect(taskWakeRequest([checking], t).displayText).toBe('backgroundTasks.wake.checkIn:1');
+    });
+
+    it('gives the command that started a task its live status, else its record', () => {
+        const record = startRecord({ background_task: 'a', started: 500, exit_code: null });
+        const started = { background_task: 'a', task: record };
+        const ended = { background_task: 'a', task: { status: 'completed', started: 500, ended: 530, exit_code: 0 } };
+        const failedAtStart = { background_task: 'a', task: startRecord({ background_task: 'a', started: 500, ended: 500,
+            task_status: 'failed', exit_code: 127 }) };
+        const live = task('a');
+        expect(record).toEqual({ status: 'running', started: 500, ended: null, exit_code: null });
+        expect(backgroundTaskOf({ output: 'ok' }, { tasks: [], loaded: true })).toBeUndefined();
+        expect(backgroundTaskOf(started, { tasks: [live], loaded: true })).toMatchObject({ status: 'running', started: live.started, ended: null });
+        // Not fetched yet: it still runs from its start. Fetched without it (the server restarted): its record, or unknown.
+        expect(backgroundTaskOf(started, { tasks: [], loaded: false })).toMatchObject({ status: 'running', started: 500 });
+        expect(backgroundTaskOf(ended, { tasks: [], loaded: true })).toMatchObject({ status: 'completed', started: 500, ended: 530 });
+        expect(backgroundTaskOf(failedAtStart, { tasks: [], loaded: true })).toMatchObject({ status: 'failed', ended: 500 });
+        expect(backgroundTaskOf(started, { tasks: [], loaded: true })?.status).toBe('unknown');
+    });
 
     it('lists only running tasks in a pill, names the request that started one, and drops one once stopped', async () => {
         let tasks = [task('a'), task('b', { status: 'completed', ended: Date.now() / 1000, exit_code: 0 })];
@@ -39,7 +78,7 @@ describe('background tasks', () => {
         expect(document.querySelector('[data-background-task="b"]')).toBeNull();
         const running = document.querySelector('[data-background-task="a"]')!;
         expect(running).toHaveTextContent('Crawl a');
-        expect(running).toHaveTextContent('running · 2m');
+        expect(running).toHaveTextContent('running · 2m 5s');
         expect(running).toHaveTextContent('page 12 of 30');
         fireEvent.click(screen.getAllByText('Map the org')[0]);
         expect(open).toHaveBeenCalled();

@@ -4,7 +4,7 @@
 """The browser skill: open, read and script web pages in the user's browser (see ``data_formulator.browser``).
 
 Opening, reading and scripting a page are actions: in Ask mode the first call on a site pauses for
-the user's approval (for this chat, or always), through the same approval channel MCP tools use;
+the user's approval (for this chat, meaning the session, or always), through the same approval channel MCP tools use;
 in Auto they run at once. Tab housekeeping (``browser_tabs``) is an inspection tool.
 """
 
@@ -39,6 +39,16 @@ def require_local_browser_request() -> None:
 
 def _matches(site: str, allowed: str) -> bool:
     return site == allowed or site.endswith("." + allowed)
+
+
+def approval_scope(conversation: str) -> str:
+    """What "Allow in this chat" covers: the session, so a task stopped and asked again is not asked to approve again;
+    the request's conversation when there is no session."""
+    from data_formulator.spaces import current_space
+    from data_formulator.workspace_factory import get_active_workspace_id
+
+    workspace = get_active_workspace_id()
+    return f"session:{current_space() or ''}:{workspace}" if workspace else conversation
 
 
 def site_allowed(owner: str, conversation: str, site: str) -> bool:
@@ -205,7 +215,7 @@ class BrowserSkill:
             "annotations": {"readOnly": action != "browser_eval"}, "arguments": arguments,
             "purpose": (ctx.payload.get("action_narration") or "").strip()[:2000],
         }
-        if browser_mode() == "ask" and not site_allowed(owner, conversation, site):
+        if browser_mode() == "ask" and not site_allowed(owner, approval_scope(conversation), site):
             try:
                 proposal = get_requests().propose(owner, conversation, workspace_id, proposal)
             except ValueError as exc:

@@ -13,7 +13,7 @@ describe('TablePreview', () => {
                 { country: 'Iraq', year: 2021, per_researcher: null }],
         }} />);
         expect(screen.getByText('94 rows · 3 columns · showing the first 2')).toBeVisible();
-        const value = screen.getByText('94,576.6161');
+        const value = screen.getByText('94576.6161');
         expect(value).toHaveStyle({ textAlign: 'right', whiteSpace: 'nowrap' });
         expect(screen.getAllByText('2021')[0]).toHaveStyle({ textAlign: 'right' });
         expect(screen.getByText('Bolivia (Plurinational State of)')).toHaveStyle({ textAlign: 'left', textOverflow: 'ellipsis' });

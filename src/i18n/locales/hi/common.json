@@ -429,7 +429,13 @@
     "running_other": "{{count}} बैकग्राउंड कार्य चल रहे हैं",
     "status": {
       "stopping": "रोका जा रहा है…",
-      "running": "चल रहा है"
+      "running": "चल रहा है",
+      "completed": "पूरा हुआ",
+      "failed": "विफल",
+      "stopped": "रोका गया",
+      "timed_out": "समय समाप्त",
+      "unknown": "स्थिति अज्ञात (सर्वर फिर से शुरू हुआ)",
+      "not_started": "शुरू नहीं हुआ"
     },
     "stop": "रोकें",
     "log": "लॉग",
@@ -441,7 +447,21 @@
     "alsoStop": "यह कार्य भी रोकें",
     "stopAgent": "एजेंट रोकें",
     "stopAgentAndTasks_one": "एजेंट और {{count}} कार्य रोकें",
-    "stopAgentAndTasks_other": "एजेंट और {{count}} कार्य रोकें"
+    "stopAgentAndTasks_other": "एजेंट और {{count}} कार्य रोकें",
+    "checkIn": "हाल पूछें",
+    "checkInHint": "एजेंट को रोके बिना पूछें कि काम कहाँ तक पहुँचा",
+    "checkInSent": "अपडेट माँगा गया",
+    "askUpdate": "अपडेट माँगें",
+    "wake": {
+      "ended_one": "{{count}} बैकग्राउंड कार्य समाप्त हुआ",
+      "ended_other": "{{count}} बैकग्राउंड कार्य समाप्त हुए",
+      "checkIn_one": "{{count}} बैकग्राउंड कार्य की स्थिति जाँच",
+      "checkIn_other": "{{count}} बैकग्राउंड कार्यों की स्थिति जाँच",
+      "update": "बैकग्राउंड कार्यों पर ध्यान चाहिए",
+      "asked": "बैकग्राउंड कार्यों का अपडेट माँगा गया"
+    },
+    "group_one": "{{count}} बैकग्राउंड कार्य",
+    "group_other": "{{count}} बैकग्राउंड कार्य"
   },
   "dataThread": {
     "tableSet_one": "{{count}} तालिका",
@@ -503,6 +523,8 @@
     "completed": "पूर्ण",
     "workspace": "वर्कस्पेस",
     "thinking": "सोच रहा है...",
+    "stopped": "रोका गया",
+    "stoppedHint": "रन पूरा होने से पहले रोक दिया गया। एजेंट ने जो किया वह बना रहता है और वह यहीं से आगे बढ़ता है।",
     "status": {
       "actionFailed": "प्रयास विफल: {{reason}}",
       "chartFailed": "चार्ट का प्रयास विफल: {{reason}}",
@@ -1274,7 +1296,8 @@
       "failed": "विफल",
       "retry": "पुनः प्रयास हो रहा है",
       "running": "चल रहा है",
-      "skipped": "छोड़ा गया"
+      "skipped": "छोड़ा गया",
+      "missed": "छूटा"
     },
     "model": "मॉडल",
     "approveAll": "अनुरोध स्वतः स्वीकृत करें",
@@ -1299,7 +1322,8 @@
     "runOnSchedule": "शेड्यूल पर चलाएं",
     "notScheduled": "शेड्यूल नहीं है",
     "instructions": "निर्देश",
-    "instructionsPlaceholder": "वैकल्पिक: कौन-से इनपुट, किस पर ध्यान दें"
+    "instructionsPlaceholder": "वैकल्पिक: कौन-से इनपुट, किस पर ध्यान दें",
+    "runMissed": "{{time}} छूट गया। अभी चलाने के लिए क्लिक करें।"
   },
   "administration": {
     "title": "प्रशासन",

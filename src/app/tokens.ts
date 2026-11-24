@@ -55,6 +55,10 @@ export const borderColor = {
     /** 0.12 — outer containers: panels, dialogs, popovers, drop zones
      *  DataThread popups, UnifiedDataUploadDialog, AgentRulesDialog */
     view: `var(--df-line-view, ${borderColorValue.view})`,
+
+    /** 0.12 — cards laid out in a grid (example, session, workflow cards): lighter than the
+     *  section frame around them, so a page of cards reads as one set rather than many boxes */
+    card: `var(--df-line-card, ${borderColorValue.view})`,
 } as const;
 
 /** Right edge of the collapsible sidebar: quiet when docked, clearer when it

@@ -486,8 +486,12 @@ export interface DataFormulatorState {
     /** Seeded prompt for the analyst (data-thread) chat, e.g. from the landing box. */
     /** A request to send to the agent; `displayText` is a short label shown in the thread instead of `text`. */
     analystChatPending: { text: string; displayText?: string; images: string[]; attachments: string[]; intent?: 'workflow-authoring';
-        /** Sent by the app on the user's behalf to repair an app the agent just wrote; shown as a step, not a message. */
-        auto?: 'app-repair' } | null;
+        /** Sent by the app on the user's behalf (to repair an app the agent just wrote, or because background tasks
+         *  need the agent); shown as a step, not a message. */
+        auto?: TextTurn['auto'];
+        taskIds?: string[];
+        /** The message it continues (else where the user is). */
+        parentNodeId?: string } | null;
     /** A new workflow run was requested but the server has not reported its state yet. Transient. */
     workflowStarting: boolean;
     /**
@@ -2472,7 +2476,7 @@ export const dataFormulatorSlice = createSlice({
         queueAnalystTask: (
             state,
             action: PayloadAction<{ text: string; displayText?: string; images: string[]; attachments: string[]; intent?: 'workflow-authoring';
-                auto?: 'app-repair' }>,
+                auto?: TextTurn['auto']; taskIds?: string[]; parentNodeId?: string }>,
         ) => {
             state.analystChatPending = action.payload;
         },

@@ -56,17 +56,19 @@ def test_skip_missed_and_overlap(tmp_path):
     store = ScheduleStore(tmp_path)
     saved = scheduled(store)
     assert store.claim_due(NOW + timedelta(days=1)) == []
-    assert store.history(saved["id"])[0]["message"] == "Missed occurrence"
+    assert store.history(saved["id"])[0]["status"] == "missed"
     assert len(store.claim_due(NOW + timedelta(days=1, hours=1))) == 1
     assert store.claim_due(NOW + timedelta(days=2, hours=1)) == []
     assert store.history(saved["id"])[0]["message"] == "Overlapping run"
 
 
-def test_catchup_coalesces_and_retry_retains_id(tmp_path):
+def test_a_late_run_catches_up_and_retry_retains_id(tmp_path):
     store = ScheduleStore(tmp_path)
-    saved = scheduled(store, {**BLOCK, "catch_up": True})
-    due = NOW + timedelta(days=7)
+    saved = scheduled(store)
+    # A week asleep: only the latest occurrence, five minutes late, runs; the first one passed by is missed.
+    due = NOW + timedelta(days=7, hours=1, minutes=5)
     occurrence, = store.claim_due(due)
+    assert occurrence["scheduled_for"] == "2026-10-07T13:00:00+00:00"
     assert store.claim_due(due) == []
     retry_at = due + timedelta(seconds=30)
     store.finish(occurrence, "retry", retry_at=retry_at.isoformat())
@@ -75,7 +77,34 @@ def test_catchup_coalesces_and_retry_retains_id(tmp_path):
     assert retry["id"] == occurrence["id"]
     assert retry["attempts"] == 1
     store.finish(retry, "completed")
-    assert len(store.history(saved["id"])) == 1
+    assert [run["status"] for run in store.history(saved["id"])] == ["completed"]
+
+
+def test_a_missed_run_can_be_run_now(tmp_path):
+    store = ScheduleStore(tmp_path)
+    saved = scheduled(store)
+    later = NOW + timedelta(hours=14)
+    assert store.claim_due(later) == []
+    missed, = store.history(saved["id"])
+    assert missed["status"] == "missed"
+    store.run_missed("local:test", None, missed["id"], now=later)
+    run, = store.claim_due(later)
+    assert run["id"] == missed["id"] and run["attempts"] == 0
+    with pytest.raises(ValueError):
+        store.run_missed("local:test", None, missed["id"], now=later)
+
+
+def test_a_run_clears_earlier_missed_runs_so_deleting_it_brings_none_back(tmp_path):
+    store = ScheduleStore(tmp_path)
+    saved = scheduled(store)
+    store.claim_due(NOW + timedelta(hours=14))
+    store.claim_due(NOW + timedelta(days=1, hours=14))
+    # Only the latest miss is kept.
+    assert [(run["status"], run["scheduled_for"][:10]) for run in store.history(saved["id"])] == [("missed", "2026-10-01")]
+    occurrence, = store.claim_due(NOW + timedelta(days=2, hours=1))
+    store.finish(occurrence, "completed")
+    store.forget(occurrence["id"])
+    assert store.history(saved["id"]) == []
 
 
 def test_ownership_pause_and_crash_recovery(tmp_path):
@@ -117,7 +146,7 @@ def test_only_timing_changes_move_the_next_run(tmp_path):
     store = ScheduleStore(tmp_path)
     saved = scheduled(store)
     later = NOW + timedelta(minutes=30)
-    assert store.sync("local:test", None, "report.yaml", {**BLOCK, "catch_up": True}, now=later)["next_at"] == saved["next_at"]
+    assert store.sync("local:test", None, "report.yaml", {**BLOCK, "model_id": "other-model"}, now=later)["next_at"] == saved["next_at"]
     assert store.sync("local:test", None, "report.yaml", {**BLOCK, "time": "10:00"}, now=later)["next_at"] != saved["next_at"]
 
 
@@ -447,6 +476,38 @@ def test_schedule_write_rejects_cross_site_requests(execution_context):
     assert unchanged["status"] == "success"
 
 
+def test_a_missed_run_is_listed_and_run_from_the_app(execution_context):
+    app, store, schedule, occurrence = execution_context
+    client = app.test_client()
+    store.finish(occurrence, "completed")
+    store.claim_due(NOW + timedelta(days=1, hours=15))
+    missed = store.history(schedule["id"])[0]
+    assert "missed" in [run["status"] for run in listed_schedules(client)["schedules"]["report.yaml"]["history"]]
+    untrusted = {"Origin": "https://untrusted.example", "Sec-Fetch-Site": "cross-site"}
+    run = lambda identifier, headers=None: client.post("/api/workflows/run-missed", json={"id": identifier}, headers=headers or {}).get_json()
+    assert run(missed["id"], untrusted)["error"]["code"] == "ACCESS_DENIED"
+    assert run("not-a-run")["status"] == "error"
+    assert run(missed["id"])["status"] == "success"
+    assert store.history(schedule["id"])[0]["status"] == "retry"
+
+
+def test_running_a_workflow_by_hand_clears_its_missed_run(execution_context, monkeypatch):
+    from data_formulator.workflows.agent import WorkflowAgent
+    app, store, schedule, occurrence = execution_context
+    store.finish(occurrence, "completed")
+    store.claim_due(NOW + timedelta(days=1, hours=15))
+    assert store.history(schedule["id"])[0]["status"] == "missed"
+
+    def pause(agent):
+        agent.state.update(status="paused")
+        yield {"type": "workflow_state", "run": {"status": "paused"}}
+
+    monkeypatch.setattr(WorkflowAgent, "run_workflow", pause)
+    response = app.test_client().post("/api/workflows/run", json={"path": "report.yaml", "model": {}}, headers={"X-Workspace-Id": "manual"})
+    assert response.status_code == 200, response.get_json()
+    assert [run["status"] for run in store.history(schedule["id"])] == ["completed"]
+
+
 def test_saving_a_workflow_sets_its_schedule(execution_context, monkeypatch):
     from data_formulator.model_registry import model_registry
     app, store, schedule, _ = execution_context
@@ -718,6 +779,14 @@ def test_a_saved_schedule_must_be_able_to_run(change, problem):
 def test_an_unquoted_schedule_time_reads_as_written():
     from data_formulator.workflows.instances import parse_definition
     assert parse_definition(REPORT + "schedule:\n  time: 10:30\n  weekdays: [0]\n  timezone: UTC\n  model_id: m\n")["schedule"]["time"] == "10:30"
+
+
+def test_a_retired_catch_up_key_is_ignored():
+    from data_formulator.workflows.instances import parse_definition, set_schedule
+    block = "schedule:\n  time: '10:30'\n  weekdays: [0]\n  timezone: UTC\n  model_id: m\n  catch_up: false\n"
+    assert "catch_up" not in parse_definition(REPORT + block)["schedule"]
+    assert "catch_up" not in set_schedule(REPORT, {**BLOCK, "catch_up": True})
+    assert next_occurrence({**CONFIG, "catch_up": False}, NOW) == next_occurrence(CONFIG, NOW)
 
 
 def test_a_schedule_needs_no_inputs_its_instructions_can_name():

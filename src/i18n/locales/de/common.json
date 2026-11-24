@@ -429,7 +429,13 @@
     "running_other": "{{count}} Hintergrundaufgaben laufen",
     "status": {
       "stopping": "wird gestoppt…",
-      "running": "läuft"
+      "running": "läuft",
+      "completed": "fertig",
+      "failed": "fehlgeschlagen",
+      "stopped": "gestoppt",
+      "timed_out": "Zeitlimit erreicht",
+      "unknown": "Status unbekannt (der Server wurde neu gestartet)",
+      "not_started": "nicht gestartet"
     },
     "stop": "Stoppen",
     "log": "Protokoll",
@@ -441,7 +447,21 @@
     "alsoStop": "Diese Aufgabe ebenfalls stoppen",
     "stopAgent": "Agenten stoppen",
     "stopAgentAndTasks_one": "Agenten und {{count}} Aufgabe stoppen",
-    "stopAgentAndTasks_other": "Agenten und {{count}} Aufgaben stoppen"
+    "stopAgentAndTasks_other": "Agenten und {{count}} Aufgaben stoppen",
+    "checkIn": "Nachfragen",
+    "checkInHint": "Den Agenten fragen, wie es steht, ohne ihn zu stoppen",
+    "checkInSent": "Update angefragt",
+    "askUpdate": "Nach dem Stand fragen",
+    "wake": {
+      "ended_one": "{{count}} Hintergrundaufgabe beendet",
+      "ended_other": "{{count}} Hintergrundaufgaben beendet",
+      "checkIn_one": "Zwischenstand zu {{count}} Hintergrundaufgabe",
+      "checkIn_other": "Zwischenstand zu {{count}} Hintergrundaufgaben",
+      "update": "Hintergrundaufgaben brauchen Aufmerksamkeit",
+      "asked": "Stand der Hintergrundaufgaben angefragt"
+    },
+    "group_one": "{{count}} Hintergrundaufgabe",
+    "group_other": "{{count}} Hintergrundaufgaben"
   },
   "dataThread": {
     "tableSet_one": "{{count}} Tabelle",
@@ -503,6 +523,8 @@
     "completed": "abgeschlossen",
     "workspace": "Arbeitsbereich",
     "thinking": "Denkt...",
+    "stopped": "Gestoppt",
+    "stoppedHint": "Der Lauf wurde vor dem Ende gestoppt. Der Agent behält, was er getan hat, und macht hier weiter.",
     "status": {
       "actionFailed": "Versuch fehlgeschlagen: {{reason}}",
       "chartFailed": "Diagrammversuch fehlgeschlagen: {{reason}}",
@@ -1271,7 +1293,8 @@
       "paused": "Pausiert",
       "retry": "Wird wiederholt",
       "running": "Läuft",
-      "skipped": "Übersprungen"
+      "skipped": "Übersprungen",
+      "missed": "Verpasst"
     },
     "runsOf": "Läufe von {{name}}",
     "saveFailed": "Zeitplan konnte nicht gespeichert werden.",
@@ -1299,7 +1322,8 @@
     "runOnSchedule": "Nach Zeitplan ausführen",
     "notScheduled": "Nicht geplant",
     "instructions": "Anweisungen",
-    "instructionsPlaceholder": "Optional: welche Eingaben, worauf achten"
+    "instructionsPlaceholder": "Optional: welche Eingaben, worauf achten",
+    "runMissed": "Verpasst am {{time}}. Klicken, um jetzt auszuführen."
   },
   "administration": {
     "addConnection": "Datenverbindung hinzufügen",

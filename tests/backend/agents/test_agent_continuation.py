@@ -120,6 +120,77 @@ def test_a_paused_run_joins_the_conversation_when_its_resumed_run_finishes(works
     assert added[-3].startswith("[SESSION CHANGES]") and added[-2:] == ["2024", "2024 it is."]
 
 
+def _cut_short(workspace, reason="ok", error=""):
+    """An agent whose run has a plan with an open step and two tool calls, only the first answered."""
+    from data_formulator.analyst.plan import PlanItem
+
+    client = MagicMock()
+    client.model = "model-a"
+    agent = AnalystAgent(client=client, workspace=workspace)
+
+    def next_action(messages, *args, **kwargs):
+        agent._plan.revise([PlanItem("Fetch the prices", "done"), PlanItem("Chart them", "open")])
+        messages.append({"role": "assistant", "content": "- [x] Fetch the prices\n- [ ] Chart them", "tool_calls": [
+            {"id": "read", "type": "function", "function": {"name": "read_file", "arguments": "{}"}},
+            {"id": "tabs", "type": "function", "function": {"name": "browser_tabs", "arguments": "{}"}}]})
+        messages.append({"role": "tool", "tool_call_id": "read", "content": "saved scratch/browser/prices.csv"})
+        if reason == "llm_error":
+            yield {"type": "agent_action", "action_data": None, "reason": reason, "error_message": error}
+        else:
+            yield {"type": "tool_start", "tool": "browser_tabs"}
+
+    agent._get_next_action = next_action
+    return agent
+
+
+def test_a_stopped_run_joins_the_conversation_so_the_next_request_continues_from_it(workspace) -> None:
+    seen: list = []
+    _run(_agent(workspace, ["Done."], seen), "First")
+    agent = _cut_short(workspace)
+    run = agent.run([], "Get gas prices", session_state=json.loads(json.dumps(STATE)), conversation_id="stopped")
+    while next(run)["type"] != "tool_start":
+        pass
+    # Stop: the request's thread saves at once while the run is still inside its tool call, then the run unwinds.
+    agent.save_unfinished()
+    run.close()
+
+    stored = SessionHistory(workspace).load()["messages"]
+    assert "Get gas prices" in stored[-5]["content"]
+    assert [message.get("tool_call_id") for message in stored[-3:-1]] == ["read", "tabs"]
+    assert stored[-3]["content"] == "saved scratch/browser/prices.csv"
+    assert stored[-2]["content"] == history_module._UNANSWERED
+    note = stored[-1]["content"]
+    assert note.startswith("[RUN NOT FINISHED]") and "was stopped" in note and "Plan steps left open: 2) Chart them." in note
+    assert sum(str(message.get("content")).startswith("[RUN NOT FINISHED]") for message in stored) == 1
+
+    _run(_agent(workspace, ["Charted."], seen), "continue")
+    assert seen[-1][-2]["content"] == note and seen[-1][-1]["content"].endswith("[USER QUESTION]\n\ncontinue")
+
+
+def test_a_failed_run_keeps_its_work_with_the_error(workspace) -> None:
+    events = list(_cut_short(workspace, "llm_error", "Rate limited").run(
+        [], "Get gas prices", session_state=json.loads(json.dumps(STATE)), conversation_id="failed"))
+    assert events[-1]["type"] == "error"
+    stored = SessionHistory(workspace).load()["messages"]
+    assert stored[-2]["tool_call_id"] == "tabs"
+    assert stored[-1]["content"].startswith("[RUN NOT FINISHED] This request ended on an error (Rate limited)")
+
+
+def test_closing_a_cut_off_turn_answers_every_call_right_after_it() -> None:
+    call = lambda id: {"id": id, "type": "function", "function": {"name": "f", "arguments": "{}"}}
+    turn = [{"role": "user", "content": "q"},
+            {"role": "assistant", "content": None, "tool_calls": [call("a"), call("b")]},
+            {"role": "tool", "tool_call_id": "b", "content": "B"},
+            {"role": "assistant", "content": None, "tool_calls": [call("c")]},
+            # An action's placeholder result, still empty when the run stopped.
+            {"role": "tool", "tool_call_id": "c", "content": ""}]
+    closed = history_module.close_unfinished(turn, "note")
+    unanswered = history_module._UNANSWERED
+    assert [(message["role"], message.get("tool_call_id"), message.get("content")) for message in closed[2:]] == [
+        ("tool", "b", "B"), ("tool", "a", unanswered), ("assistant", None, None), ("tool", "c", unanswered),
+        ("user", None, "note")]
+
+
 def test_a_request_starts_fresh_when_continuing_would_not_pay(workspace, monkeypatch) -> None:
     store = SessionHistory(workspace)
     turn = [{"role": "user", "content": "q"}, {"role": "assistant", "content": "a"}]

@@ -33,6 +33,7 @@ import {
 } from '../app/workspaceService';
 import { iconVar, textVar } from '../app/layout';
 import { FileTypeIcon } from '../icons';
+import { formatCellValue } from './ViewUtils';
 
 const WorkspaceWorkbookPreview = React.lazy(() => import('./WorkspaceWorkbookPreview').then(module => ({
     default: module.WorkspaceWorkbookPreview,
@@ -591,8 +592,7 @@ const WorkspaceFileContent: FC<{ fileName: string; draftKey: string; sourceFile?
 };
 const formatCell = (value: unknown): string => {
     if (value == null) return '';
-    if (typeof value === 'number') return Number.isInteger(value) ? String(value)
-        : value.toLocaleString(undefined, { maximumFractionDigits: 4 });
+    if (typeof value === 'number') return formatCellValue(value);
     return typeof value === 'object' ? JSON.stringify(value) : String(value);
 };
 

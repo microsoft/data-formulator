@@ -429,7 +429,13 @@
     "running_other": "{{count}} tugas latar belakang berjalan",
     "status": {
       "stopping": "menghentikan…",
-      "running": "berjalan"
+      "running": "berjalan",
+      "completed": "selesai",
+      "failed": "gagal",
+      "stopped": "dihentikan",
+      "timed_out": "kehabisan waktu",
+      "unknown": "status tidak diketahui (server dimulai ulang)",
+      "not_started": "tidak dimulai"
     },
     "stop": "Hentikan",
     "log": "Log",
@@ -441,7 +447,21 @@
     "alsoStop": "Hentikan juga tugas ini",
     "stopAgent": "Hentikan agen",
     "stopAgentAndTasks_one": "Hentikan agen dan {{count}} tugas",
-    "stopAgentAndTasks_other": "Hentikan agen dan {{count}} tugas"
+    "stopAgentAndTasks_other": "Hentikan agen dan {{count}} tugas",
+    "checkIn": "Cek status",
+    "checkInHint": "Tanyakan ke agen sejauh mana, tanpa menghentikannya",
+    "checkInSent": "Pembaruan diminta",
+    "askUpdate": "Minta pembaruan",
+    "wake": {
+      "ended_one": "{{count}} tugas latar belakang selesai",
+      "ended_other": "{{count}} tugas latar belakang selesai",
+      "checkIn_one": "Memeriksa {{count}} tugas latar belakang",
+      "checkIn_other": "Memeriksa {{count}} tugas latar belakang",
+      "update": "Tugas latar belakang perlu perhatian",
+      "asked": "Pembaruan tugas latar belakang diminta"
+    },
+    "group_one": "{{count}} tugas latar belakang",
+    "group_other": "{{count}} tugas latar belakang"
   },
   "dataThread": {
     "tableSet_one": "{{count}} tabel",
@@ -503,6 +523,8 @@
     "completed": "selesai",
     "workspace": "ruang kerja",
     "thinking": "berpikir...",
+    "stopped": "Dihentikan",
+    "stoppedHint": "Proses dihentikan sebelum selesai. Agen menyimpan apa yang sudah dilakukannya dan melanjutkan dari sini.",
     "status": {
       "actionFailed": "percobaan gagal: {{reason}}",
       "chartFailed": "percobaan bagan gagal: {{reason}}",
@@ -1274,7 +1296,8 @@
       "failed": "Gagal",
       "retry": "Mencoba ulang",
       "running": "Berjalan",
-      "skipped": "Dilewati"
+      "skipped": "Dilewati",
+      "missed": "Terlewat"
     },
     "model": "Model",
     "approveAll": "Setujui permintaan secara otomatis",
@@ -1299,7 +1322,8 @@
     "runOnSchedule": "Jalankan sesuai jadwal",
     "notScheduled": "Tidak dijadwalkan",
     "instructions": "Instruksi",
-    "instructionsPlaceholder": "Opsional: input yang dipakai, fokusnya"
+    "instructionsPlaceholder": "Opsional: input yang dipakai, fokusnya",
+    "runMissed": "Terlewat {{time}}. Klik untuk menjalankannya sekarang."
   },
   "administration": {
     "title": "Administrasi",
