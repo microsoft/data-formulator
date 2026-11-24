@@ -4,7 +4,8 @@ import { TFunction } from 'i18next';
 import React from 'react';
 import SearchIcon from '@mui/icons-material/Search';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
-import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
+import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import { apiRequest } from '../app/apiClient';
 import { getUrls } from '../app/utils';
@@ -50,21 +51,24 @@ export function buildDataLoadingSuggestions(
 ): DataLoadingSuggestion[] {
     const kindFind = t('upload.agentChatSuggestion.kind.find', { defaultValue: 'find' });
     const kindExtract = t('upload.agentChatSuggestion.kind.extract', { defaultValue: 'extract' });
+    const kindMap = t('upload.agentChatSuggestion.kind.map', { defaultValue: 'map' });
+    const kindApp = t('upload.agentChatSuggestion.kind.app', { defaultValue: 'app' });
 
     const findLabel = t('upload.agentChatSuggestion.findCPI', {
         defaultValue: 'Help me load consumer price index data',
+    });
+    // Both use the example datasets, so they work before the user connects anything.
+    const mapLabel = t('upload.agentChatSuggestion.mapLifeExpectancy', {
+        defaultValue: 'Map life expectancy around the world over time',
+    });
+    const appLabel = t('upload.agentChatSuggestion.dashboardIncome', {
+        defaultValue: 'Build a dashboard of US household income by state',
     });
     const extractExcelLabel = t('upload.agentChatSuggestion.extractFromExcel', {
         defaultValue: 'Extract data from an attached Excel file',
     });
     const extractImageLabel = t('dataLoading.examples.extractFromImageExample', {
         defaultValue: 'Extract revenue data from this image',
-    });
-    const extractTextLabel = t('dataLoading.examples.extractFromTextExample', {
-        defaultValue: 'Extract revenue growth data from this text: Business Highlights ...',
-    });
-    const extractTextPrompt = t('dataLoading.examples.extractFromTextPrompt', {
-        defaultValue: extractTextLabel,
     });
 
     const iconSx = { fontSize: textVar.lg };
@@ -85,6 +89,18 @@ export function buildDataLoadingSuggestions(
             label: findLabel,
             icon: React.createElement(SearchIcon, { sx: iconSx }),
             onClick: () => fillAndMaybeSend({ text: findLabel, images: [], attachments: [] }),
+        },
+        {
+            kind: kindMap,
+            label: mapLabel,
+            icon: React.createElement(MapOutlinedIcon, { sx: iconSx }),
+            onClick: () => fillAndMaybeSend({ text: mapLabel, images: [], attachments: [] }),
+        },
+        {
+            kind: kindApp,
+            label: appLabel,
+            icon: React.createElement(DashboardOutlinedIcon, { sx: iconSx }),
+            onClick: () => fillAndMaybeSend({ text: appLabel, images: [], attachments: [] }),
         },
         {
             kind: kindExtract,
@@ -151,12 +167,6 @@ export function buildDataLoadingSuggestions(
                     });
             },
         },
-        {
-            kind: kindExtract,
-            label: extractTextLabel,
-            icon: React.createElement(DescriptionOutlinedIcon, { sx: iconSx }),
-            onClick: () => fillAndMaybeSend({ text: extractTextPrompt, images: [], attachments: [] }),
-        },
     ];
 }
 
@@ -197,7 +207,7 @@ export function buildDataLoadingQuickActions(
     };
     const action = (kind: string, text: string) => ({ kind, label: text, onClick: () => fillAndSend(text) });
     const nextSteps = [
-        action('connect', label('connect', 'Guide me to connect a data source')),
+        action('connect', label('connect', 'Help me connect a database or data source')),
         context?.hasSessions && !context.hasWorkflows && context.canWorkflow !== false
             && action('workflow', label('workflowFromSession', 'Turn my last analysis into a workflow')),
         context?.canSchedule && context.hasWorkflows && !context.hasSchedules

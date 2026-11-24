@@ -10,6 +10,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Box, useTheme } from '@mui/material';
+import { DEV_NAV_HEIGHT, DevNav } from './DevNav';
 import { alpha } from '@mui/material/styles';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import uiScreenshot from './DevDesignPage.ui.png';
@@ -416,9 +417,10 @@ export default function DevDesignPage() {
         backgroundSize: '24px 24px',
     }}>
         <style>{STYLES}</style>
-        <Box component="section" sx={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2, boxSizing: 'border-box' }}>
+        <DevNav />
+        <Box component="section" sx={{ height: `calc(100vh - ${DEV_NAV_HEIGHT}px)`, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2, boxSizing: 'border-box' }}>
             <Box sx={{
-                position: 'relative', width: `min(100%, calc((100vh - 32px) * ${DW / DH}))`, aspectRatio: `${DW} / ${DH}`, containerType: 'inline-size',
+                position: 'relative', width: `min(100%, calc((100vh - ${DEV_NAV_HEIGHT + 32}px) * ${DW / DH}))`, aspectRatio: `${DW} / ${DH}`, containerType: 'inline-size',
             }}>
                 <Box component="header" sx={{
                     position: 'absolute', top: u(40), left: u(LEFT_EDGE), right: u(DW - RIGHT_COLUMN - 16 - CALLOUT_WIDTH),

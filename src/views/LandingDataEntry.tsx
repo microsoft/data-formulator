@@ -173,7 +173,7 @@ export const LandingDataEntry: React.FC<LandingDataEntryProps> = ({
             focusSuggestionsLabel={t('upload.agentChatSuggestionsLabel', { defaultValue: 'Try asking' })}
             focusSuggestions={space ? undefined : buildDataLoadingSuggestions(suggestionArgs)}
             placeholder={space ? space.placeholder || t('upload.demoChatPlaceholder', { defaultValue: 'Ask a question about the data…' })
-                : t('upload.agentChatPlaceholder', { defaultValue: 'Ask the agent to find datasets, or extract data from an image or text...' })}
+                : t('upload.agentChatPlaceholder', { defaultValue: 'Load or connect data, then ask for charts, maps, dashboards or reports…' })}
             sendTooltip={t('upload.agentChatSendTooltip', { defaultValue: 'Start chatting with the agent' })}
             sx={{ borderColor: (theme: Theme) => heroInputLine(theme),
                 ...(space && { '& textarea': { fontSize: spaceText.input } }),

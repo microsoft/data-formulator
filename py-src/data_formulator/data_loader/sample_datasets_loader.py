@@ -6,7 +6,10 @@
 Exposes the built-in ``EXAMPLE_DATASETS`` catalog as a virtual data
 connector that behaves exactly like any other connector.  No auth, no
 external service of its own — table data is fetched on demand from the
-public URLs declared in :mod:`data_formulator.example_datasets_config`.
+public URLs declared in :mod:`data_formulator.example_datasets_config`, or
+read from the package when a ``url`` is a relative path (the refreshed files
+in ``data_formulator/example_datasets/``, rebuilt by
+``scripts/refresh_example_datasets.py``).
 
 The connector is registered unconditionally at startup so that even in
 ``--disable_database`` mode users still have a zero-config way to load
@@ -19,6 +22,8 @@ import io
 import json
 import logging
 import threading
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -32,6 +37,26 @@ from data_formulator.datalake.parquet_utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+_PACKAGE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _package_file(url: str) -> Path | None:
+    """The packaged file a scheme-less ``url`` names (relative to ``data_formulator/``), else None."""
+    if not url or "://" in url:
+        return None
+    path = (_PACKAGE_DIR / url).resolve()
+    return path if path.is_relative_to(_PACKAGE_DIR) else None
+
+
+@lru_cache(maxsize=32)
+def _package_preview(path: Path, sep: str) -> tuple[list[dict], list[dict], int]:
+    """``(columns, sample_rows, row_count)`` read from the head of a packaged file."""
+    df = pd.read_csv(path, sep=sep, nrows=10)
+    columns = [{"name": str(c), "type": str(df[c].dtype)} for c in df.columns]
+    with open(path, "rb") as f:
+        row_count = max(sum(1 for _ in f) - 1, 0)
+    return columns, df_to_safe_records(df), row_count
 
 # In-process cache for sample dataset DataFrames keyed by (url, format).
 # These URLs are static public datasets, so caching is safe and dramatically
@@ -132,6 +157,16 @@ class SampleDatasetsLoader(ExternalDataLoader):
                 logger.debug("Failed to parse sample CSV preview", exc_info=True)
         return columns, sample_rows
 
+    def _preview(self, table_entry: dict[str, Any], fmt: str) -> tuple[list[dict], list[dict], int | None]:
+        """``(columns, sample_rows, row_count)``: from the packaged file, else the embedded sample."""
+        path = _package_file(table_entry.get("url", ""))
+        if path is not None:
+            try:
+                return _package_preview(path, "\t" if fmt == "tsv" else ",")
+            except Exception:
+                logger.warning("Failed to read packaged sample dataset %s", path, exc_info=True)
+        return (*self._columns_from_sample(table_entry.get("sample"), fmt), None)
+
     def _resolve(self, source_table: str) -> tuple[dict, dict, int] | None:
         """Look up ``(dataset, table_entry, table_idx)`` by ``"Dataset/stem"``.
 
@@ -180,7 +215,7 @@ class SampleDatasetsLoader(ExternalDataLoader):
                 if needle and needle not in source_id.lower() and needle not in desc.lower():
                     continue
                 fmt = (t.get("format") or "json").lower()
-                columns, sample_rows = self._columns_from_sample(t.get("sample"), fmt)
+                columns, sample_rows, row_count = self._preview(t, fmt)
                 results.append({
                     "name": source_id,
                     "table_key": source_id,
@@ -189,7 +224,7 @@ class SampleDatasetsLoader(ExternalDataLoader):
                         "description": desc,
                         "columns": columns,
                         "sample_rows": sample_rows,
-                        "row_count": None,
+                        "row_count": row_count,
                         "_source_name": source_id,
                         "_format": fmt,
                         "_url": t.get("url", ""),
@@ -205,7 +240,7 @@ class SampleDatasetsLoader(ExternalDataLoader):
             return {}
         ds, t, _ = resolved
         fmt = (t.get("format") or "json").lower()
-        columns, _rows = self._columns_from_sample(t.get("sample"), fmt)
+        columns, _rows, _count = self._preview(t, fmt)
         return {
             "columns": columns,
             "description": ds.get("description", ""),
@@ -269,7 +304,7 @@ class SampleDatasetsLoader(ExternalDataLoader):
         Results are cached in-process: sample dataset URLs are static and
         small, and previews/loads otherwise re-download + re-parse the
         entire file on every click, which is visibly slow for larger
-        examples (Gapminder, Disasters, ...).
+        examples (Gapminder, Movies, ...).
         """
         key = (url, fmt)
         with _SAMPLE_CACHE_LOCK:
@@ -279,11 +314,15 @@ class SampleDatasetsLoader(ExternalDataLoader):
             # doesn't mutate views the cache might re-emit later.
             return cached.copy(deep=False)
 
-        import requests
-        logger.info("Fetching sample dataset over network: %s (%s)", source_table, url)
-        resp = requests.get(url, timeout=30)
-        resp.raise_for_status()
-        text = resp.text
+        path = _package_file(url)
+        if path is not None:
+            text = path.read_text(encoding="utf-8")
+        else:
+            import requests
+            logger.info("Fetching sample dataset over network: %s (%s)", source_table, url)
+            resp = requests.get(url, timeout=30)
+            resp.raise_for_status()
+            text = resp.text
 
         if fmt == "csv":
             df = pd.read_csv(io.StringIO(text))

@@ -77,14 +77,14 @@
     "showFull": "Gesamtansicht",
     "dataLoadingAgent": "Datenlade-Agent",
     "resumePreviousConversation": "Vorherige Unterhaltung →",
-    "agentChatPlaceholder": "Fragen Sie den Agenten nach Datensätzen oder extrahieren Sie Daten aus einem Bild oder Text…",
+    "agentChatPlaceholder": "Daten laden oder verbinden, dann nach Diagrammen, Karten, Dashboards oder Berichten fragen…",
     "agentChatTabSuggestion": "Welche Datensätze haben wir hier?",
     "agentChatSuggestionsLabel": "Versuchen Sie zu fragen",
     "agentChatSendTooltip": "Mit dem Agenten chatten",
     "dataSourcesLabel": "Verbunden mit:",
     "addSourceLabel": "Daten hinzufügen:",
     "agentChatQuickAction": {
-      "connect": "Führen Sie mich zur Verbindung einer Datenquelle",
+      "connect": "Hilf mir, eine Datenbank oder Datenquelle zu verbinden",
       "askConnected": "Listen Sie Tabellen aus meinen verbundenen Quellen auf",
       "workflowFromSession": "Meine letzte Analyse in einen Workflow verwandeln",
       "scheduleWorkflow": "Einen Workflow für die tägliche Ausführung planen"
@@ -96,8 +96,12 @@
       "kind": {
         "ask": "fragen",
         "find": "finden",
-        "extract": "extrahieren"
-      }
+        "extract": "extrahieren",
+        "map": "Karte",
+        "app": "App"
+      },
+      "mapLifeExpectancy": "Lebenserwartung weltweit im Zeitverlauf auf einer Karte zeigen",
+      "dashboardIncome": "Ein Dashboard zum Haushaltseinkommen in den US-Bundesstaaten erstellen"
     },
     "uploadData": "Daten hochladen",
     "importData": "Daten importieren",

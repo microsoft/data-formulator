@@ -2,11 +2,7 @@
 // Licensed under the MIT License.
 
 import React from 'react';
-import { Box, useTheme } from '@mui/material';
-import { alpha } from '@mui/material/styles';
-import PersonIcon from '@mui/icons-material/Person';
-import ArticleIcon from '@mui/icons-material/Article';
-import { AgentToyIcon } from './AgentToyIcon';
+import { Box } from '@mui/material';
 import { iconTone, weight } from '../app/tokens';
 import {
     AgentIcon, BooleanIcon, FormIcon, chartFamily, CONNECTOR_ICON_MAP, DatabaseIcon, DatabaseViewIcon, DateIcon,
@@ -19,7 +15,6 @@ import { ConnectorFormCard } from '../components/ConnectorFormCard';
 import { ArtifactDeleteButton, ThreadArtifactCard } from './DataThreadCards';
 import { MiniPage, MiniWindow } from '../components/ArtifactMiniatures';
 import { ThreadDeck, ThreadOutput } from '../components/ThreadDeck';
-import { STARTER_HINTS, StarterHintMock } from './DevStarterHints';
 import { WorkspaceSummary } from './SourceTableShelf';
 import { ToolsChipFace } from '../components/ToolsAccess';
 import { AppComponentsGallery, AppDraftDemo } from './DevAppPieces';
@@ -70,67 +65,6 @@ const Swatch: React.FC<{ label: string; proposed: (size: number, active: boolean
         <Box sx={{ fontSize: 11, fontFamily: 'var(--df-font-mono, monospace)', color: 'text.secondary', whiteSpace: 'nowrap' }}>{label}</Box>
     </Box>;
 
-type MockItem = { kind: 'user' | 'agent' | 'table' | 'derived' | 'chart' | 'file' | 'report'; label: string; chart?: string; path?: string };
-const MOCK_THREAD: MockItem[] = [
-    { kind: 'user', label: 'Show budgets by genre' },
-    { kind: 'table', label: 'Movies' },
-    { kind: 'chart', chart: 'Bar Chart', label: 'Budget by genre' },
-    { kind: 'chart', chart: 'Line Chart', label: 'Revenue over time' },
-    { kind: 'user', label: 'Where are they made?' },
-    { kind: 'derived', label: 'Films by country' },
-    { kind: 'chart', chart: 'World Map', label: 'Films by country' },
-    { kind: 'chart', chart: 'Scatter Plot', label: 'Budget vs revenue' },
-    { kind: 'chart', chart: 'Boxplot', label: 'Rating by genre' },
-    { kind: 'agent', label: 'Ratings are similar across genres.' },
-    { kind: 'file', path: 'lib/movie_cohorts.py', label: 'Movie cohort rules' },
-    { kind: 'chart', chart: 'Area Chart', label: 'Releases per year' },
-    { kind: 'chart', chart: 'Pie Chart', label: 'Share by genre' },
-    { kind: 'report', label: 'Movie industry report' },
-];
-const MOCK_FOCUS = 8;
-
-/** A thread rail as DataThread draws it: glyphs in the standard state colours (the reserved colours are unused). */
-const MockThread: React.FC = () => {
-    const theme = useTheme();
-    const primary = theme.palette.primary.main;
-    return <Box sx={{ width: 240 }}>
-        {MOCK_THREAD.map((item, index) => {
-            const onChain = index <= MOCK_FOCUS;
-            const focused = index === MOCK_FOCUS;
-            const color = onChain ? primary : iconTone.muted;
-            const glyph = { width: 14, height: 14, color };
-            let icon: React.ReactNode;
-            switch (item.kind) {
-                case 'user': icon = <PersonIcon sx={{ width: 18, height: 18, color: onChain ? theme.palette.custom.main : iconTone.muted }} />; break;
-                case 'agent': icon = <AgentToyIcon sx={{ width: 18, height: 18, color }} />; break;
-                case 'table': icon = <TableIcon sx={glyph} />; break;
-                case 'derived': icon = <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: color }} />; break;
-                case 'file': icon = <FileTypeIcon path={item.path!} size={14} sx={glyph} />; break;
-                case 'report': icon = <ArticleIcon sx={{ ...glyph, color: onChain ? theme.palette.secondary.main : iconTone.muted }} />; break;
-                case 'chart': {
-                    const { Icon } = chartFamily(item.chart!);
-                    icon = <Icon sx={glyph} />;
-                }
-            }
-            const lineColor = (chain: boolean) => chain ? alpha(primary, 0.6) : 'rgba(0,0,0,0.1)';
-            return <Box key={index} sx={{ display: 'flex', alignItems: 'stretch' }}>
-                <Box sx={{ width: 18, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <Box sx={{ flex: 1, minHeight: 4, borderLeft: `2px solid ${lineColor(onChain)}` }} />
-                    <Box sx={{ display: 'flex' }}>{icon}</Box>
-                    <Box sx={{ flex: 1, minHeight: 4, borderLeft: `2px solid ${lineColor(index < MOCK_FOCUS)}` }} />
-                </Box>
-                <Box sx={{ flex: 1, minWidth: 0, py: '3px', pl: 1 }}>
-                    <Box sx={{ px: 1, py: 0.5, fontSize: 12, borderRadius: 1, border: 1,
-                        borderColor: focused ? 'primary.main' : 'divider', bgcolor: item.kind === 'user' ? alpha(theme.palette.custom.main, 0.08) : 'background.paper',
-                        color: onChain ? 'text.primary' : 'text.secondary', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {item.label}
-                    </Box>
-                </Box>
-            </Box>;
-        })}
-    </Box>;
-};
-
 const iconCells = (icons: [string, React.ElementType][]) => icons.map(([label, Icon]) =>
     <Cell key={label} label={label}>{size => <Icon sx={{ width: size, height: size, fontSize: size }} />}</Cell>);
 
@@ -168,13 +102,9 @@ const WORKSPACE_CASES: [string, string | null, string[], string[]][] = [
     ['one table, no title', null, ['weekly_us_fuel_prices'], []],
 ];
 
-const SECTIONS: [string, string][] = [
-    ['cards', 'cards'], ['thread-deck', 'thread deck'], ['icons', 'icons'], ['components', 'app components'], ['app-draft', 'app draft'],
-];
-
 export default function DevPage() {
     return <Box sx={{ height: '100vh', overflow: 'auto', bgcolor: 'background.default' }}>
-        <DevNav sections={SECTIONS} />
+        <DevNav />
         <Box sx={{ p: 2, pt: 0 }}>
         <Section title="tools chip · count and mode">
             <Box sx={{ p: 1, border: 1, borderColor: 'divider', display: 'grid', gridTemplateColumns: 'auto auto auto', columnGap: 3, rowGap: 1.25, alignItems: 'center' }}>
@@ -187,12 +117,6 @@ export default function DevPage() {
             {WORKSPACE_CASES.map(([label, title, tables, documents]) => <Box key={label} sx={{ width: 240 }}>
                 <Box sx={{ fontSize: 10, mb: 0.5, fontFamily: 'var(--df-font-mono, monospace)', color: 'text.disabled' }}>{label}</Box>
                 <WorkspaceSummary title={title} tables={tables} documents={documents} onExpand={() => {}} />
-            </Box>)}
-        </Section>
-        <Section title="dataset-loaded hint">
-            {STARTER_HINTS.map(([label, Hint]) => <Box key={label} sx={{ border: 1, borderColor: 'divider' }}>
-                <Box sx={{ fontSize: 11, px: 1, pt: 0.75, fontFamily: 'var(--df-font-mono, monospace)', color: 'text.secondary' }}>{label}</Box>
-                <StarterHintMock Hint={Hint} />
             </Box>)}
         </Section>
         <Section title="files">
@@ -224,9 +148,6 @@ export default function DevPage() {
             {['mssql', 'azure_blob'].map(type => <Box key={type} sx={{ width: 560, p: 2, border: 1, borderColor: 'divider' }}>
                 <ConnectorFormCard messageId={`dev-${type}`} prompt={{ sourceType: type }} variant="bare" onResolved={() => {}} />
             </Box>)}
-        </Section>
-        <Section title="thread rail">
-            <Box sx={{ p: 1.5, border: 1, borderColor: 'divider' }}><MockThread /></Box>
         </Section>
         <Section title="charts · rest, reserved colour" id="icons">
             {CHART_TYPES.map(type => { const { Icon, color } = chartFamily(type);

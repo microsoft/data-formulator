@@ -35,7 +35,7 @@ import { classifyInputSourceTransition, shouldShowInputSourceTransition } from '
 import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
 import { hiddenScrollbarSx, OverlayScrollbar, ScrollFadeEdge, useScrollFade } from '../components/ScrollFade';
-import { CHAT_RUN_MIN_ENTRIES, THREAD_SEGMENT_BUDGET, weighThreadBlocks, wrapThreadBlocks } from './threadLayout';
+import { CHAT_RUN_MIN_ENTRIES, THREAD_SEGMENT_BUDGET, leadPartBudget, weighThreadBlocks, wrapThreadBlocks } from './threadLayout';
 import { loadTable } from '../app/tableThunks';
 import { AppDispatch } from '../app/store';
 import { WorkflowProgress } from './WorkflowPanel';
@@ -2331,6 +2331,7 @@ const ChartThumbnail: FC<{
 const LAYOUT_TABLE_HEIGHT = 28 + 8;     // table card + row padding
 const LAYOUT_ENTRY_HEIGHT = 38;         // interaction entry — empirical ~1.5-line average incl. row padding
 const LAYOUT_CHART_HEIGHT = 90 + 8;     // chart card (~70-110) + row padding
+const THREAD_HEADER_HEIGHT = 42;        // a thread's "thread - n" header
 const LAYOUT_THREAD_OVERHEAD = 52;      // header divider + thread padding
 
 function estimateThreadHeight(
@@ -2342,16 +2343,30 @@ function estimateThreadHeight(
         + chartCount * LAYOUT_CHART_HEIGHT;
 }
 
+/**
+ * `lead` places the first piece (the shelf) for good, so the first thread never moves between columns as it
+ * grows: 'with-next' keeps the next piece under it in the first column, 'alone' gives it the first column.
+ */
 function computeThreadColumnLayout(
     heights: number[],
     numColumns: number,
     columnHeight: number,
+    lead?: 'with-next' | 'alone',
 ): number[][] {
     if (heights.length === 0) return [];
     if (heights.length === 1) return [[0]];
 
     const cols = Math.min(numColumns, heights.length);
     if (cols <= 1) return [heights.map((_, i) => i)];
+
+    if (lead === 'with-next') {
+        return computeThreadColumnLayout([heights[0] + heights[1], ...heights.slice(2)], numColumns, columnHeight)
+            .map(column => column.flatMap(i => i === 0 ? [0, 1] : [i + 1]));
+    }
+    if (lead === 'alone') {
+        return [[0], ...computeThreadColumnLayout(heights.slice(1), cols - 1, columnHeight)
+            .map(column => column.map(i => i + 1))];
+    }
 
     return layoutPreserveOrder(heights, cols, columnHeight);
 }
@@ -2688,7 +2703,8 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         });
     });
     const [containerWidth, setContainerWidth] = useState(0);
-    const [threadPanelHeight, setThreadPanelHeight] = useState(600);
+    const [measuredPanelHeight, setThreadPanelHeight] = useState<number>();
+    const threadPanelHeight = measuredPanelHeight ?? 600;
     const [measuredShelfHeight, setMeasuredShelfHeight] = useState<number>();
     const [measuredEntryHeights, setMeasuredEntryHeights] = useState<Record<string, number>>({});
     const layoutSignatureRef = useRef<string>();
@@ -2999,6 +3015,14 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
     if (inputTables.length > 0 || workspaceFiles.length > 0 || externalReferenceCount > 0 || pendingTableCount > 0) {
         allThreadEntries.push({ key: 'source-shelf', isShelf: true });
     }
+    // With columns to continue in, the first thread starts under the shelf and its first part holds only what fits
+    // there (header aside); the rest continues in the next column. Under a tall shelf, leaving less than 60% of the
+    // column (leadBudget 0), the shelf keeps
+    // the first column and threads start in the next. Either way the first thread never moves as it grows.
+    // Only from measured heights: breaks are kept once made, so one made from a guess would stay.
+    const leadBudget = allThreadEntries.length && fittableColumns >= 2
+        && measuredPanelHeight !== undefined && measuredShelfHeight !== undefined
+        ? leadPartBudget(threadPanelHeight - shelfHeight - THREAD_HEADER_HEIGHT, threadPanelHeight) : undefined;
     threadSpecs.forEach((thread, index) => {
         const expansionKey = `${activeWorkspace?.id || ''}:${thread.key}`;
         const isLatest = thread === latestThread;
@@ -3025,7 +3049,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         const starts = wrapThreadBlocks(weighThreadBlocks(blocks.map(block => block.nodeIds.map(id => {
             const made = threadOutputsOf([id]).length;
             return made || (threadGraph.kindOf(id) === 'turn' ? 'chat' as const : 'skip' as const);
-        }))), THREAD_SEGMENT_BUDGET, sealed);
+        }))), THREAD_SEGMENT_BUDGET, sealed, index === 0 && leadBudget ? leadBudget : THREAD_SEGMENT_BUDGET);
         const breaks = starts.slice(1).map(start => blocks[start].start!);
         if (breaks.join() !== (threadBreaks[expansionKey] || []).join()) pendingBreaksRef.current[expansionKey] = breaks;
         if (starts.length === 1) { allThreadEntries.push(entry); return; }
@@ -3165,7 +3189,7 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         if (entry.isShelf) return Math.ceil(shelfHeight);
         const measured = measuredEntryHeights[entryLayoutKey(entry)];
         if (measured !== undefined) return measured;
-        if (entry.historyCollapsed) return 42 + (entry.threadOutputs?.length ? THREAD_DECK_HEIGHT
+        if (entry.historyCollapsed) return THREAD_HEADER_HEIGHT + (entry.threadOutputs?.length ? THREAD_DECK_HEIGHT
             : Math.min(3, entry.threadLines?.length ?? 0) * 20 + 22);
         const ids = (entry.segmentNodeIds ?? entry.thread!.nodeIds).flatMap(id => [id, ...threadGraph.membersOf(id)]);
         const chartCount = ids.reduce((sum, id) => {
@@ -3175,7 +3199,9 @@ export const DataThread: FC<{sx?: SxProps, centered?: boolean, denseColumns?: bo
         return Math.ceil(estimateThreadHeight(ids.filter(id => threadGraph.isItem(id)).length,
             ids.filter(id => threadGraph.isMessage(id)).length, chartCount));
     });
-    const entrySegments = computeThreadColumnLayout(entryHeights, fittableColumns, threadPanelHeight)
+    // A first part that runs a little past the bottom stays under the shelf: moving it would be the jump this avoids.
+    const lead = leadBudget === undefined || allThreadEntries.length < 2 ? undefined : leadBudget ? 'with-next' : 'alone';
+    const entrySegments = computeThreadColumnLayout(entryHeights, fittableColumns, threadPanelHeight, lead)
         .map(indices => indices.map(index => allThreadEntries[index]));
 
     let view = hasContent ? (

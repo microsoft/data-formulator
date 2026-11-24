@@ -174,8 +174,8 @@ it('keeps the landing chat, quick actions, and source links separate from the lo
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(onStartChat).toHaveBeenLastCalledWith('Compare weekly sales', [], []);
     expect(input).toHaveValue('');
-    fireEvent.click(screen.getByRole('button', { name: 'Guide me to connect a data source' }));
-    expect(onStartChat).toHaveBeenLastCalledWith('Guide me to connect a data source', [], []);
+    fireEvent.click(screen.getByRole('button', { name: 'Help me connect a database or data source' }));
+    expect(onStartChat).toHaveBeenLastCalledWith('Help me connect a database or data source', [], []);
     fireEvent.click(screen.getByRole('button', { name: 'Example Datasets' }));
     expect(onSelectConnector).toHaveBeenCalledWith(connector);
     fireEvent.click(screen.getByRole('button', { name: 'Upload Data' }));
@@ -202,7 +202,7 @@ it('disables the landing composer and quick actions in read-only sessions', () =
     render(<Provider store={configureStore({ reducer: dataFormulatorReducer })}><LandingDataEntry onStartChat={vi.fn()} ensureActiveWorkspace={vi.fn()} onUpload={vi.fn()}
         onConnect={vi.fn()} onSelectConnector={vi.fn()} connectors={[]} readOnly /></Provider>);
     expect(screen.getByRole('textbox')).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Guide me to connect a data source' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: 'Help me connect a database or data source' })).toHaveAttribute('aria-disabled', 'true');
 });
 
 it('browses a connector using the artifact preview inside the load dialog', async () => {

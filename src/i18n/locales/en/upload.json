@@ -77,14 +77,14 @@
     "showFull": "Show Full",
     "dataLoadingAgent": "Data Loading Agent",
     "resumePreviousConversation": "Previous conversation →",
-    "agentChatPlaceholder": "Ask the agent to find datasets, or extract data from an image or text…",
+    "agentChatPlaceholder": "Load or connect data, then ask for charts, maps, dashboards or reports…",
     "agentChatTabSuggestion": "What datasets do we have here?",
     "agentChatSuggestionsLabel": "Try asking",
     "agentChatSendTooltip": "Start chatting with the agent",
     "dataSourcesLabel": "Connected to:",
     "addSourceLabel": "Add data:",
     "agentChatQuickAction": {
-      "connect": "Guide me to connect a data source",
+      "connect": "Help me connect a database or data source",
       "askConnected": "List tables from my connected sources",
       "workflowFromSession": "Turn my last analysis into a workflow",
       "scheduleWorkflow": "Schedule a workflow to run daily"
@@ -96,8 +96,12 @@
       "kind": {
         "ask": "ask",
         "find": "find",
-        "extract": "extract"
-      }
+        "extract": "extract",
+        "map": "map",
+        "app": "app"
+      },
+      "mapLifeExpectancy": "Map life expectancy around the world over time",
+      "dashboardIncome": "Build a dashboard of US household income by state"
     },
     "uploadData": "Upload Data",
     "importData": "Import data",

@@ -105,8 +105,6 @@
       "extractFromImage": "画像からデータを抽出",
       "extractFromImageExample": "この画像から売上データを抽出します",
       "extractFromText": "テキストからデータを抽出",
-      "extractFromTextExample": "このテキストから売上成長データを抽出します: Business Highlights ...",
-      "extractFromTextPrompt": "このテキストから売上成長データを抽出してください。\n\n主な業績\n\nMicrosoft Cloudの売上高は515億ドルで、26%増加しました（為替一定ベースでは24%増）。商用の残存履行義務は110%増加し、6250億ドルとなりました。\n\nProductivity and Business Processesの売上高は341億ドルで、16%増加しました（為替一定ベースでは14%増）。主な業績は次のとおりです。\n\n·        Microsoft 365 Commercial Cloudの売上高は17%増加しました（為替一定ベースでは14%増）\n\n·        Microsoft 365 Consumer Cloudの売上高は29%増加しました（為替一定ベースでは27%増）\n\n·        LinkedInの売上高は11%増加しました（為替一定ベースでは10%増）\n\n·        Dynamics 365の売上高は19%増加しました（為替一定ベースでは17%増）\n\nIntelligent Cloudの売上高は329億ドルで、29%増加しました（為替一定ベースでは28%増）。主な業績は次のとおりです。\n\n·        Azureおよびその他のクラウドサービスの売上高は39%増加しました（為替一定ベースでは38%増）\n\nMore Personal Computingの売上高は143億ドルで、3%減少しました。主な業績は次のとおりです。\n\n·        Windows OEMおよびDevicesの売上高は1%増加しました（為替一定ベースではほぼ横ばい）\n\n·        Xboxのコンテンツおよびサービスの売上高は5%減少しました（為替一定ベースでは6%減）\n\n·        トラフィック獲得コストを除く検索およびニュース広告の売上高は10%増加しました（為替一定ベースでは9%増）\n\n2026会計年度第2四半期にMicrosoftは、配当と自社株買いの形で127億ドルを株主に還元しました。これは2025会計年度第2四半期と比較して32%の増加です。",
       "generateSynthetic": "合成データを生成",
       "generateSyntheticExample": "20行のUK王朝データセットを生成",
       "browseSamples": "サンプルデータセットを参照",

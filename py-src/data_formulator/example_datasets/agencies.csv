@@ -1,0 +1,119 @@
+agency,short_name,name,country,location,latitude,longitude,founded,closed,launches,successes,first_launch,last_launch
+RVSN,RVSN,Strategic Rocket Forces,USSR,Mosvka?,55.75,37.62,1959,1991,1537,1406,1960,1981
+UNKS,UNKS,Upravleniye Nachalnika Kosmicheskikh Sredstv,USSR,Moskva,55.75,37.62,1986,1991,905,869,1982,1991
+SPX,SpaceX,SpaceX,USA,"Hawthorne, California",33.92,-118.35,2007,,734,726,2006,2026
+CALT,CALT,Chinese Academy of Launch Vehicle Technology (CASC 1st Acad),China,Beijing:Nanyuan,39.78,116.39,1957,,381,366,1970,2026
+AE,Arianespace,"Arianespace, Inc.",France,"Paris:Evry, France",48.62,2.43,1980,2017,305,294,1984,2026
+SAST,SAST,Shanghai Academy of Space Technology (CASC 8th Acad),China,Shanghai:Minghan,31.11,121.38,1993,,280,273,1973,2026
+AFSSD,USAF SSD,US Air Force Space Systems Division,USA,"El Segundo, California",33.92,-118.41,1961,1967,261,222,1961,1967
+VKSR,VKS RVSN,Russian Military Space Forces,Russia,"Mosvka:Solnechnogorsk, Rossiya",56.18,36.98,1997,2001,197,190,1992,1997
+FKA,Roskosmos,Roskosmos,Russia,Moskva,55.75,37.62,2004,2016,184,179,2004,2026
+GSFC,GSFC,NASA Goddard Space Flight Center,USA,"Greenbelt, Maryland",38.99,-76.89,1959,,183,171,1960,1989
+SAMSO,SAMSO,USAF Space and Missile Systems Organization,USA,"El Segundo, California",33.92,-118.41,1967,1979,172,164,1967,1979
+JSC,NASA JSC,NASA Johnson Space Flight Center,USA,"Houston:Clear Lake, Texas",29.56,-95.12,1973,,140,134,1981,2011
+LERC,NASA LeRC,NASA Lewis Research Center,USA,"Cleveland, Ohio",41.41,-81.86,1958,1999,107,93,1962,1997
+ULAL,ULA,United Launch Alliance/Lockheed Martin Astronautics,USA,"Denver:Centennial, Colorado",39.59,-104.87,2006,,102,102,2007,2026
+ISRO,ISRO,Indian Space Research Organization,India,Bangalore,12.98,77.58,1969,,100,88,1979,2026
+ILSK,ILS-K,"International Launch Services, Khrunichev",Russia,Moskva,55.75,37.62,1995,2019,97,90,1996,2019
+KHRU,Khrunichev,Khrunichev State Research and Production Center,Russia,Moskva:Fili,55.75,37.5,1994,1998,95,88,1996,2026
+RLABN,Rocket Lab,Rocket Lab Ltd.,New Zealand,"Parnell, Auckland, North Island",-36.87,174.78,2009,,87,83,2017,2026
+KVR,KVR,Russian Space Forces,Russia,Moskva:Solnechnogorsk,56.18,36.98,2001,2011,81,78,2001,2019
+BLS,Boeing,Boeing Launch Services (?),USA,"Huntington Beach, California",33.69,-118.0,1996,,76,73,1997,2006
+VVKO,VVKO,Aerospace Defence Forces,Russia,Moskva,55.75,37.62,2011,2015,75,73,2011,2026
+ULAB,ULA,United Launch Alliance/Boeing,USA,"Denver:Centennial, Colorado",39.59,-104.87,2006,,68,68,2006,2024
+MDSSC,MDSSC,McDonnell Douglas/HB,USA,"Huntington Beach, California",33.69,-118.0,1967,1996,62,61,1989,1997
+AFSD,USAF SD,US Air Force Space Division,USA,"El Segundo, California",33.92,-118.41,1979,1989,60,56,1979,1990
+RVSNR,RVSN RF,Russian Strategic Rocket Forces,Russia,Mosvka?,55.75,37.62,1991,,53,49,1993,2014
+OSC,Orbital Sciences,Orbital Sciences Corp.,USA,"Fairfax, Virginia",38.85,-77.3,1986,1993,51,46,1990,2018
+MHI,MHI,Mitsubishi Heavy Industries (Launch Services),Japan,Tokyo:Minato,35.66,139.75,1964,,47,47,2006,2025
+AFBMD,USAF BMD,US Air Force Ballistic Missile Division,USA,"El Segundo, California",33.92,-118.41,1957,1961,45,25,1958,1961
+LMA,LMA,Lockheed Martin Astronautics,USA,"Denver:Littleton, Colorado",39.6,-105.01,1995,2003,44,42,1995,2001
+MSFC,NASA MSFC,NASA Marshall Space Flight Center,USA,"Huntsville, Alabama",34.68,-86.65,1960,,41,35,1960,2026
+LARCN,NASA LaRC,NASA Langley Research Center,USA,"Langley Field, Hampton, Virginia",37.09,-76.38,1958,,39,37,1960,1994
+EXPACE,ExPace,ExPace Technology Corp.,China,Beijing:Haidian,39.96,116.3,2016,,37,33,2017,2026
+NASDA,NASDA,National Space Development Adminstration,Japan,"Tokyo, Nippon",35.69,139.68,1969,2003,37,33,1975,2003
+STSM,Starsem,Starsem,France,Paris:Evry,48.62,2.43,1996,,37,37,1999,2021
+ISAS,ISAS,Institute of Space and Aeronautical Sci,Japan,Tokyo:Komaba,35.66,139.68,1964,1981,35,27,1966,2006
+ILSL,ILS-LMA,"International Launch Services, Lockheed Martin",USA,"McLean, Virginia",38.93,-77.18,2000,2008,31,31,2000,2006
+UNKSR,UNKS RF,Upravleniye Nachalnika Kosmicheskikh Sredstv RF,Russia,Moskva,55.75,37.62,1991,1992,29,28,1992,1992
+XIDO,Galactic Energy,Galactic Energy Co.,China,Beijing,39.92,116.38,2015,,28,25,2020,2026
+RAKA,Roskosmos,Russian Aviation and Space Agency,Russia,"Moskva, Rossiya",55.75,37.62,1999,2004,27,26,2000,2004
+SEALP,SeaLaunch,Sea Launch Limited Partnership,USA,"Long Beach, California",33.77,-118.2,2000,2010,26,25,2000,2009
+10ADS,ADCOM 10ADS,"USAF Aerospace Defence Command, 10th Aerospace Defence Sqn.",USA,"Vandenberg AFB, California",34.75,-120.61,1966,,22,22,1967,1979
+JAXA,JAXA,Japan Aerospace Exploration Agency,Japan,Tokyo:Chofu,35.65,139.54,2003,,21,17,2009,2026
+ESA,ESA,European Space Agency,ESA,Paris,48.86,2.3,1975,,20,17,1979,2024
+KTRAS,Kosmotras,MKK Kosmotras,Russia,Moskva,55.75,37.62,1997,,20,19,1999,2015
+ZKYT,CAS Space,Beijing CAS Space Exploration Tech. Co. Ltd.,China,Beijing:Haidian,39.96,116.3,2018,2022,18,17,2022,2026
+3SLS,USAF 3SLS,USAF 3SLS,USA,"Patrick AFB, Florida",28.24,-80.61,1990,,16,13,1996,2005
+IRSA,IRSA,Iranian Space Agency,Iran,Tehran,35.69,51.39,2004,,15,6,2008,2024
+CGWIC,CGWIC,China Great Wall Industry Corp.,China,Beijing:Nanyuan,39.78,116.39,1980,,14,14,2024,2026
+EUROK,Eurockot,Eurockot Launch Services GmbH (D for RU lanch vehicle),Russia,Bremen,53.08,8.3,1995,,14,13,2000,2018
+GDCLS,GDCLS,General Dynamics Commercial Launch Service,USA,"San Diego, California",32.72,-117.16,1988,1994,14,11,1990,1994
+CZHJ,Changzheng H.,China Long March Rocket Co. Ltd.,China,Beijing,39.78,116.39,2016,,13,13,2019,2026
+ISA,ISA,Israel Space Agency,Israel,Tel Aviv,32.07,34.78,1983,,13,11,1988,2025
+LANDSP,LandSpace,LandSpace Technology,China,Beijing,39.92,116.38,2015,,13,10,2018,2026
+NGIS,NG,Northrop Grumman Innovation Systems,USA,"Washington:Dulles, Virginia",39.01,-77.43,2018,,13,13,2018,2026
+RSLP,SMC/RSLP,"USAF Space and Missile Center, Rocket Systems Launch Program",USA,"Kirtland AFB, Albequerque",35.04,-106.61,1990,,13,13,2000,2013
+ZHSH,CACL,CASC Commercial Rocket YG,China,Shanghai:Minghan,31.11,121.38,2025,,13,13,2025,2026
+CNES,CNES,National Space Research Center,France,Paris,48.86,2.3,1962,,12,10,1965,1975
+ABMA,ABMA,U.S. Army Ballistic Missile Agency,USA,"Huntsville, Alabama",34.68,-86.65,1956,1961,11,6,1958,1959
+AFSMC,USAF SMC,US Air Force Space and Missile Center,USA,"El Segundo, California",33.92,-118.41,1992,2019,11,9,1992,1995
+MVS,MVS,Miinistry of the Armed Forces,USSR,Moskva,55.75,37.62,1946,1950,11,6,1957,1959
+NRL,NRL,Naval Research Lab,USA,"Washington, D.C.",38.9,-77.02,1923,,11,3,1957,1959
+OSCC,OSC Chandler,Orbital Sciences Corp./Chandler,USA,"Phoenix:Chandler, Arizona",33.3,-111.83,1988,2015,11,8,1994,2013
+2SLS,Boeing/2SLS,Boeing/USAF 2SLS,USA,"Patrick AFB, Florida",28.24,-80.61,1990,,10,10,1999,2005
+GKLS,GK Launch Serv.,GK Launch Services,Russia,Moskva,55.75,37.62,2017,,10,10,2021,2026
+AFSC,AFSC,"US Air Force Systems Command, Los Angeles AFS",USA,"El Segundo, California",33.92,-118.41,1961,1992,9,8,1972,1976
+AFSSD2,USAF SSD,US Air Force Space Systems Division,USA,"El Segundo, California",33.92,-118.41,1989,1992,9,9,1989,1992
+CRA,CRA,Aerospace Research Center,Italy,Roma,41.9,12.52,1959,,9,9,1967,1988
+KARI,KARI,Korea Aerospace Research Institute,South Korea,Daejeon,36.35,127.39,1989,2024,8,5,2009,2026
+KCST,KCST,Korean Committee of Space Technology,North Korea,Pyongyang?,39.02,125.74,1998,2013,8,2,1998,2024
+S4300,SAC 4300SS,"USAF Strategic Air Command, 4300th Support Sqn.",USA,"Vandenberg AFB, California",34.75,-120.61,,,8,7,1965,1967
+XJRY,iSpace,Beijing Interstellar Glory Space Tech. Co. Ltd.,China,Beijing,39.92,116.38,2016,,8,4,2019,2025
+AFSPC,USAF AFSPC,US Air Force Space Command,USA,"Peterson AFB, Colorado",38.82,-104.7,1982,2019,7,7,1990,1995
+ASTRV,Astra,Astra Space,USA,"Alameda, California",37.76,-122.27,2016,,7,2,2020,2022
+FFLY,Firefly,Firefly Aerospace,USA,Austin,30.29,-97.74,,,7,4,2021,2026
+IRGC,IRGC,Sepah-e Pasdaran-e Enghelab-e Eslami (Missile Forces),Iran,Shahroud,36.2,55.33,1979,,7,5,2020,2025
+MSC,MSC,NASA Manned Spacecraft Center,USA,"Houston:Clear Lake, Texas",29.56,-95.12,1962,1973,7,5,1965,1966
+4SLS,USAF 4SLS,USAF 4SLS,USA,"Patrick AFB, Florida",28.24,-80.61,1990,,6,6,1995,1998
+ELUS,Energia Ltd US,"Energia Logistics Ltd, (ELUS)",USA,"Long Beach, California",33.77,-118.2,2010,,6,5,2011,2014
+MMCLS,MMCLS,Martin Marietta Commercial Launch Services,USA,"San Diego, California",32.72,-117.16,1994,1995,6,6,1994,1995
+NOTS,NOTS,Naval Ordnance Test Station,USA,"China Lake, California",35.69,-117.69,1943,1967,6,0,1958,1958
+SIS,Space Intl. Ser.,Space International Services,Russia,Moskva,55.75,37.62,2005,,6,6,2008,2013
+VORB,Virgin Orbit,Virgin Orbit LLC,USA,"Long Beach, California",33.77,-118.2,2017,,6,4,2020,2023
+PLA2AC,PLA 2nd Art.,PLA Second Artillery Corps,China,Beijing,39.92,116.38,1966,2016,5,2,2002,2014
+RLABU,Rocket Lab,Rocket Lab USA,USA,"Los Angeles, California",34.05,-118.25,2014,2021,5,5,2023,2026
+ULAD,ULA Decatur,"United Launch Alliance, Decatur",USA,"Decatur, Alabama",34.61,-86.98,2006,,5,4,2024,2026
+BLOR,Blue Origin,Blue Origin LLC,USA,"Kent, Washington",47.38,-122.23,2000,,4,2,2025,2026
+DFK,Dongfang Kongjian,Orienspace,China,"Haiyang zone, Yantai City, Shandong",36.73,121.19,2020,,4,4,2024,2026
+ELDO,CECLES/ELDO,European Launcher Development Organization,ELDO,Paris,48.86,2.3,1962,1975,4,0,1968,1971
+KVR?,,,,,,,,,4,4,2011,2017
+MMA,MMA,Martin Marietta Astronautics,USA,"Denver, Colorado",39.76,-104.88,1961,1995,4,3,1990,1992
+PU,Puskovie Uslugi,ZAO Puskovie Uslugi,Russia,Moskva,55.75,37.62,1992,,4,3,2000,2006
+SEALC,SeaLaunch,Sea Launch Limited Partnership,Cayman Is.,"Georgetown, Cayman Islands",19.3,-81.39,1997,2000,4,3,1999,2000
+AEB,BSA,Brazilian Space Agency,Brazil,"San Jose dos Campos, Brasil",-23.19,-45.88,,,3,0,1997,2003
+NGISD,NGIS SSG,Northrop Grumman Space Systems Group (SSG),USA,"Washington:Dulles, Virginia",39.01,-77.43,2018,,3,3,2019,2026
+NSIL,New Space India,New Space India Ltd,India,Bengaluru,12.98,77.58,2019,,3,3,2022,2025
+RSC,Rocket Systems,Rocket Systems Corporation,Japan,Tokyo,35.68,139.68,1990,2006,3,3,2005,2006
+SPONE,Space One,Space One Co. Ltd.,Japan,Tokyo:Minato,35.66,139.75,2018,,3,0,2024,2026
+VMFR,Russian Navy,Russian Navy,Russia,"Moskva, Rossiya",55.75,37.62,1991,,3,2,1998,2006
+AVIO,Avio,Avio s.p.A.,Italy,Colleferro,41.73,13.02,2003,,2,2,2026,2026
+ISAR,Isar Aerospace,Isar Aerospace Technologies GmbH,Germany,Munchen:Ottobrunn,48.07,11.66,2018,,2,1,2025,2026
+OATKC,OATK FSG,Orbital ATK  Flight Systems Group (FSG),USA,"Phoenix:Chandler, Arizona",33.3,-111.83,2015,2018,2,2,2017,2017
+RAE,RAE,Royal Aircraft Establishment,UK,"Farnborough, Hants.",51.29,-0.75,1918,1991,2,1,1970,1971
+TIANB,Space Pioneer,Beijing Tianbing Tech. Co. Ltd (Space Pioneer),China,Beijing:Fengtai,39.86,116.41,,,2,1,2023,2026
+ABLSS,ABL Space Sys,ABL Space Systems,USA,"El Segundo, California",33.92,-118.41,2017,,1,0,2023,2023
+ADD,ADD,Agency for Defense Development,South Korea,Daejon,36.35,127.39,1983,,1,1,2023,2023
+AFORS,DoD ORS,"Operationally Responsive Space Office, Dept. of Defense",USA,"Kirtland AFB, Albuquerque, New Mexico",35.04,-106.61,1997,2018,1,0,2015,2015
+CASIC4A,CASIC 4th Acad,CASIC 4th Academy,China,Beijing?,39.92,116.38,2002,,1,1,2017,2017
+EER,EER,EER Systems Inc. Aerospace Div.,USA,"Seabrook, Maryland",38.97,-76.85,1990,2001,1,0,1995,1995
+GILM,Gilmour Space,Gilmour Space Technologies,Australia,"Helensvale, Queensland",27.82,153.28,2013,,1,0,2025,2025
+INNOSP,Innospace,Innospace Co. Ltd.,South Korea,Sejong,36.49,127.28,,,1,0,2025,2025
+LYK,Lingyi Kongjian,OneSpace,China,Chongqing Liangjian New Area,29.64,106.57,2015,,1,0,2019,2019
+MICOM,USAMICOM,US Army Missile Command,USA,"Huntsville, Alabama",34.68,-86.65,1963,1997,1,1,1967,1967
+NADA,NADA,National Aerospace Development Administration,North Korea,Pyongyang,39.02,125.74,2013,,1,1,2016,2016
+NGISC,NG,NGIS Flight Systems Group,USA,"Phoenix:Chandler, Arizona",33.3,-111.83,2018,,1,1,2021,2021
+RELSP,Relativity Space,Relativity Space,USA,"Long Beach, California",33.77,-118.2,2015,,1,0,2023,2023
+RKA,RKA,Rossiskoe aviatsionno-kosmicheskoe agentsvo (Rosaviakosmos),Russia,Moskva,55.75,37.62,1992,1999,1,1,2011,2011
+S394I,SAC 394ITMS,"USAF Strategic Air Command, 394th ICBM Test Maintenance Sqn",USA,"Vandenberg AFB, California",34.75,-120.61,,,1,0,1980,1980
+SKYRT,Skyroot,Skyroot Aerospace,India,Hyderabad,17.37,78.48,2018,,1,1,2026,2026

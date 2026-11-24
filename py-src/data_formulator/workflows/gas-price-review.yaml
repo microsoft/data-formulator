@@ -33,13 +33,13 @@ source: >-
   user_review_needed false, or inspect and reuse the same raw workspace input.
   Expected fields are date, fuel, grade, formulation, and price; verify actual
   names and category values. Curated source context for this exact sample:
-  TidyTuesday's 2025-07-01 Weekly US Gas Prices dataset, sourced from the U.S.
-  Energy Information Administration (EIA). The price field is the average US
+  the U.S. Energy Information Administration (EIA) weekly retail gasoline and
+  diesel prices, in TidyTuesday's 2025-07-01 Weekly US Gas Prices layout. The price field is the average US
   retail price per gallon in US dollars; use nominal, not inflation-adjusted,
   dollars. These are national series, not regional observations. Diesel's
   formulation is inapplicable and is encoded as NA or null. Reference:
-  https://github.com/rfordatascience/tidytuesday/blob/main/data/2025/2025-07-01/readme.md
-  and original series source https://www.eia.gov/petroleum/gasdiesel/.
+  https://www.eia.gov/petroleum/gasdiesel/ and the layout's origin
+  https://github.com/rfordatascience/tidytuesday/blob/main/data/2025/2025-07-01/readme.md.
   Cite these references in the report without claiming to have fetched them
   during this run. Missing units or provenance in the catalog's short description
   is not a blocker: use this supplied context. No separate metadata lookup or

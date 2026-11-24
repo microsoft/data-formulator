@@ -77,14 +77,14 @@
     "showFull": "전체 보기",
     "dataLoadingAgent": "데이터 로드 에이전트",
     "resumePreviousConversation": "이전 대화 →",
-    "agentChatPlaceholder": "데이터 세트를 찾거나 이미지/텍스트에서 데이터를 추출하도록 에이전트에게 요청하세요…",
+    "agentChatPlaceholder": "데이터를 불러오거나 연결한 뒤 차트, 지도, 대시보드, 보고서를 요청하세요…",
     "agentChatTabSuggestion": "여기에 어떤 데이터 세트가 있나요?",
     "agentChatSuggestionsLabel": "다음과 같이 요청해 보세요",
     "agentChatSendTooltip": "에이전트와 대화 시작",
     "dataSourcesLabel": "연결된 데이터 소스:",
     "addSourceLabel": "데이터 추가:",
     "agentChatQuickAction": {
-      "connect": "데이터 소스 연결 방법 안내",
+      "connect": "데이터베이스나 데이터 소스 연결을 도와줘",
       "askConnected": "연결된 소스의 테이블 목록",
       "workflowFromSession": "최근 분석을 워크플로로 만들기",
       "scheduleWorkflow": "워크플로를 매일 실행하도록 예약"
@@ -96,8 +96,12 @@
       "kind": {
         "ask": "요청",
         "find": "찾기",
-        "extract": "추출"
-      }
+        "extract": "추출",
+        "map": "지도",
+        "app": "앱"
+      },
+      "mapLifeExpectancy": "전 세계 기대 수명의 변화를 지도로 보여줘",
+      "dashboardIncome": "미국 주별 가구 소득 대시보드를 만들어줘"
     },
     "uploadData": "데이터 업로드",
     "importData": "데이터 가져오기",

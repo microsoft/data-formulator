@@ -194,6 +194,20 @@ def _catalog_pagination_args(data: dict[str, Any]) -> tuple[int | None, int]:
     return min(limit, _MAX_CATALOG_PAGE_SIZE), max(0, offset)
 
 
+def _relists_on_open(loader: Any) -> bool:
+    """Whether opening this source's catalog lists it afresh instead of reading the cache.
+
+    Local folders are cheap to scan, and free listings (the built-in samples) come from config, so a
+    cached copy would hide files or datasets added or removed since.
+    """
+    from data_formulator.data_loader.local_folder_data_loader import LocalFolderDataLoader
+
+    if isinstance(loader, LocalFolderDataLoader):
+        return True
+    policy = getattr(type(loader), "catalog_cache_policy", None)
+    return bool(policy and policy().refresh_cost == "free")
+
+
 def _filter_catalog_tables(
     tables: list[dict[str, Any]],
     name_filter: str | None,
@@ -2165,7 +2179,6 @@ def connector_get_catalog_tree():
             from data_formulator.datalake.catalog_refresh import catalog_discovery_status, start_catalog_discovery
             from data_formulator.datalake.catalog_cache import _load_catalog_raw
             from data_formulator.datalake.workspace import get_user_home
-            from data_formulator.data_loader.local_folder_data_loader import LocalFolderDataLoader
 
             user_home = get_user_home(source._get_identity())
             discovery = catalog_discovery_status(user_home, source._source_id)
@@ -2178,7 +2191,7 @@ def connector_get_catalog_tree():
             if raw is None or (
                 not data.get("poll") and (
                     data.get("refresh")
-                    or isinstance(loader, LocalFolderDataLoader)
+                    or _relists_on_open(loader)
                     or discovery["status"] in ("failed", "interrupted")
                 )
             ):
@@ -2198,20 +2211,17 @@ def connector_get_catalog_tree():
 
         from data_formulator.datalake.workspace import get_user_home
         from data_formulator.datalake.catalog_cache import _load_catalog_raw, save_catalog
-        from data_formulator.data_loader.local_folder_data_loader import (
-            LocalFolderDataLoader,
-        )
 
         identity = source._get_identity()
         user_home = get_user_home(identity)
         raw = _load_catalog_raw(user_home, source._source_id)
 
-        # Local folders: always re-scan from disk. Filesystem listing is cheap
+        # Local folders and built-in samples: always re-list. Listing is cheap
         # and the on-disk snapshot otherwise goes stale (e.g. new files added
         # after connect are invisible to agent search).
-        is_local_folder = isinstance(loader, LocalFolderDataLoader)
+        relist = _relists_on_open(loader)
 
-        if raw and raw.get("tables") and not is_local_folder:
+        if raw and raw.get("tables") and not relist:
             flat_tables = _filter_catalog_tables(raw.get("tables", []), name_filter)
             flat_tables = _merged_catalog_tables(user_home, source._source_id, flat_tables)
         else:
@@ -2225,7 +2235,7 @@ def connector_get_catalog_tree():
                 loader.progress_callback = None
             loader.ensure_table_keys(flat_tables)
             flat_tables = _merged_catalog_tables(user_home, source._source_id, flat_tables)
-            if is_local_folder and not name_filter:
+            if relist and not name_filter:
                 # Persist the fresh listing so agent search stays in sync.
                 try:
                     save_catalog(
@@ -2235,7 +2245,7 @@ def connector_get_catalog_tree():
                     )
                 except Exception:
                     logger.debug(
-                        "Failed to refresh local-folder catalog cache for '%s'",
+                        "Failed to refresh re-listed catalog cache for '%s'",
                         source._source_id, exc_info=True,
                     )
 

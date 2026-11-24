@@ -77,14 +77,14 @@
     "showFull": "显示完整",
     "dataLoadingAgent": "数据加载助手",
     "resumePreviousConversation": "上次对话 →",
-    "agentChatPlaceholder": "让助手查找数据集，或从图片、文本中提取数据…",
+    "agentChatPlaceholder": "加载或连接数据，然后让助手生成图表、地图、仪表板或报告…",
     "agentChatTabSuggestion": "这里有哪些数据集？",
     "agentChatSuggestionsLabel": "试试这样问",
     "agentChatSendTooltip": "开始与助手对话",
     "dataSourcesLabel": "已连接：",
     "addSourceLabel": "添加数据：",
     "agentChatQuickAction": {
-      "connect": "引导我连接数据源",
+      "connect": "帮我连接数据库或数据源",
       "askConnected": "列出已连接数据源中的表",
       "workflowFromSession": "把我上次的分析变成工作流",
       "scheduleWorkflow": "安排工作流每天运行"
@@ -96,8 +96,12 @@
       "kind": {
         "ask": "提问",
         "find": "查找",
-        "extract": "提取"
-      }
+        "extract": "提取",
+        "map": "地图",
+        "app": "应用"
+      },
+      "mapLifeExpectancy": "用地图展示全球预期寿命随时间的变化",
+      "dashboardIncome": "创建美国各州家庭收入仪表板"
     },
     "uploadData": "上传数据",
     "importData": "导入数据",

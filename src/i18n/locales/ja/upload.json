@@ -77,14 +77,14 @@
     "showFull": "全表示",
     "dataLoadingAgent": "データ読み込みエージェント",
     "resumePreviousConversation": "以前の会話 →",
-    "agentChatPlaceholder": "データセットの検索や、画像・テキストからのデータ抽出をエージェントに依頼します…",
+    "agentChatPlaceholder": "データを読み込むか接続して、グラフ・地図・ダッシュボード・レポートを依頼しましょう…",
     "agentChatTabSuggestion": "ここにはどんなデータセットがありますか？",
     "agentChatSuggestionsLabel": "試しに質問",
     "agentChatSendTooltip": "エージェントとのチャットを開始",
     "dataSourcesLabel": "接続先:",
     "addSourceLabel": "またはデータを直接追加:",
     "agentChatQuickAction": {
-      "connect": "データソースへの接続を案内してもらう",
+      "connect": "データベースやデータソースへの接続を手伝って",
       "askConnected": "接続済みソースのテーブルを一覧表示します",
       "workflowFromSession": "直前の分析をワークフローにします",
       "scheduleWorkflow": "ワークフローを毎日実行するようスケジュールします"
@@ -96,8 +96,12 @@
       "kind": {
         "ask": "質問",
         "find": "検索",
-        "extract": "抽出"
-      }
+        "extract": "抽出",
+        "map": "地図",
+        "app": "アプリ"
+      },
+      "mapLifeExpectancy": "世界の平均寿命の推移を地図で表示して",
+      "dashboardIncome": "米国の州別世帯収入のダッシュボードを作成して"
     },
     "uploadData": "データをアップロード",
     "importData": "データをインポート",

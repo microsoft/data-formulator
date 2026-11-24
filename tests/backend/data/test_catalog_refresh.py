@@ -209,3 +209,19 @@ def test_resync_reports_changes_and_does_not_repeat_within_a_minute(tmp_path: Pa
     assert [table["table_key"] for table in load_catalog(tmp_path, "superset")] == ["2:products", "5:refunds"]
     assert resync_catalog(tmp_path, "superset", loader)["refreshed"] is False
     loader.sync_catalog_metadata.assert_called_once()
+
+
+def test_builtin_samples_relist_over_a_fresh_cache(tmp_path: Path) -> None:
+    from data_formulator.data_loader.sample_datasets_loader import SampleDatasetsLoader
+
+    # A cache written before a dataset was dropped from the config must not keep showing it.
+    save_catalog(tmp_path, "sample_datasets", [{"name": "Disasters", "table_key": "Disasters", "path": ["Disasters"]}])
+    with patch(
+        "data_formulator.data_connector.resolve_catalog_refresh_target",
+        return_value=(SampleDatasetsLoader, SampleDatasetsLoader()),
+    ):
+        snapshot = ensure_catalog_freshness(tmp_path, "sample_datasets")
+
+    names = {table["name"] for table in snapshot.tables}
+    assert "Disasters" not in names
+    assert "Space launches/launches" in names

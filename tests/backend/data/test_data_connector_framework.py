@@ -1009,3 +1009,15 @@ class TestScopePinning:
             })
         data = resp.get_json()
         assert data["data"]["pinned_scope"]["database"] == "testdb"
+
+
+def test_packaged_sample_reads_preview_and_rows_from_its_file():
+    loader = SampleDatasetsLoader()
+    table = next(t for t in loader.list_tables("Space launches") if t["name"] == "Space launches/launches")
+    meta = table["metadata"]
+    assert {"launch_date", "vehicle", "latitude", "longitude", "outcome"} <= {c["name"] for c in meta["columns"]}
+    assert meta["sample_rows"] and meta["row_count"] > 7000
+
+    with patch("requests.get", side_effect=AssertionError("packaged samples need no network")):
+        rows = loader.fetch_data_as_arrow("Space launches/launches")
+    assert rows.num_rows == meta["row_count"]

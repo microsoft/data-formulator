@@ -125,8 +125,11 @@ interface FieldProps { label?: React.ReactNode; width?: number; grow?: boolean; 
 /** A labeled control: the label above, the control below. */
 function Field({ label, width, grow, children, sx }: FieldProps) {
     const m = useDensity();
+    // Never wider than its container: in a row the minimum keeps controls from squeezing (they wrap), but a
+    // container narrower than the control (a sidebar, a card) shrinks it instead of letting it stick out.
+    const least = width ?? (m.density === 'compact' ? 120 : 140);
     return (
-        <Stack sx={{ gap: '4px', minWidth: width ?? (m.density === 'compact' ? 120 : 140), width, flex: grow ? '1 1 200px' : undefined, ...(sx as object) }}>
+        <Stack sx={{ gap: '4px', minWidth: `min(${least}px, 100%)`, width, maxWidth: '100%', flex: grow ? '1 1 200px' : undefined, ...(sx as object) }}>
             {label && <Typography variant="body2" fontWeight={500} component="span" sx={{ fontSize: m.labelFont, lineHeight: 1.4 }}>{label}</Typography>}
             {children}
         </Stack>

@@ -8,7 +8,7 @@ import { ThemeProvider, createTheme } from '@mui/material';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { dataFormulatorReducer, dfActions, dfSelectors } from '../../../../src/app/dfSlice';
 import { DataThread } from '../../../../src/views/DataThread';
-import { THREAD_SEGMENT_BUDGET, weighThreadBlocks, wrapThreadBlocks } from '../../../../src/views/threadLayout';
+import { ARTIFACT_LAYOUT_HEIGHT, THREAD_SEGMENT_BUDGET, leadPartBudget, weighThreadBlocks, wrapThreadBlocks } from '../../../../src/views/threadLayout';
 import { FreeDataViewFC } from '../../../../src/views/DataView';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -1348,6 +1348,22 @@ it('wraps a thread into sub-threads by what its blocks made, keeping breaks alre
   // Breaks already made stay put, even when the blocks before them shrank; only what follows wraps.
   expect(wrapThreadBlocks([3, 1, 1, 1, 1], 5, [1])).toEqual([0, 1]);
   expect(wrapThreadBlocks([1, 1, 1], 5, [2])).toEqual([0, 2]);
+});
+
+it('fits the first thread\'s first part under the shelf, or leaves the shelf a column of its own', () => {
+  // Room for three artifacts under the shelf: the first part holds three, the rest wraps as usual.
+  expect(leadPartBudget(3.5 * ARTIFACT_LAYOUT_HEIGHT, 4 * ARTIFACT_LAYOUT_HEIGHT)).toBe(3);
+  expect(wrapThreadBlocks([1, 1, 1, 1, 1, 1], 5, [], 3)).toEqual([0, 3]);
+  // A thread that fits there stays whole; a long thread's first part is never held to more than the usual budget.
+  expect(wrapThreadBlocks([1, 1, 1], 5, [], 3)).toEqual([0]);
+  expect(leadPartBudget(20 * ARTIFACT_LAYOUT_HEIGHT, 21 * ARTIFACT_LAYOUT_HEIGHT)).toBe(THREAD_SEGMENT_BUDGET);
+  // Under a shelf leaving less than 60% of the column, nothing breaks early: threads sit side by side from the next
+  // column, even when two artifacts would fit there; nor when 60% holds only one.
+  expect(leadPartBudget(2.5 * ARTIFACT_LAYOUT_HEIGHT, 5 * ARTIFACT_LAYOUT_HEIGHT)).toBe(0);
+  expect(leadPartBudget(1.5 * ARTIFACT_LAYOUT_HEIGHT, 2 * ARTIFACT_LAYOUT_HEIGHT)).toBe(0);
+  expect(leadPartBudget(-50, 800)).toBe(0);
+  // A first part already made keeps its size; only the parts after it wrap.
+  expect(wrapThreadBlocks([2, 2, 1, 1, 1], 5, [2], 1)).toEqual([0, 2]);
 });
 
 it('breaks a long thread at its requests, keeping an answer to a question in its request\'s block', () => {

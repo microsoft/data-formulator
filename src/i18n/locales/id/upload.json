@@ -77,14 +77,14 @@
     "showFull": "Tampilkan Penuh",
     "dataLoadingAgent": "Agen Pemuatan Data",
     "resumePreviousConversation": "Percakapan sebelumnya →",
-    "agentChatPlaceholder": "Minta agen menemukan kumpulan data, atau mengekstrak data dari gambar atau teks…",
+    "agentChatPlaceholder": "Muat atau hubungkan data, lalu minta grafik, peta, dasbor, atau laporan…",
     "agentChatTabSuggestion": "Kumpulan data apa yang kita miliki di sini?",
     "agentChatSuggestionsLabel": "Coba tanyakan",
     "agentChatSendTooltip": "Mulai mengobrol dengan agen",
     "dataSourcesLabel": "Terhubung ke:",
     "addSourceLabel": "Tambah data:",
     "agentChatQuickAction": {
-      "connect": "Pandu saya menghubungkan sumber data",
+      "connect": "Bantu saya menghubungkan database atau sumber data",
       "askConnected": "Cantumkan tabel dari sumber saya yang terhubung",
       "workflowFromSession": "Jadikan analisis terakhir saya sebagai alur kerja",
       "scheduleWorkflow": "Jadwalkan alur kerja untuk berjalan setiap hari"
@@ -96,8 +96,12 @@
       "kind": {
         "ask": "tanya",
         "find": "cari",
-        "extract": "ekstrak"
-      }
+        "extract": "ekstrak",
+        "map": "peta",
+        "app": "aplikasi"
+      },
+      "mapLifeExpectancy": "Petakan angka harapan hidup di seluruh dunia dari waktu ke waktu",
+      "dashboardIncome": "Buat dasbor pendapatan rumah tangga AS per negara bagian"
     },
     "uploadData": "Unggah Data",
     "importData": "Impor data",

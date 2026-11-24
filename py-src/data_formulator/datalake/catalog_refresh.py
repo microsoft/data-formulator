@@ -195,6 +195,16 @@ def ensure_catalog_freshness(
 
     if hasattr(loader_class, "catalog_cache_policy"):
         policy = loader_class.catalog_cache_policy()
+        # A free listing is built in memory (the built-in samples), so it is
+        # re-listed on every read: a cached copy would outlive config changes.
+        if policy.refresh_cost == "free" and loader is not None:
+            _refresh_catalog(root, source_id, loader, policy)
+            return load_catalog_snapshot(
+                root,
+                source_id,
+                listing_ttl_seconds=policy.listing_ttl_seconds,
+                metadata_ttl_seconds=policy.metadata_ttl_seconds,
+            )
     else:
         policy = CatalogCachePolicy(
             refresh_cost="free",

@@ -111,6 +111,7 @@ include = ["data_formulator*"]
 # Spaces shipped with the app (see data_formulator/spaces/README.md): profile, front-page
 # images, story seeds and the build script that installs the rest from the page.
 "data_formulator" = [
+    "example_datasets/*.csv",
     "spaces/README.md",
     "spaces/shipped/*/README.md",
     "spaces/shipped/*/profile.yaml",

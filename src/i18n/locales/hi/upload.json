@@ -77,14 +77,14 @@
     "showFull": "पूर्ण दिखाएं",
     "dataLoadingAgent": "डेटा लोडिंग एजेंट",
     "resumePreviousConversation": "पिछली बातचीत →",
-    "agentChatPlaceholder": "एजेंट से डेटासेट खोजने, या किसी छवि या टेक्स्ट से डेटा निकालने के लिए कहें…",
+    "agentChatPlaceholder": "डेटा लोड या कनेक्ट करें, फिर चार्ट, मानचित्र, डैशबोर्ड या रिपोर्ट माँगें…",
     "agentChatTabSuggestion": "यहां हमारे पास कौन से डेटासेट हैं?",
     "agentChatSuggestionsLabel": "यह पूछकर देखें",
     "agentChatSendTooltip": "एजेंट के साथ चैट शुरू करें",
     "dataSourcesLabel": "इससे जुड़ा है:",
     "addSourceLabel": "डेटा जोड़ें:",
     "agentChatQuickAction": {
-      "connect": "डेटा स्रोत कनेक्ट करने में मेरा मार्गदर्शन करें",
+      "connect": "डेटाबेस या डेटा स्रोत कनेक्ट करने में मेरी मदद करें",
       "askConnected": "मेरे जुड़े हुए स्रोतों की तालिकाएं सूचीबद्ध करें",
       "workflowFromSession": "मेरे पिछले विश्लेषण को वर्कफ़्लो में बदलें",
       "scheduleWorkflow": "वर्कफ़्लो को रोज़ चलाने के लिए शेड्यूल करें"
@@ -96,8 +96,12 @@
       "kind": {
         "ask": "पूछें",
         "find": "खोजें",
-        "extract": "निकालें"
-      }
+        "extract": "निकालें",
+        "map": "मानचित्र",
+        "app": "ऐप"
+      },
+      "mapLifeExpectancy": "समय के साथ दुनिया भर में जीवन प्रत्याशा का मानचित्र बनाएँ",
+      "dashboardIncome": "राज्य के अनुसार अमेरिकी घरेलू आय का डैशबोर्ड बनाएँ"
     },
     "uploadData": "डेटा अपलोड करें",
     "importData": "डेटा आयात करें",
