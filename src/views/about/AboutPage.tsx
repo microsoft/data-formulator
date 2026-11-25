@@ -10,7 +10,6 @@
 import React, { useEffect, useState } from 'react';
 import { Box, useTheme } from '@mui/material';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useSelector } from 'react-redux';
 import PublicRoundedIcon from '@mui/icons-material/PublicRounded';
 import PersonOutlineRoundedIcon from '@mui/icons-material/PersonOutlineRounded';
 import GitHubIcon from '@mui/icons-material/GitHub';
@@ -20,8 +19,7 @@ import {
     ArchitectureDiagram, CALLOUT_SPAN, DesignFrame, DH, DW, FILL, INK, LEFT_COLUMN, LINE, MONO, MUTED, Stars, Term, TYPE, u,
 } from '../DevDesignPage';
 import { fontSans, ink } from '../../app/tokens';
-import type { DataFormulatorState } from '../../app/dfSlice';
-import { LayerSketch, SketchPointers, type LayerSketchKind, type SketchPointer } from '../DevDesignSketch';
+import { LayerSketch, SketchBrace, SketchPointers, type LayerSketchKind, type SketchPointer } from '../DevDesignSketch';
 import { CONNECTOR_ICON_MAP } from '../../icons';
 import sessionShot from './assets/neurips-session.webp';
 import dfPaperThumbnail from './assets/df-paper.png';
@@ -60,20 +58,27 @@ const Card: React.FC<{ children: React.ReactNode; sx?: object }> = ({ children, 
 /** The title, a row (people · Data Formulator · data) and the talking points, top to bottom, laid out DW wide on a
  *  16:9 stage (so WHAT_H tall) and scaled up to fill the stage, which is DH tall. */
 const WHAT_ASPECT = 16 / 9, WHAT_H = DW / WHAT_ASPECT, WHAT_SCALE = DH / WHAT_H;
-const EDGE = 56;
-const TITLE_Y = 0, TITLE_H = 180;
-const PEOPLE_X = 64, PEOPLE_W = 160;
-const SHOT_X = 264, SHOT_W = 788, SHOT_H = SHOT_W * 9 / 16, TRACE_W = 430, GAP = 24;
+const EDGE = 40;
+const TITLE_Y = 0, TITLE_H = 140;
+const PEOPLE_X = 36, PEOPLE_W = 160;
+/** The row is the slide's centre: the screenshot as wide as the people, the trace and the data sources leave room for. */
+const SHOT_X = PEOPLE_X + PEOPLE_W + 32, SHOT_W = 870, SHOT_H = SHOT_W * 9 / 16, TRACE_W = 420, GAP = 20;
 const TRACE_X = SHOT_X + SHOT_W + GAP;
 /** Connector icons sit in two staggered columns right of the trace. */
-const CONN_X = TRACE_X + TRACE_W + 56, CONN_STAGGER = 16, CONN_STEP = 44;
-const MID_Y = TITLE_Y + TITLE_H + 40;
+const CONN_X = TRACE_X + TRACE_W + 48, CONN_STAGGER = 16, CONN_STEP = 46;
+/** A brace over the row points up at the title (the row is Data Formulator); a brace under each part points down at its message. */
+const TOP_BRACE_Y = TITLE_Y + TITLE_H + 26, BRACE_H = 26;
+const MID_Y = TOP_BRACE_Y + BRACE_H + 16;
+/** The middle of the row (the screenshot and the trace), where the title and the braces' points sit. */
+const ROW_MID = (SHOT_X + TRACE_X + TRACE_W) / 2;
 const ROW_Y = MID_Y + SHOT_H / 2;
-const BRACKET_Y = MID_Y + SHOT_H + 32;
-const MSG_Y = BRACKET_Y + 40, MSG_H = 80;
+const BRACKET_Y = MID_Y + SHOT_H + 18;
+const MSG_Y = BRACKET_Y + BRACE_H + 16, MSG_H = 80;
 /** Centres the content vertically on the stage. */
 const WHAT_SHIFT = (WHAT_H - (MSG_Y + MSG_H) - TITLE_Y) / 2;
-const QR_SIZE = 140;
+const QR_SIZE = 116;
+/** The slide's four type sizes: its name, its one line, the rest, and small print (labels and the trace). */
+const WT = { title: 76, lead: 27, body: 18, small: 14 } as const;
 
 const PEOPLE: [string, number][] = [
     ['Analysts', -20],
@@ -95,6 +100,11 @@ const CONNECTORS: [string | null, string][] = [
 /** A connector's icon centre: x, and y relative to the row. */
 const connectorAt = (i: number): [number, number] =>
     [CONN_X + (i % 2) * CONN_STAGGER, (i - (CONNECTORS.length - 1) / 2) * CONN_STEP];
+/** Where a person's label ends (it is right-aligned there, its line starts there): x, and y relative to the row. They sit
+ *  a little below the row, under the person icon, staggered like the connectors. */
+const PEOPLE_STEP = 30, PEOPLE_DROP = 36;
+const personAt = (i: number): [number, number] =>
+    [PEOPLE_X + PEOPLE_W - 40 + PEOPLE[i][1] * 0.6, PEOPLE_DROP + (i - (PEOPLE.length - 1) / 2) * PEOPLE_STEP];
 
 type CodeKind = 'kw' | 'str' | 'plain' | 'muted';
 const CODE_COLOR: Record<CodeKind, string> = { kw: '#1565c0', str: '#2e7d32', plain: INK, muted: 'rgba(0,0,0,0.45)' };
@@ -104,8 +114,8 @@ const TRACE: [string, string, [CodeKind, string][] | null][] = [
     ['read_file', '("NeurIPS data guide.md")', null],
     ['create_data', '→ papers_by_country_2026', [
         ['kw', 'select country_code, country,'],
-        ['plain', '       count(*) as authors,'],
-        ['plain', '       round(100.0 * count(*) / total, 1) as share'],
+        ['plain', '  count(*) as authors,'],
+        ['plain', '  round(100.0 * count(*) / total, 1) as share'],
         ['kw', 'from authorships_2026'],
         ['plain', '  join institutions using (institution) …'],
         ['kw', 'group by all order by authors desc'],
@@ -121,7 +131,7 @@ const TRACE: [string, string, [CodeKind, string][] | null][] = [
 
 const MESSAGES: [number, number, LayerSketchKind, string, React.ReactNode][] = [
     [PEOPLE_X, SHOT_X + SHOT_W - PEOPLE_X, 'interaction', 'A person asking a question and steering a chart', <>
-        <b>Data threads</b> and an <b>interactive canvas</b> let everyone<br />work with agents on <b>long-horizon data exploration</b>.</>],
+        <b>Data threads</b> and an <b>interactive canvas</b> bridge users and agents<br />to work on <b>long-horizon data exploration</b>.</>],
     [TRACE_X, DW - EDGE - TRACE_X, 'connector', 'Databases wired into one protocol', <>
         A <b>unified agent-data protocol</b> to discover, connect<br />and analyze <b>heterogeneous and large datasets</b>.</>],
 ];
@@ -132,13 +142,12 @@ const Spot: React.FC<{ x: number; y: number; label: string; children: React.Reac
         display: 'flex', alignItems: 'center', gap: u(10), color: ink(0.5),
     }}>
         {children}
-        <Box sx={{ fontSize: u(15), color: MUTED, lineHeight: 1.2, whiteSpace: 'nowrap' }}>{label}</Box>
+        <Box sx={{ fontSize: u(WT.small), color: MUTED, lineHeight: 1.2, whiteSpace: 'nowrap' }}>{label}</Box>
     </At>;
 
 const WhatPage: React.FC = () => {
     const accent = useTheme().palette.primary.main;
     const qr = useQrCode(REPO);
-    const version = useSelector((state: DataFormulatorState) => state.serverConfig?.VERSION);
     const fan = 'rgba(0,0,0,0.12)';
     const iconSx = { fontSize: u(36), display: 'block', flexShrink: 0 };
     return <Box sx={{
@@ -146,64 +155,63 @@ const WhatPage: React.FC = () => {
         transform: `scale(${WHAT_SCALE}) translateY(${u(WHAT_SHIFT)})`,
     }}>
         {/* Data Formulator on the left; its repository (metadata, then QR code) on the right. */}
-        <At x={PEOPLE_X} y={TITLE_Y} w={DW - EDGE - PEOPLE_X} h={TITLE_H} sx={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: u(40),
+        {/* Data Formulator, centred over the row the brace below it groups; its repository follows its one line. */}
+        <At x={ROW_MID - 800} y={TITLE_Y} w={1600} h={TITLE_H} sx={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         }}>
-            <Box>
-                <Box component="h1" sx={{
-                    m: 0, display: 'flex', alignItems: 'center', gap: u(16),
-                    fontSize: u(96), fontWeight: 650, letterSpacing: '-0.03em', lineHeight: 1.05, color: INK,
-                }}>
-                    <Box component="img" src="/data-formulator-logo-128.png" alt="" sx={{ width: u(96), height: u(96) }} />
-                    Data Formulator
-                </Box>
-                <Box sx={{
-                    mt: u(14), ml: u(96 + 16), fontSize: u(30), fontWeight: 500,
-                    letterSpacing: '-0.01em', lineHeight: 1.3, color: MUTED, whiteSpace: 'nowrap',
-                }}>
-                    An interactive data agent harness bridging any person × any data
-                </Box>
+            <Box component="h1" sx={{
+                m: 0, display: 'flex', alignItems: 'center', gap: u(14),
+                fontSize: u(WT.title), fontWeight: 650, letterSpacing: '-0.03em', lineHeight: 1.05, color: INK,
+            }}>
+                <Box component="img" src="/data-formulator-logo-128.png" alt="" sx={{ width: u(WT.title), height: u(WT.title) }} />
+                Data Formulator
             </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: u(20), flexShrink: 0 }}>
-                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: u(8) }}>
-                    <Box component="a" href={REPO} target="_blank" rel="noreferrer" sx={{
-                        display: 'flex', alignItems: 'center', gap: u(8), color: INK, textDecoration: 'none',
-                        fontSize: u(TYPE.body), fontWeight: 500, whiteSpace: 'nowrap', '&:hover': { color: accent },
-                        '&:focus-visible': { outline: `2px solid ${accent}`, outlineOffset: u(4) },
-                    }}>
-                        <GitHubIcon sx={{ fontSize: u(22) }} />microsoft/data-formulator<Stars repo="microsoft/data-formulator" />
-                    </Box>
-                    <Box sx={{ fontSize: u(15), color: MUTED, whiteSpace: 'nowrap' }}>
-                        Open source · MIT License{version ? ` · v${version}` : ''}
-                    </Box>
+            <Box sx={{ mt: u(10), display: 'flex', alignItems: 'center', gap: u(20), whiteSpace: 'nowrap' }}>
+                <Box sx={{ fontSize: u(WT.lead), fontWeight: 500, letterSpacing: '-0.01em', lineHeight: 1.3, color: MUTED }}>
+                    An interactive agent harness bridging any person × any data
                 </Box>
-                {qr && <Box component="a" href={REPO} target="_blank" rel="noreferrer" aria-label="Data Formulator on GitHub" sx={{
-                    display: 'block', flexShrink: 0, borderRadius: u(10),
+                <Box component="a" href={REPO} target="_blank" rel="noreferrer" sx={{
+                    display: 'flex', alignItems: 'center', gap: u(8), alignSelf: 'center', color: INK, textDecoration: 'none',
+                    px: u(14), py: u(6), borderRadius: u(999), border: `1px solid ${LINE}`, bgcolor: '#fff',
+                    fontSize: u(WT.body), fontWeight: 500, '&:hover': { color: accent, borderColor: accent },
                     '&:focus-visible': { outline: `2px solid ${accent}`, outlineOffset: u(4) },
                 }}>
-                    <Box component="img" src={qr} alt={`QR code for ${REPO}`} sx={{
-                        display: 'block', width: u(QR_SIZE), height: u(QR_SIZE), borderRadius: u(10), border: `1px solid ${LINE}`,
-                    }} />
-                </Box>}
+                    <GitHubIcon sx={{ fontSize: u(22) }} />microsoft/data-formulator<Stars repo="microsoft/data-formulator" />
+                </Box>
             </Box>
         </At>
+        {/* Its QR code, at the top right. */}
+        {qr && <At x={DW - EDGE - QR_SIZE} y={TITLE_Y + (TITLE_H - QR_SIZE) / 2} w={QR_SIZE} h={QR_SIZE}>
+            <Box component="a" href={REPO} target="_blank" rel="noreferrer" aria-label="Data Formulator on GitHub" sx={{
+                display: 'block', borderRadius: u(10),
+                '&:focus-visible': { outline: `2px solid ${accent}`, outlineOffset: u(4) },
+            }}>
+                <Box component="img" src={qr} alt={`QR code for ${REPO}`} sx={{
+                    display: 'block', width: u(QR_SIZE), height: u(QR_SIZE), borderRadius: u(10), border: `1px solid ${LINE}`,
+                }} />
+            </Box>
+        </At>}
 
-        {/* People and data fan into it. */}
+        {/* People and data fan into it: any person, any data. */}
         <svg viewBox={`0 0 ${DW} ${DH}`} width="100%" height="100%" style={{ position: 'absolute', inset: 0, overflow: 'visible', pointerEvents: 'none' }}>
-            <line x1={PEOPLE_X + PEOPLE_W + 8} y1={ROW_Y} x2={SHOT_X - 8} y2={ROW_Y} stroke={fan} />
+            {PEOPLE.map(([label], i) => {
+                const [x, dy] = personAt(i);
+                return <line key={label} x1={x + 8} y1={ROW_Y + dy} x2={SHOT_X - 8} y2={ROW_Y} stroke={fan} />;
+            })}
             {CONNECTORS.map(([, label], i) => {
                 const [x, dy] = connectorAt(i);
                 return <line key={label} x1={TRACE_X + TRACE_W + 8} y1={ROW_Y} x2={x - 30} y2={ROW_Y + dy} stroke={fan} />;
             })}
         </svg>
-        <At x={PEOPLE_X} y={MID_Y} w={PEOPLE_W} h={SHOT_H} sx={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: u(24), color: ink(0.5),
-        }}>
+        <At x={PEOPLE_X} y={ROW_Y + personAt(0)[1] - 9 - 24 - 48} w={PEOPLE_W - 30} h={48} sx={{ display: 'flex', justifyContent: 'center', color: ink(0.5) }}>
             <PersonOutlineRoundedIcon sx={{ fontSize: u(48) }} />
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: u(12), fontSize: u(15), lineHeight: 1.2, color: MUTED }}>
-                {PEOPLE.map(([label, offset]) => <Box key={label} sx={{ transform: `translateX(${u(offset)})` }}>{label}</Box>)}
-            </Box>
         </At>
+        {PEOPLE.map(([label], i) => {
+            const [x, dy] = personAt(i);
+            return <At key={label} x={x - 200} y={ROW_Y + dy - 10} w={200} h={20} sx={{
+                display: 'flex', alignItems: 'center', justifyContent: 'flex-end', fontSize: u(WT.small), lineHeight: 1.2, color: MUTED, whiteSpace: 'nowrap',
+            }}>{label}</At>;
+        })}
         {CONNECTORS.map(([type, label], i) => {
             const [x, dy] = connectorAt(i);
             const Icon = type ? CONNECTOR_ICON_MAP[type] : PublicRoundedIcon;
@@ -222,16 +230,16 @@ const WhatPage: React.FC = () => {
             <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                 <Box sx={{
                     display: 'flex', justifyContent: 'space-between', px: u(16), py: u(9), borderBottom: `1px solid ${LINE}`,
-                    fontSize: u(12), fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: MUTED,
+                    fontSize: u(WT.small), fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED,
                 }}>
                     <span>Agent trace</span><span>{TRACE.length} tool calls</span>
                 </Box>
-                <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', px: u(16), py: u(12), fontFamily: MONO, fontSize: u(11.5), lineHeight: 1.6 }}>
-                    {TRACE.map(([tool, arg, code], i) => <Box key={tool + i} sx={{ mt: i ? u(8) : 0 }}>
+                <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', px: u(16), py: u(14), fontFamily: MONO, fontSize: u(WT.small - 2), lineHeight: 1.7 }}>
+                    {TRACE.map(([tool, arg, code], i) => <Box key={tool + i} sx={{ mt: i ? u(12) : 0 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: u(8), whiteSpace: 'nowrap' }}>
                             <Box sx={{
                                 width: u(18), height: u(18), borderRadius: '50%', bgcolor: accent, color: '#fff', fontFamily: fontSans,
-                                fontSize: u(12), fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                                fontSize: u(WT.small - 2), fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                             }}>{i + 1}</Box>
                             <Box component="span" sx={{ color: accent, fontWeight: 600 }}>{tool}</Box>
                             <Box component="span" sx={{ color: MUTED }}>{arg}</Box>
@@ -244,17 +252,19 @@ const WhatPage: React.FC = () => {
             </Card>
         </At>
 
+        {/* Both parts are Data Formulator: a brace over them points up at its name. */}
+        <At x={SHOT_X} y={TOP_BRACE_Y} w={TRACE_X + TRACE_W - SHOT_X} h={BRACE_H}>
+            <SketchBrace width={TRACE_X + TRACE_W - SHOT_X} height={BRACE_H} flip />
+        </At>
         {MESSAGES.map(([x, w, kind, label, text]) => <React.Fragment key={x}>
-            <At x={x} y={BRACKET_Y} w={w} h={26}>
-                <svg viewBox={`0 0 ${w} 26`} width="100%" height="100%" fill="none" aria-hidden="true" style={{ overflow: 'visible' }}>
-                    <path d={`M 0 0 V 14 H ${w} V 0 M ${w / 2} 14 V 26`} stroke={ink(0.35)} strokeWidth={1.5} />
-                </svg>
+            <At x={x} y={BRACKET_Y} w={w} h={BRACE_H}>
+                <SketchBrace width={w} height={BRACE_H} />
             </At>
             <At x={x} y={MSG_Y} w={w} h={MSG_H} sx={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: u(16),
             }}>
                 <Box sx={{ width: u(80), height: u(60), flexShrink: 0 }}><LayerSketch kind={kind} label={label} /></Box>
-                <Body sx={{ whiteSpace: 'nowrap', '& b': { color: INK, fontWeight: 600 } }}>{text}</Body>
+                <Body sx={{ fontSize: u(WT.body), whiteSpace: 'nowrap', '& b': { color: INK, fontWeight: 600 } }}>{text}</Body>
             </At>
         </React.Fragment>)}
     </Box>;

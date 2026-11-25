@@ -357,3 +357,40 @@ export const SketchPointers: React.FC<{ width: number; height: number; pointers:
     }, [width, height, key, ink]);
     return <canvas ref={ref} aria-hidden="true" style={{ width: '100%', height: '100%', display: 'block', pointerEvents: 'none' }} />;
 };
+
+/** A hand-drawn curly brace across a `width` x `height` board, opening upward with its point at the bottom (`flip`: opening
+ *  downward, its point at the top), the point `at` that share of the width. */
+export const SketchBrace: React.FC<{ width: number; height: number; color?: string; flip?: boolean; at?: number }> = ({
+    width, height, color = C.ink2, flip = false, at = 0.5,
+}) => {
+    const ref = useRef<HTMLCanvasElement>(null);
+    useEffect(() => {
+        const canvas = ref.current;
+        if (!canvas) return undefined;
+        const draw = () => {
+            const w = canvas.clientWidth, h = canvas.clientHeight;
+            if (!w || !h) return;
+            const dpr = Math.max(2, window.devicePixelRatio || 1);
+            canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+            const ctx = canvas.getContext('2d')!;
+            ctx.setTransform(dpr * w / width, 0, 0, (flip ? -1 : 1) * dpr * h / height, 0, flip ? dpr * h : 0);
+            ctx.clearRect(0, 0, width, height);
+            // Each half hooks round from its end into the bar, then turns down into the point: quarter ellipses, so the
+            // turns stay round however wide the brace.
+            const mid = width * at, bar = height * 0.5;
+            const curl = Math.min(height * 1.1, Math.min(mid, width - mid) / 3);
+            const quarter = (f: (t: number) => Pt): Pt[] => Array.from({ length: 9 }, (_, k) => f((k / 8) * Math.PI / 2));
+            const half = (end: number, toward: number): Pt[] => [
+                ...quarter(t => [end + toward * curl * (1 - Math.cos(t)), 1 + (bar - 1) * Math.sin(t)]),
+                ...quarter(t => [mid - toward * curl * (1 - Math.sin(t)), bar + (height - 1 - bar) * (1 - Math.cos(t))]),
+            ];
+            stroke(ctx, half(0, 1), { w: 2.2, color, alpha: 0.45, seed: 900, wobble: 0.8 });
+            stroke(ctx, half(width, -1), { w: 2.2, color, alpha: 0.45, seed: 910, wobble: 0.8 });
+        };
+        draw();
+        const observer = new ResizeObserver(draw);
+        observer.observe(canvas);
+        return () => observer.disconnect();
+    }, [width, height, color, flip, at]);
+    return <canvas ref={ref} aria-hidden="true" style={{ width: '100%', height: '100%', display: 'block', overflow: 'visible' }} />;
+};

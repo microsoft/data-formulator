@@ -321,7 +321,7 @@ const LAYERS: Layer[] = [
         points: [
             <>A <Term>unified protocol</Term> for agents to work with databases, warehouses, lakes, semantic models, and files the same way:{' '}
                 <Code>ls</Code>, <Code>search</Code>, <Code>read</Code>, <Code>probe</Code>, <Code>load</Code>.</>,
-            <><Term>Lazy virtual connections</Term> let Data Formulator work with extremely large data directly.</>,
+            <><Term>Lazy connections</Term> let Data Formulator work with large and heterogeneous data effectively.</>,
         ],
         Content: ConnectorSlide, sketch: ['connector', 'Databases wired into one protocol'],
     },
@@ -340,6 +340,7 @@ const LAYERS: Layer[] = [
         points: [
             <>An interactive <Term>coding harness</Term> where agents transform data, create charts, and build artifacts.</>,
             <>The <Term>Flint language</Term> <RepoChip repo="microsoft/flint-chart" /> lets agents compose expressive, interactive charts reliably and token-efficiently.</>,
+            <><Term>Plug-in memory and workflow modules</Term> support cross-task replay.</>,
         ],
         Content: HarnessSlide, sketch: ['harness', 'Notebook cells leading to a chart'],
     },
@@ -348,7 +349,7 @@ const LAYERS: Layer[] = [
         points: [
             <><Term>Data threads</Term> take an <Box component="span" sx={{ whiteSpace: 'nowrap' }}>artifact-centric</Box> approach to managing long‑horizon exploration and
                 analysis.</>,
-            <>The <Term>interactive canvas</Term> lets users explore data with visualizations and artifacts.</>,
+            <>An <Term>extensible interactive canvas</Term> lets users explore data with charts, maps, reports, and apps.</>,
         ],
         Content: InteractionSlide, sketch: ['interaction', 'A data thread branching into an editable chart'],
     },
