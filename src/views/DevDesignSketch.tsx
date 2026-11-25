@@ -11,7 +11,7 @@ import React, { useEffect, useRef } from 'react';
 
 type Ctx = CanvasRenderingContext2D;
 type Pt = [number, number];
-export type LayerSketchKind = 'connector' | 'discovery' | 'harness' | 'interaction';
+export type LayerSketchKind = 'connector' | 'discovery' | 'harness' | 'interaction' | 'spec' | 'workflow' | 'memory';
 
 const C = {
     card: '#ffffff',
@@ -248,7 +248,49 @@ function interaction(ctx: Ctx) {
     stroke(ctx, [...pointer, pointer[0]], { w: 2.4 * T, seed: 351, wobble: 0.5 });
 }
 
-const DRAW: Record<LayerSketchKind, (ctx: Ctx) => void> = { connector, discovery, harness, interaction };
+// ---------------------------------------------------------------- the research behind Data Formulator
+
+/** A short spec in braces becomes a chart: Flint's language. */
+function spec(ctx: Ctx) {
+    card(ctx, 14, 34, 92, 112, 600);
+    stroke(ctx, [[34, 48], [26, 52], [28, 86], [21, 90], [28, 94], [26, 128], [34, 132]], { w: 2.4 * T, color: C.ink2, seed: 601, wobble: 0.6 });
+    [[42, 64, 44], [42, 82, 32], [42, 100, 48], [42, 118, 26]].forEach(([x, y, w], i) =>
+        line(ctx, x, y, x + w, y, { w: 2.2 * T, color: i === 1 ? C.red : C.soft, seed: 610 + i }));
+    arrow(ctx, 114, 90, 142, 90, { w: 3 * T, seed: 620, head: 11, color: C.ink2 });
+    card(ctx, 150, 34, 78, 112, 630);
+    const points: Pt[] = [[162, 122], [178, 98], [194, 106], [208, 70], [218, 58]];
+    stroke(ctx, points, { w: 3 * T, color: C.red, seed: 640 });
+    points.slice(0, 4).forEach(([x, y], i) => dot(ctx, x, y, 3.6, C.red, { seed: 650 + i }));
+    line(ctx, 158, 134, 222, 134, { w: 2.2 * T, seed: 660 });
+}
+
+/** Steps, each checked, and a loop back for the next run: a reusable workflow. */
+function workflow(ctx: Ctx) {
+    [14, 90, 166].forEach((x, i) => {
+        card(ctx, x, 62, 60, 44, 700 + i * 10);
+        line(ctx, x + 12, 78, x + 46, 78, { w: 2.2 * T, color: C.soft, seed: 703 + i * 10 });
+        line(ctx, x + 12, 92, x + 34, 92, { w: 2.2 * T, color: C.soft, seed: 704 + i * 10 });
+        stroke(ctx, [[x + 18, 38], [x + 27, 48], [x + 44, 26]], { w: 3.2 * T, color: C.teal, seed: 706 + i * 10, wobble: 0.6 });
+        if (i < 2) line(ctx, x + 62, 84, x + 76, 84, { w: 2.6 * T, color: C.ink2, seed: 708 + i * 10 });
+    });
+    arrow(ctx, 196, 116, 44, 116, { w: 2.8 * T, seed: 740, head: 11, color: C.teal, bend: -34 });
+}
+
+/** Facts and skills as a small graph, one of them recalled: an agent's memory. */
+function memory(ctx: Ctx) {
+    const nodes: Pt[] = [[44, 52], [112, 30], [190, 52], [74, 116], [146, 104], [208, 138], [30, 150]];
+    [[0, 1], [1, 2], [0, 3], [1, 4], [3, 4], [2, 4], [4, 5], [3, 6]].forEach(([a, b], i) =>
+        line(ctx, nodes[a][0], nodes[a][1], nodes[b][0], nodes[b][1], { w: 2 * T, color: C.soft, seed: 800 + i }));
+    nodes.forEach(([x, y], i) => {
+        const recalled = i === 4, r = recalled ? 15 : 10;
+        dot(ctx, x, y, r, recalled ? C.amber : C.card, { seed: 820 + i, alpha: recalled ? 0.75 : 1 });
+        ellipse(ctx, x, y, r, r, { w: 2.4 * T, seed: 830 + i });
+    });
+    line(ctx, 172, 76, 172, 94, { w: 2.6 * T, color: C.amber, seed: 850 });
+    line(ctx, 163, 85, 181, 85, { w: 2.6 * T, color: C.amber, seed: 851 });
+}
+
+const DRAW: Record<LayerSketchKind, (ctx: Ctx) => void> = { connector, discovery, harness, interaction, spec, workflow, memory };
 
 export const LayerSketch: React.FC<{ kind: LayerSketchKind; label: string }> = ({ kind, label }) => {
     const ref = useRef<HTMLCanvasElement>(null);
@@ -272,4 +314,46 @@ export const LayerSketch: React.FC<{ kind: LayerSketchKind; label: string }> = (
         return () => observer.disconnect();
     }, [kind]);
     return <canvas ref={ref} role="img" aria-label={label} style={{ width: '100%', height: '100%', display: 'block' }} />;
+};
+
+/** A hand-drawn arrow from `from` to `to`, optionally circling (`ring`: cx, cy, rx, ry) or framing (`frame`: x, y, w, h)
+ *  what it points at. */
+export interface SketchPointer {
+    from: Pt; to: Pt; bend?: number; ring?: [number, number, number, number]; frame?: [number, number, number, number];
+    /** This pointer's ink, instead of the set's. */
+    color?: string;
+}
+
+/** Hand-drawn pointers over a `width` x `height` board, scaled to the canvas; it ignores the pointer. */
+export const SketchPointers: React.FC<{ width: number; height: number; pointers: SketchPointer[]; color?: string }> = ({
+    width, height, pointers, color: ink = C.red,
+}) => {
+    const ref = useRef<HTMLCanvasElement>(null);
+    const key = JSON.stringify(pointers);
+    useEffect(() => {
+        const canvas = ref.current;
+        if (!canvas) return undefined;
+        const draw = () => {
+            const w = canvas.clientWidth, h = canvas.clientHeight;
+            if (!w || !h) return;
+            const dpr = Math.max(2, window.devicePixelRatio || 1);
+            canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+            const ctx = canvas.getContext('2d')!;
+            const k = Math.min(w / width, h / height);
+            ctx.setTransform(dpr * k, 0, 0, dpr * k, 0, 0);
+            ctx.clearRect(0, 0, width, height);
+            pointers.forEach(({ from, to, bend = 0, ring, frame, color: own }, i) => {
+                const color = own ?? ink;
+                // Frames group quietly; the arrows carry the eye a little more.
+                if (ring) ellipse(ctx, ring[0], ring[1], ring[2], ring[3], { w: 2.6, color, alpha: 0.7, seed: 500 + i * 20 });
+                if (frame) rect(ctx, frame[0], frame[1], frame[2], frame[3], { w: 2.2, color, alpha: 0.35, seed: 505 + i * 20, overshoot: 6 });
+                arrow(ctx, from[0], from[1], to[0], to[1], { w: 2.8, color, alpha: 0.75, seed: 510 + i * 20, bend, head: 16, wobble: 1.4 });
+            });
+        };
+        draw();
+        const observer = new ResizeObserver(draw);
+        observer.observe(canvas);
+        return () => observer.disconnect();
+    }, [width, height, key, ink]);
+    return <canvas ref={ref} aria-hidden="true" style={{ width: '100%', height: '100%', display: 'block', pointerEvents: 'none' }} />;
 };

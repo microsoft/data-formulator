@@ -21,13 +21,13 @@ import { fontSans, identText, ink, paper } from '../app/tokens';
 import type { DataFormulatorState } from '../app/dfSlice';
 import { LayerSketch, type LayerSketchKind } from './DevDesignSketch';
 
-const DW = 1740;
-const DH = 1080;
-const W = 720;
+export const DW = 1740;
+export const DH = 1080;
+export const W = 720;
 /** The slides share the UI screenshot's proportions (3224 x 1722). */
-const H = (W * 1722) / 3224;
+export const H = (W * 1722) / 3224;
 const SCALE = 1.05;
-const RADIUS = 20;
+export const RADIUS = 20;
 const THICKNESS = 3;
 /** Screen offset from one slide to the one behind it: the stack runs from the back (top left) to the front
  *  (bottom right), so the callouts read 1 to 4 from left to right. */
@@ -37,8 +37,8 @@ const STACK_WIDTH = W * SCALE + 3 * Math.abs(STEP[0]);
 const STACK_LEFT = (DW - STACK_WIDTH) / 2;
 /** The front slide's top-left corner. */
 const ORIGIN: [number, number] = [STACK_LEFT - 3 * Math.min(STEP[0], 0), 630];
-const LEFT_COLUMN = STACK_LEFT - 28;
-const RIGHT_COLUMN = STACK_LEFT + STACK_WIDTH + 28;
+export const LEFT_COLUMN = STACK_LEFT - 28;
+export const RIGHT_COLUMN = STACK_LEFT + STACK_WIDTH + 28;
 /** Callout width: the narrowest, and the widest it grows to when the window has room. */
 const CALLOUT_WIDTH = 340;
 const CALLOUT_MAX = 460;
@@ -53,12 +53,12 @@ const ROW_Y0 = 289;
 const ROW_GAP = 170;
 const TITLE_LINE = 32;
 
-const MONO = '"SF Mono", ui-monospace, Menlo, Consolas, monospace';
-const INK = 'rgba(0, 0, 0, 0.87)';
-const MUTED = 'rgba(0, 0, 0, 0.7)';
-const LINE = 'rgba(0, 0, 0, 0.1)';
-const FILL = 'rgba(0, 0, 0, 0.045)';
-const BAR = 'rgba(0, 0, 0, 0.13)';
+export const MONO = '"SF Mono", ui-monospace, Menlo, Consolas, monospace';
+export const INK = 'rgba(0, 0, 0, 0.87)';
+export const MUTED = 'rgba(0, 0, 0, 0.7)';
+export const LINE = 'rgba(0, 0, 0, 0.1)';
+export const FILL = 'rgba(0, 0, 0, 0.045)';
+export const BAR = 'rgba(0, 0, 0, 0.13)';
 
 const slideOrigin = (depth: number): [number, number] => [ORIGIN[0] + depth * STEP[0], ORIGIN[1] + depth * STEP[1]];
 /** A slide-space point (0..W, 0..H) on the slide at `depth` (0 = front), in design units. */
@@ -70,13 +70,12 @@ const slideTransform = (depth: number, dx = 0, dy = 0) => {
     const [ox, oy] = slideOrigin(depth);
     return `translate(${ox + dx} ${oy + dy}) scale(${SCALE})`;
 };
-const u = (px: number) => `${(px / DH) * 100}cqh`;
-/** The stage's height; one design unit is this over DH. */
-const STAGE_HEIGHT = `(100vh - ${DEV_NAV_HEIGHT + 32}px)`;
-/** Callouts take an even share of the stage width beyond the stack, within [CALLOUT_WIDTH, CALLOUT_MAX]. */
-const CALLOUT_SPAN = `clamp(${u(CALLOUT_WIDTH)}, calc((100cqw - ${u(DW - 2 * CALLOUT_WIDTH)}) / 2), ${u(CALLOUT_MAX)})`;
+export const u = (px: number) => `${(px / DH) * 100}cqh`;
+/** Callouts take an even share of the stage width beyond the stack, less an edge margin, within [CALLOUT_WIDTH, CALLOUT_MAX]. */
+const FRAME_EDGE = 48;
+export const CALLOUT_SPAN = `clamp(${u(CALLOUT_WIDTH)}, calc((100cqw - ${u(DW - 2 * CALLOUT_WIDTH + 2 * FRAME_EDGE)}) / 2), ${u(CALLOUT_MAX)})`;
 /** The page's only type sizes, in design units. */
-const TYPE = { display: 52, heading: 28, body: 18 } as const;
+export const TYPE = { display: 52, heading: 28, body: 18 } as const;
 
 interface Layer {
     id: string;
@@ -99,23 +98,23 @@ interface Layer {
 // Behind the front slide only the top ~140 units of a slide show, so each slide leads with its key content
 // there; the whole slide shows when it is hovered and drawn on top. Muted UI, one accent.
 
-type Run = [string, string?];
+export type Run = [string, string?];
 
 /** A line of text made of coloured runs. */
-const Line: React.FC<{ x: number; y: number; runs: Run[]; size?: number; mono?: boolean; color?: string; weight?: number; anchor?: 'start' | 'end' | 'middle' }> = ({
+export const Line: React.FC<{ x: number; y: number; runs: Run[]; size?: number; mono?: boolean; color?: string; weight?: number; anchor?: 'start' | 'end' | 'middle' }> = ({
     x, y, runs, size = 11, mono = true, color = INK, weight, anchor,
 }) => <text x={x} y={y} fontSize={size} fontFamily={mono ? MONO : undefined} fill={color} fontWeight={weight} textAnchor={anchor} xmlSpace="preserve">
     {runs.map(([text, runColor], i) => <tspan key={i} fill={runColor ?? color}>{text}</tspan>)}
 </text>;
 
-const Panel: React.FC<{ x: number; y: number; width: number; height: number; label?: string; fill?: string; stroke?: string }> = ({
+export const Panel: React.FC<{ x: number; y: number; width: number; height: number; label?: string; fill?: string; stroke?: string }> = ({
     x, y, width, height, label, fill = '#fff', stroke = LINE,
 }) => <g>
     <rect x={x} y={y} width={width} height={height} rx={10} fill={fill} stroke={stroke} />
     {label && <text x={x + 12} y={y + 19} fontSize={10.5} fontWeight={600} letterSpacing="0.06em" fill={MUTED}>{label.toUpperCase()}</text>}
 </g>;
 
-const ConnectorSlide: React.FC<{ accent: string }> = ({ accent }) => {
+export const ConnectorSlide: React.FC<{ accent: string }> = ({ accent }) => {
     const sources = ['PostgreSQL', 'MySQL', 'BigQuery', 'Databricks', 'Kusto', 'S3', 'Azure Blob', 'Files'];
     const verbs = ['ls', 'search', 'read', 'probe', 'load'];
     const width = 75, gap = 9, x0 = (W - (sources.length * width + (sources.length - 1) * gap)) / 2;
@@ -267,7 +266,7 @@ const InteractionSlide: React.FC<{ accent: string }> = () => <g>
 
 // ---------------------------------------------------------------- layers, back to front
 
-const Term: React.FC<{ children: React.ReactNode }> = ({ children }) => <Box component="span" sx={{
+export const Term: React.FC<{ children: React.ReactNode }> = ({ children }) => <Box component="span" sx={{
     color: INK, fontWeight: 500, whiteSpace: 'nowrap', textDecoration: 'underline', textDecorationThickness: '1px',
     textUnderlineOffset: '0.22em', textDecorationColor: ink(0.35),
 }}>{children}</Box>;
@@ -293,7 +292,7 @@ const useStarCount = (repo: string) => {
 const formatStars = (n: number) => n < 1000 ? `${n}` : `${(n / 1000).toFixed(n < 10000 ? 1 : 0).replace(/\.0$/, '')}k`;
 
 /** A repo's star count after a thin divider; nothing until (or unless) GitHub answers. */
-const Stars: React.FC<{ repo: string }> = ({ repo }) => {
+export const Stars: React.FC<{ repo: string }> = ({ repo }) => {
     const stars = useStarCount(repo);
     if (stars === null) return null;
     return <Box component="span" sx={{
@@ -305,7 +304,7 @@ const Stars: React.FC<{ repo: string }> = ({ repo }) => {
 };
 
 /** An inline link to a GitHub repo, styled as a small chip. */
-const RepoChip: React.FC<{ repo: string }> = ({ repo }) => <Box component="a" href={`https://github.com/${repo}`} target="_blank"
+export const RepoChip: React.FC<{ repo: string }> = ({ repo }) => <Box component="a" href={`https://github.com/${repo}`} target="_blank"
     rel="noreferrer" sx={{
         display: 'inline-flex', alignItems: 'center', gap: '0.3em', mx: '0.15em', px: '0.5em', py: '0.05em',
         verticalAlign: 'baseline', borderRadius: 999, border: `1px solid ${LINE}`, bgcolor: paper(),
@@ -314,7 +313,7 @@ const RepoChip: React.FC<{ repo: string }> = ({ repo }) => <Box component="a" hr
     }}>
     <GitHubIcon sx={{ fontSize: '1.05em' }} />{repo.split('/')[1]}<Stars repo={repo} />
 </Box>;
-const Code: React.FC<{ children: React.ReactNode }> = ({ children }) => <Box component="span" sx={{ fontFamily: MONO, fontSize: '0.92em', color: INK }}>{children}</Box>;
+export const Code: React.FC<{ children: React.ReactNode }> = ({ children }) => <Box component="span" sx={{ fontFamily: MONO, fontSize: '0.92em', color: INK }}>{children}</Box>;
 
 const LAYERS: Layer[] = [
     {
@@ -350,7 +349,6 @@ const LAYERS: Layer[] = [
             <><Term>Data threads</Term> take an <Box component="span" sx={{ whiteSpace: 'nowrap' }}>artifact-centric</Box> approach to managing long‑horizon exploration and
                 analysis.</>,
             <>The <Term>interactive canvas</Term> lets users explore data with visualizations and artifacts.</>,
-            <><Term>Self-evolving</Term>: agents grow new artifact types, making future creation more reliable and efficient.</>,
         ],
         Content: InteractionSlide, sketch: ['interaction', 'A data thread branching into an editable chart'],
     },
@@ -441,80 +439,109 @@ const Leader: React.FC<{ layer: Layer; accent: string; lifted: boolean }> = ({ l
     </g>;
 };
 
-export default function DevDesignPage() {
+/** The architecture diagram: the stacked slides, their leader lines and callouts, inside a DesignFrame. */
+export const ArchitectureDiagram: React.FC = () => {
     const accent = useTheme().palette.primary.main;
     const [active, setActive] = useState<string | null>(null);
-    const version = useSelector((state: DataFormulatorState) => state.serverConfig?.VERSION);
     const slide = (layer: Layer) => <Slide key={layer.id} layer={layer} accent={accent} lifted={active === layer.id}
         onHover={setActive} />;
     const leader = (layer: Layer) => <Leader key={`leader-${layer.id}`} layer={layer} accent={accent}
         lifted={active === layer.id} />;
     const [groundX, groundY] = project(W / 2, H, 1.5);
+    return <>
+        <svg viewBox={`0 0 ${DW} ${DH}`} width="100%" height="100%" style={{ position: 'absolute', inset: 0, overflow: 'visible', fontFamily: fontSans }}>
+            <defs>
+                <filter id="df-soft-shadow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="14" /></filter>
+                <filter id="df-ground-blur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="28" /></filter>
+            </defs>
+            <ellipse cx={groundX} cy={groundY + 40} rx={520} ry={44} fill="#000" opacity={0.07} filter="url(#df-ground-blur)" />
+            {LAYERS.flatMap((layer, i) => [
+                i > 0 && <Guides key={`guides-${layer.id}`} back={LAYERS[i - 1]} front={layer} />,
+                slide(layer),
+            ])}
+            {LAYERS.map(leader)}
+        </svg>
+        {LAYERS.map(layer => <Callout key={layer.id} layer={layer} accent={accent} highlighted={active === layer.id} onHover={setActive} />)}
+    </>;
+};
+
+/** The page's title block and GitHub link, across the top of the frame. */
+const DesignHeader: React.FC = () => {
+    const version = useSelector((state: DataFormulatorState) => state.serverConfig?.VERSION);
+    return <Box component="header" sx={{
+        position: 'absolute', top: u(40),
+        left: `calc(${u(LEFT_COLUMN - 16)} - ${CALLOUT_SPAN})`, right: `calc(${u(DW - RIGHT_COLUMN - 16)} - ${CALLOUT_SPAN})`,
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: u(24),
+    }}>
+        <Box>
+            <Box component="h1" sx={{
+                m: 0, display: 'flex', alignItems: 'center', gap: u(14),
+                fontSize: u(TYPE.display), fontWeight: 650, letterSpacing: '-0.03em', lineHeight: 1.05, color: INK,
+            }}>
+                <Box component="img" src="/data-formulator-logo-128.png" alt="" sx={{ width: u(52), height: u(52) }} />
+                <span>
+                    Data Formulator
+                    {version && <Box component="span" sx={{
+                        ml: u(14), fontSize: u(TYPE.body), fontWeight: 400, letterSpacing: 0, color: 'text.disabled',
+                        ...identText, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+                    }}>v{version}</Box>}
+                </span>
+            </Box>
+            <Box sx={{ mt: u(10), ml: u(52 + 14), fontSize: u(TYPE.heading), fontWeight: 500, letterSpacing: '-0.01em', lineHeight: 1.25, color: MUTED }}>
+                An evolving, interactive data agent harness
+            </Box>
+        </Box>
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: u(8), flexShrink: 0 }}>
+            <Box component="a" href="https://github.com/microsoft/data-formulator" target="_blank" rel="noreferrer" sx={{
+                display: 'flex', alignItems: 'center', gap: u(10), px: u(18), py: u(10), borderRadius: u(999),
+                border: `1px solid ${LINE}`, bgcolor: paper(), color: INK, textDecoration: 'none',
+                fontSize: u(TYPE.body), fontWeight: 500, boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+                transition: 'border-color .2s ease, box-shadow .2s ease',
+                '&:hover': { borderColor: ink(0.3), boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' },
+            }}>
+                <GitHubIcon sx={{ fontSize: u(22) }} />
+                microsoft/data-formulator
+                <Stars repo="microsoft/data-formulator" />
+            </Box>
+            <Box sx={{ fontSize: u(TYPE.body), color: MUTED, pr: u(4) }}>Open source · MIT License</Box>
+        </Box>
+    </Box>;
+};
+
+/** A design page: the grid background, the dev nav (and an optional bar under it), and a stage that scales its
+ *  DW x DH frame with the window height. The header (unless `header` is false) is drawn in the frame; `children`
+ *  lay out under it, in design units (`u`). With an aspect ratio, the stage keeps that shape and fits both viewport
+ *  dimensions; it stays DH units tall, and the DW-wide frame is centred in it. */
+export const DesignFrame: React.FC<{ bar?: React.ReactNode; barHeight?: number; header?: boolean; aspectRatio?: number; children: React.ReactNode }> = ({
+    bar, barHeight = 0, header = true, aspectRatio, children,
+}) => {
+    const stageHeight = `(100vh - ${DEV_NAV_HEIGHT + barHeight + 32}px)`;
     return <Box sx={{
         height: '100vh', overflowY: 'auto', fontFamily: fontSans, color: INK, WebkitFontSmoothing: 'antialiased', bgcolor: 'background.paper',
         backgroundImage: theme => `linear-gradient(90deg, ${alpha(theme.palette.text.primary, 0.02)} 1px, transparent 1px), linear-gradient(0deg, ${alpha(theme.palette.text.primary, 0.02)} 1px, transparent 1px)`,
         backgroundSize: '24px 24px',
     }}>
         <DevNav />
-        <Box component="section" sx={{ height: `calc(100vh - ${DEV_NAV_HEIGHT}px)`, overflowX: 'auto', p: 2, boxSizing: 'border-box' }}>
+        {bar}
+        <Box component="section" sx={{ height: `calc(100vh - ${DEV_NAV_HEIGHT + barHeight}px)`, overflowX: 'auto', p: 2, boxSizing: 'border-box' }}>
             <Box sx={{
-                position: 'relative', mx: 'auto', height: `calc${STAGE_HEIGHT}`, containerType: 'size',
-                width: '100%', minWidth: `calc(${STAGE_HEIGHT} * ${DW / DH})`, maxWidth: `calc(${STAGE_HEIGHT} * ${DW_MAX / DH})`,
+                position: 'relative', mx: 'auto', containerType: 'size',
+                ...(aspectRatio === undefined ? {
+                    height: `calc${stageHeight}`, width: '100%',
+                    minWidth: `calc(${stageHeight} * ${DW / DH})`, maxWidth: `calc(${stageHeight} * ${DW_MAX / DH})`,
+                } : {
+                    aspectRatio, width: '100%', maxWidth: `calc(${stageHeight} * ${aspectRatio})`, overflow: 'hidden',
+                }),
             }}>
                 <Box sx={{ position: 'absolute', top: 0, bottom: 0, left: '50%', width: u(DW), transform: 'translateX(-50%)' }}>
-                    <Box component="header" sx={{
-                        position: 'absolute', top: u(40),
-                        left: `calc(${u(LEFT_COLUMN - 16)} - ${CALLOUT_SPAN})`, right: `calc(${u(DW - RIGHT_COLUMN - 16)} - ${CALLOUT_SPAN})`,
-                        display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: u(24),
-                    }}>
-                        <Box>
-                            <Box component="h1" sx={{
-                                m: 0, display: 'flex', alignItems: 'center', gap: u(14),
-                                fontSize: u(TYPE.display), fontWeight: 650, letterSpacing: '-0.03em', lineHeight: 1.05, color: INK,
-                            }}>
-                                <Box component="img" src="/data-formulator-logo-128.png" alt="" sx={{ width: u(52), height: u(52) }} />
-                                <span>
-                                    Data Formulator
-                                    {version && <Box component="span" sx={{
-                                        ml: u(14), fontSize: u(TYPE.body), fontWeight: 400, letterSpacing: 0, color: 'text.disabled',
-                                        ...identText, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
-                                    }}>v{version}</Box>}
-                                </span>
-                            </Box>
-                            <Box sx={{ mt: u(10), ml: u(52 + 14), fontSize: u(TYPE.heading), fontWeight: 500, letterSpacing: '-0.01em', lineHeight: 1.25, color: MUTED }}>
-                                An evolving, interactive data agent harness
-                            </Box>
-                        </Box>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: u(8), flexShrink: 0 }}>
-                            <Box component="a" href="https://github.com/microsoft/data-formulator" target="_blank" rel="noreferrer" sx={{
-                                display: 'flex', alignItems: 'center', gap: u(10), px: u(18), py: u(10), borderRadius: u(999),
-                                border: `1px solid ${LINE}`, bgcolor: paper(), color: INK, textDecoration: 'none',
-                                fontSize: u(TYPE.body), fontWeight: 500, boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-                                transition: 'border-color .2s ease, box-shadow .2s ease',
-                                '&:hover': { borderColor: ink(0.3), boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' },
-                            }}>
-                                <GitHubIcon sx={{ fontSize: u(22) }} />
-                                microsoft/data-formulator
-                                <Stars repo="microsoft/data-formulator" />
-                            </Box>
-                            <Box sx={{ fontSize: u(TYPE.body), color: MUTED, pr: u(4) }}>Open source · MIT License</Box>
-                        </Box>
-                    </Box>
-                    <svg viewBox={`0 0 ${DW} ${DH}`} width="100%" height="100%" style={{ position: 'absolute', inset: 0, overflow: 'visible', fontFamily: fontSans }}>
-                        <defs>
-                            <filter id="df-soft-shadow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="14" /></filter>
-                            <filter id="df-ground-blur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="28" /></filter>
-                        </defs>
-                        <ellipse cx={groundX} cy={groundY + 40} rx={520} ry={44} fill="#000" opacity={0.07} filter="url(#df-ground-blur)" />
-                        {LAYERS.flatMap((layer, i) => [
-                            i > 0 && <Guides key={`guides-${layer.id}`} back={LAYERS[i - 1]} front={layer} />,
-                            slide(layer),
-                        ])}
-                        {LAYERS.map(leader)}
-                    </svg>
-                    {LAYERS.map(layer => <Callout key={layer.id} layer={layer} accent={accent} highlighted={active === layer.id} onHover={setActive} />)}
+                    {header && <DesignHeader />}
+                    {children}
                 </Box>
             </Box>
         </Box>
     </Box>;
+};
+
+export default function DevDesignPage() {
+    return <DesignFrame><ArchitectureDiagram /></DesignFrame>;
 }

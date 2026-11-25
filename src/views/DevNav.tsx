@@ -6,7 +6,7 @@ import { Box } from '@mui/material';
 import { Link, useLocation } from 'react-router-dom';
 import { weight } from '../app/tokens';
 
-const PAGES: [string, string][] = [['/dev', 'components'], ['/dev/samples', 'sample apps'], ['/dev/maps', 'maps'], ['/dev/design', 'design']];
+const PAGES: [string, string][] = [['/dev', 'components'], ['/dev/samples', 'sample apps'], ['/dev/maps', 'maps'], ['/dev/design', 'design'], ['/dev/about', 'about']];
 
 export const DEV_NAV_HEIGHT = 36;
 
@@ -21,6 +21,6 @@ export const DevNav: React.FC = () => {
     }}>
         <Box component={Link} to="/" sx={{ ...linkSx, fontWeight: weight(600), color: 'text.primary' }}>Data Formulator</Box>
         {PAGES.map(([path, label]) => <Box key={path} component={Link} to={path}
-            sx={{ ...linkSx, ...(pathname === path ? { color: 'primary.main', fontWeight: weight(600) } : {}) }}>{label}</Box>)}
+            sx={{ ...linkSx, ...(pathname === path || (path !== '/dev' && pathname.startsWith(`${path}/`)) ? { color: 'primary.main', fontWeight: weight(600) } : {}) }}>{label}</Box>)}
     </Box>;
 };

@@ -1426,6 +1426,10 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             lazy: () => import('../views/DevDesignPage').then(module => ({ Component: module.default })),
         },
         {
+            path: "/dev/about/:page?",
+            lazy: () => import('../views/about/AboutPage').then(module => ({ Component: module.default })),
+        },
+        {
             path: "/dev/look",
             lazy: () => import('../components/look/LookGallery').then(module => ({ Component: module.default })),
         },
