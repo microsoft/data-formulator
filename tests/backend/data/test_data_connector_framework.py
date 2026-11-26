@@ -18,14 +18,17 @@ Covers:
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import flask
+import jwt
 import pyarrow as pa
 import pytest
 
+from data_formulator.auth.token_store import TokenStore
 from data_formulator.data_connector import (
     DATA_CONNECTORS,
     DataConnector,
@@ -40,6 +43,9 @@ from data_formulator.data_loader.external_data_loader import (
     ExternalDataLoader,
 )
 from data_formulator.data_loader.sample_datasets_loader import SampleDatasetsLoader
+from data_formulator.data_loader.superset_auth_bridge import SupersetAuthBridge
+from data_formulator.data_loader.superset_client import SupersetClient
+from data_formulator.data_loader.superset_data_loader import SupersetLoader
 from data_formulator.datalake.catalog_cache import save_catalog
 from data_formulator.datalake.connector_preferences import connector_is_enabled
 from data_formulator.errors import ErrorCode
@@ -343,6 +349,34 @@ class TestConnectorList:
 # ==================================================================
 
 class TestAuthRoutes:
+
+    def test_cached_superset_connection_refreshes_on_read(self, app):
+        source = DataConnector.from_loader(
+            SupersetLoader, "superset", default_params={"url": "https://superset.example"},
+        )
+        expires_at = int(time.time()) + 3600
+        signing_key = "test-key-for-superset-session-tokens"
+        initial = jwt.encode({"exp": expires_at}, signing_key)
+        renewed = jwt.encode({"exp": expires_at + 3600}, signing_key)
+        rows = [{"value": 7}]
+
+        with (
+            app.test_request_context(),
+            patch.object(source, "_get_identity", return_value="user:alice"),
+            patch.object(SupersetClient, "post_chart_data", return_value={"result": [{"data": rows}]}) as query,
+            patch.object(SupersetAuthBridge, "refresh_token", return_value={"access_token": renewed}) as refresh,
+        ):
+            TokenStore().store_service_token("superset", initial, refresh_token="superset-refresh")
+            loader = source._connect({})
+            assert loader.fetch_data_as_arrow("42").to_pylist() == rows
+            assert query.call_args.args[0] == initial
+            refresh.assert_not_called()
+
+            with patch("time.time", return_value=expires_at + 1):
+                assert source._require_loader() is loader
+                assert loader.fetch_data_as_arrow("42").to_pylist() == rows
+            refresh.assert_called_once_with("superset-refresh")
+            assert query.call_args.args[0] == renewed
 
     def test_connect_does_not_wait_for_catalog(self, client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"), \

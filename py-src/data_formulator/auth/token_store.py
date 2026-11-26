@@ -72,6 +72,18 @@ class TokenStore:
         # ⑥ None
         return None
 
+    def get_loader_credentials(self, system_id: str) -> dict[str, Any] | None:
+        """Resolve loader parameters, including the matching refresh token when available."""
+        access = self.get_access(system_id)
+        if not isinstance(access, str):
+            return access
+
+        credentials = {"access_token": access}
+        cached = self._get_cached(system_id)
+        if cached and cached.get("access_token") == access and cached.get("refresh_token"):
+            credentials["refresh_token"] = cached["refresh_token"]
+        return credentials
+
     def get_sso_token(self) -> str | None:
         """Return the DF-level SSO access token."""
         from data_formulator.auth.providers.oidc import is_backend_oidc_mode

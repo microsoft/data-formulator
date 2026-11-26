@@ -853,12 +853,9 @@ class DataConnector:
             token_store = TokenStore()
             if token_store.is_sso_reconnect_blocked(self._source_id):
                 return
-            access = token_store.get_access(self._source_id)
-            if access:
-                if isinstance(access, dict):
-                    params.update(access)
-                else:
-                    params["access_token"] = access
+            credentials = token_store.get_loader_credentials(self._source_id)
+            if credentials:
+                params.update(credentials)
                 return
         except Exception as exc:
             logger.debug("TokenStore lookup failed for %s: %s",
