@@ -1,0 +1,57 @@
+cff-version: 1.2.0
+message: "If you use Data Formulator in your research, please cite it using the metadata below."
+title: "Data Formulator"
+type: software
+authors:
+  - name: "Microsoft Research"
+repository-code: "https://github.com/microsoft/data-formulator"
+license: MIT
+keywords:
+  - data visualization
+  - visualization authoring
+  - data transformation
+  - large language models
+  - AI agents
+preferred-citation:
+  type: conference-paper
+  title: "Data Formulator 2: Iterative Creation of Data Visualizations, with AI Transforming Data Along the Way"
+  authors:
+    - family-names: Wang
+      given-names: Chenglong
+      orcid: "https://orcid.org/0000-0002-5933-6620"
+    - family-names: Lee
+      given-names: Bongshin
+      orcid: "https://orcid.org/0000-0002-4217-627X"
+    - family-names: Drucker
+      given-names: Steven
+    - family-names: Marshall
+      given-names: Dan
+    - family-names: Gao
+      given-names: Jianfeng
+  collection-title: "Proceedings of the 2025 CHI Conference on Human Factors in Computing Systems"
+  publisher:
+    name: "Association for Computing Machinery"
+  year: 2025
+  doi: "10.1145/3706598.3713296"
+  url: "https://arxiv.org/abs/2408.16119"
+references:
+  - type: article
+    title: "Data Formulator: AI-powered Concept-driven Visualization Authoring"
+    authors:
+      - family-names: Wang
+        given-names: Chenglong
+        orcid: "https://orcid.org/0000-0002-5933-6620"
+      - family-names: Thompson
+        given-names: John
+        orcid: "https://orcid.org/0000-0002-3102-4035"
+      - family-names: Lee
+        given-names: Bongshin
+        orcid: "https://orcid.org/0000-0002-4217-627X"
+    journal: "IEEE Transactions on Visualization and Computer Graphics"
+    volume: 30
+    issue: 1
+    start: 1128
+    end: 1138
+    year: 2024
+    doi: "10.1109/TVCG.2023.3326585"
+    url: "https://arxiv.org/abs/2309.10094"
