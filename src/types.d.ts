@@ -8,6 +8,11 @@ declare module "*.svg" {
     export default content;
 }
 
+declare module "*.webp" {
+    const content: string;
+    export default content;
+}
+
 declare module "*.scss" {
     const content: Record<string, string>;
     export default content;
@@ -18,12 +23,22 @@ declare module "*.css" {
     export default content;
 }
 
-declare module "prettier";
-
-declare module "prettier/parser-babel";
+declare module "*?raw" {
+    const content: string;
+    export default content;
+}
 
 declare module "vm-browserify";
 
 declare module "vega-lite" {
     export function compile(spec: any, options?: any): { spec: any };
+}
+
+declare module "virtual:df-react-runtime" {
+    const source: string;
+    export default source;
+}
+declare module "virtual:df-react-runtime/*" {
+    const source: string;
+    export default source;
 }

@@ -1,0 +1,1122 @@
+{
+ "__stateVersion": 15,
+ "activeWorkspace": {
+  "id": "science-s21",
+  "displayName": "Women are at least half of researchers in 23 countries"
+ },
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "women_at_least_half_of_researchers",
+   "displayId": "Countries where women are at least half of researchers",
+   "names": [
+    "country_id",
+    "country",
+    "latest_year",
+    "women_share"
+   ],
+   "rows": [
+    {
+     "country_id": "MMR",
+     "country": "Myanmar",
+     "latest_year": 2023,
+     "women_share": 76.5
+    },
+    {
+     "country_id": "KGZ",
+     "country": "Kyrgyzstan",
+     "latest_year": 2024,
+     "women_share": 61.4
+    },
+    {
+     "country_id": "AZE",
+     "country": "Azerbaijan",
+     "latest_year": 2024,
+     "women_share": 60.6
+    },
+    {
+     "country_id": "ALB",
+     "country": "Albania",
+     "latest_year": 2022,
+     "women_share": 57.7
+    },
+    {
+     "country_id": "MNG",
+     "country": "Mongolia",
+     "latest_year": 2022,
+     "women_share": 57.4
+    },
+    {
+     "country_id": "CUB",
+     "country": "Cuba",
+     "latest_year": 2024,
+     "women_share": 56.0
+    },
+    {
+     "country_id": "KAZ",
+     "country": "Kazakhstan",
+     "latest_year": 2024,
+     "women_share": 55.7
+    },
+    {
+     "country_id": "TUN",
+     "country": "Tunisia",
+     "latest_year": 2024,
+     "women_share": 55.3
+    },
+    {
+     "country_id": "GEO",
+     "country": "Georgia",
+     "latest_year": 2024,
+     "women_share": 55.0
+    },
+    {
+     "country_id": "MKD",
+     "country": "North Macedonia",
+     "latest_year": 2024,
+     "women_share": 54.7
+    },
+    {
+     "country_id": "ARG",
+     "country": "Argentina",
+     "latest_year": 2023,
+     "women_share": 54.0
+    },
+    {
+     "country_id": "PHL",
+     "country": "Philippines",
+     "latest_year": 2020,
+     "women_share": 53.4
+    },
+    {
+     "country_id": "MDA",
+     "country": "Moldova",
+     "latest_year": 2024,
+     "women_share": 52.9
+    },
+    {
+     "country_id": "SRB",
+     "country": "Serbia",
+     "latest_year": 2024,
+     "women_share": 52.7
+    },
+    {
+     "country_id": "LSO",
+     "country": "Lesotho",
+     "latest_year": 2023,
+     "women_share": 52.6
+    },
+    {
+     "country_id": "BIH",
+     "country": "Bosnia and Herzegovina",
+     "latest_year": 2024,
+     "women_share": 52.5
+    },
+    {
+     "country_id": "ARM",
+     "country": "Armenia",
+     "latest_year": 2024,
+     "women_share": 52.4
+    },
+    {
+     "country_id": "VEN",
+     "country": "Venezuela",
+     "latest_year": 2023,
+     "women_share": 52.2
+    },
+    {
+     "country_id": "MNE",
+     "country": "Montenegro",
+     "latest_year": 2019,
+     "women_share": 52.1
+    },
+    {
+     "country_id": "KWT",
+     "country": "Kuwait",
+     "latest_year": 2024,
+     "women_share": 51.5
+    },
+    {
+     "country_id": "PRY",
+     "country": "Paraguay",
+     "latest_year": 2023,
+     "women_share": 51.3
+    },
+    {
+     "country_id": "URY",
+     "country": "Uruguay",
+     "latest_year": 2024,
+     "women_share": 51.0
+    },
+    {
+     "country_id": "DZA",
+     "country": "Algeria",
+     "latest_year": 2024,
+     "women_share": 50.6
+    }
+   ],
+   "metadata": {
+    "country_id": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "latest_year": {
+     "type": "integer",
+     "levels": []
+    },
+    "women_share": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with v as (\n        select COUNTRY_ID as country_id, country, year, value\n        from read_parquet('data/rd_opri_national.parquet')\n        where indicator_id = 'FRESP.THC' and year between 2019 and 2024\n          and value is not null and coalesce(magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    ),\n    population as (\n        select COUNTRY_ID as country_id, value as thousands\n        from read_parquet('data/dem_national.parquet')\n        where indicator_id = '200101'\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    )\n    select v.country_id, v.country, v.year as latest_year, round(value, 1) as women_share\n    from v join population using (country_id)\n    where population.thousands >= 100\n    order by women_share desc, v.country\n\"\"\").df()\nout['country'] = out.country.replace({'Bolivia (Plurinational State of)': 'Bolivia', 'China, Hong Kong Special Administrative Region': 'Hong Kong', 'China, Macao Special Administrative Region': 'Macao', \"Democratic People's Republic of Korea\": 'North Korea', 'Democratic Republic of the Congo': 'DR Congo', 'Iran (Islamic Republic of)': 'Iran', \"Lao People's Democratic Republic\": 'Laos', 'Micronesia (Federated States of)': 'Micronesia', 'Republic of Korea': 'South Korea', 'Republic of Moldova': 'Moldova', 'Russian Federation': 'Russia', 'Syrian Arab Republic': 'Syria', 'United Kingdom of Great Britain and Northern Ireland': 'UK', 'United Republic of Tanzania': 'Tanzania', 'United States of America': 'US', 'Venezuela (Bolivarian Republic of)': 'Venezuela', 'Viet Nam': 'Vietnam'})\nout = out[out.women_share >= 50]\n",
+    "outputVariable": "out",
+    "source": [
+     "dem_national",
+     "rd_opri_national"
+    ],
+    "trigger": {
+     "tableId": "dem_national",
+     "resultTableId": "women_at_least_half_of_researchers",
+     "chart": {
+      "id": "chart-trigger-women_at_least_half_of_researchers",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "dem_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "women_at_least_half_of_researchers",
+    "rowCount": 23
+   },
+   "description": "Women as a share of researchers (%, headcount), countries where it is 50% or more, each from its latest figure in 2019–2024 (latest_year). Source: UIS, February 2026 release; indicator FRESP.THC.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794705400000_step_1",
+   "createdAt": 1794705402000
+  },
+  {
+   "kind": "table",
+   "id": "women_researchers",
+   "displayId": "Women's share of researchers by country",
+   "names": [
+    "country_id",
+    "country",
+    "latest_year",
+    "women_share"
+   ],
+   "rows": [
+    {
+     "country_id": "MMR",
+     "country": "Myanmar",
+     "latest_year": 2023,
+     "women_share": 76.5
+    },
+    {
+     "country_id": "KGZ",
+     "country": "Kyrgyzstan",
+     "latest_year": 2024,
+     "women_share": 61.4
+    },
+    {
+     "country_id": "AZE",
+     "country": "Azerbaijan",
+     "latest_year": 2024,
+     "women_share": 60.6
+    },
+    {
+     "country_id": "ALB",
+     "country": "Albania",
+     "latest_year": 2022,
+     "women_share": 57.7
+    },
+    {
+     "country_id": "MNG",
+     "country": "Mongolia",
+     "latest_year": 2022,
+     "women_share": 57.4
+    },
+    {
+     "country_id": "CUB",
+     "country": "Cuba",
+     "latest_year": 2024,
+     "women_share": 56.0
+    },
+    {
+     "country_id": "KAZ",
+     "country": "Kazakhstan",
+     "latest_year": 2024,
+     "women_share": 55.7
+    },
+    {
+     "country_id": "TUN",
+     "country": "Tunisia",
+     "latest_year": 2024,
+     "women_share": 55.3
+    },
+    {
+     "country_id": "GEO",
+     "country": "Georgia",
+     "latest_year": 2024,
+     "women_share": 55.0
+    },
+    {
+     "country_id": "MKD",
+     "country": "North Macedonia",
+     "latest_year": 2024,
+     "women_share": 54.7
+    },
+    {
+     "country_id": "ARG",
+     "country": "Argentina",
+     "latest_year": 2023,
+     "women_share": 54.0
+    },
+    {
+     "country_id": "PHL",
+     "country": "Philippines",
+     "latest_year": 2020,
+     "women_share": 53.4
+    },
+    {
+     "country_id": "MDA",
+     "country": "Moldova",
+     "latest_year": 2024,
+     "women_share": 52.9
+    },
+    {
+     "country_id": "SRB",
+     "country": "Serbia",
+     "latest_year": 2024,
+     "women_share": 52.7
+    },
+    {
+     "country_id": "LSO",
+     "country": "Lesotho",
+     "latest_year": 2023,
+     "women_share": 52.6
+    },
+    {
+     "country_id": "BIH",
+     "country": "Bosnia and Herzegovina",
+     "latest_year": 2024,
+     "women_share": 52.5
+    },
+    {
+     "country_id": "ARM",
+     "country": "Armenia",
+     "latest_year": 2024,
+     "women_share": 52.4
+    },
+    {
+     "country_id": "VEN",
+     "country": "Venezuela",
+     "latest_year": 2023,
+     "women_share": 52.2
+    },
+    {
+     "country_id": "MNE",
+     "country": "Montenegro",
+     "latest_year": 2019,
+     "women_share": 52.1
+    },
+    {
+     "country_id": "KWT",
+     "country": "Kuwait",
+     "latest_year": 2024,
+     "women_share": 51.5
+    },
+    {
+     "country_id": "PRY",
+     "country": "Paraguay",
+     "latest_year": 2023,
+     "women_share": 51.3
+    },
+    {
+     "country_id": "URY",
+     "country": "Uruguay",
+     "latest_year": 2024,
+     "women_share": 51.0
+    },
+    {
+     "country_id": "DZA",
+     "country": "Algeria",
+     "latest_year": 2024,
+     "women_share": 50.6
+    },
+    {
+     "country_id": "MUS",
+     "country": "Mauritius",
+     "latest_year": 2024,
+     "women_share": 49.7
+    },
+    {
+     "country_id": "TTO",
+     "country": "Trinidad and Tobago",
+     "latest_year": 2022,
+     "women_share": 49.7
+    },
+    {
+     "country_id": "GTM",
+     "country": "Guatemala",
+     "latest_year": 2023,
+     "women_share": 49.5
+    },
+    {
+     "country_id": "NAM",
+     "country": "Namibia",
+     "latest_year": 2022,
+     "women_share": 49.5
+    },
+    {
+     "country_id": "HRV",
+     "country": "Croatia",
+     "latest_year": 2023,
+     "women_share": 49.1
+    },
+    {
+     "country_id": "LTU",
+     "country": "Lithuania",
+     "latest_year": 2023,
+     "women_share": 49.0
+    },
+    {
+     "country_id": "LVA",
+     "country": "Latvia",
+     "latest_year": 2023,
+     "women_share": 48.8
+    },
+    {
+     "country_id": "LKA",
+     "country": "Sri Lanka",
+     "latest_year": 2022,
+     "women_share": 48.8
+    },
+    {
+     "country_id": "BGR",
+     "country": "Bulgaria",
+     "latest_year": 2023,
+     "women_share": 48.6
+    },
+    {
+     "country_id": "MYS",
+     "country": "Malaysia",
+     "latest_year": 2022,
+     "women_share": 48.6
+    },
+    {
+     "country_id": "THA",
+     "country": "Thailand",
+     "latest_year": 2021,
+     "women_share": 48.6
+    },
+    {
+     "country_id": "HND",
+     "country": "Honduras",
+     "latest_year": 2019,
+     "women_share": 47.8
+    },
+    {
+     "country_id": "ZAF",
+     "country": "South Africa",
+     "latest_year": 2022,
+     "women_share": 47.6
+    },
+    {
+     "country_id": "PAN",
+     "country": "Panama",
+     "latest_year": 2024,
+     "women_share": 47.4
+    },
+    {
+     "country_id": "PAK",
+     "country": "Pakistan",
+     "latest_year": 2023,
+     "women_share": 47.1
+    },
+    {
+     "country_id": "ROU",
+     "country": "Romania",
+     "latest_year": 2023,
+     "women_share": 46.5
+    },
+    {
+     "country_id": "SLV",
+     "country": "El Salvador",
+     "latest_year": 2023,
+     "women_share": 45.8
+    },
+    {
+     "country_id": "VNM",
+     "country": "Vietnam",
+     "latest_year": 2023,
+     "women_share": 45.7
+    },
+    {
+     "country_id": "BHR",
+     "country": "Bahrain",
+     "latest_year": 2024,
+     "women_share": 45.6
+    },
+    {
+     "country_id": "KEN",
+     "country": "Kenya",
+     "latest_year": 2024,
+     "women_share": 44.5
+    },
+    {
+     "country_id": "EGY",
+     "country": "Egypt",
+     "latest_year": 2024,
+     "women_share": 44.4
+    },
+    {
+     "country_id": "DOM",
+     "country": "Dominican Republic",
+     "latest_year": 2022,
+     "women_share": 44.3
+    },
+    {
+     "country_id": "BOL",
+     "country": "Bolivia",
+     "latest_year": 2021,
+     "women_share": 44.1
+    },
+    {
+     "country_id": "SYR",
+     "country": "Syria",
+     "latest_year": 2022,
+     "women_share": 43.6
+    },
+    {
+     "country_id": "IDN",
+     "country": "Indonesia",
+     "latest_year": 2020,
+     "women_share": 43.5
+    },
+    {
+     "country_id": "EST",
+     "country": "Estonia",
+     "latest_year": 2023,
+     "women_share": 43.0
+    },
+    {
+     "country_id": "UKR",
+     "country": "Ukraine",
+     "latest_year": 2024,
+     "women_share": 43.0
+    },
+    {
+     "country_id": "CRI",
+     "country": "Costa Rica",
+     "latest_year": 2023,
+     "women_share": 42.9
+    },
+    {
+     "country_id": "OMN",
+     "country": "Oman",
+     "latest_year": 2024,
+     "women_share": 42.7
+    },
+    {
+     "country_id": "PRT",
+     "country": "Portugal",
+     "latest_year": 2023,
+     "women_share": 42.7
+    },
+    {
+     "country_id": "UZB",
+     "country": "Uzbekistan",
+     "latest_year": 2024,
+     "women_share": 41.9
+    },
+    {
+     "country_id": "ESP",
+     "country": "Spain",
+     "latest_year": 2023,
+     "women_share": 41.7
+    },
+    {
+     "country_id": "IRQ",
+     "country": "Iraq",
+     "latest_year": 2021,
+     "women_share": 40.9
+    },
+    {
+     "country_id": "IRL",
+     "country": "Ireland",
+     "latest_year": 2023,
+     "women_share": 40.3
+    },
+    {
+     "country_id": "BRN",
+     "country": "Brunei Darussalam",
+     "latest_year": 2022,
+     "women_share": 39.8
+    },
+    {
+     "country_id": "GRC",
+     "country": "Greece",
+     "latest_year": 2023,
+     "women_share": 39.6
+    },
+    {
+     "country_id": "SVK",
+     "country": "Slovakia",
+     "latest_year": 2023,
+     "women_share": 39.5
+    },
+    {
+     "country_id": "NOR",
+     "country": "Norway",
+     "latest_year": 2023,
+     "women_share": 39.1
+    },
+    {
+     "country_id": "BLR",
+     "country": "Belarus",
+     "latest_year": 2024,
+     "women_share": 38.9
+    },
+    {
+     "country_id": "CYP",
+     "country": "Cyprus",
+     "latest_year": 2023,
+     "women_share": 38.7
+    },
+    {
+     "country_id": "MAC",
+     "country": "Macao",
+     "latest_year": 2024,
+     "women_share": 38.5
+    },
+    {
+     "country_id": "COL",
+     "country": "Colombia",
+     "latest_year": 2019,
+     "women_share": 38.2
+    },
+    {
+     "country_id": "SAU",
+     "country": "Saudi Arabia",
+     "latest_year": 2024,
+     "women_share": 38.2
+    },
+    {
+     "country_id": "DNK",
+     "country": "Denmark",
+     "latest_year": 2023,
+     "women_share": 38.0
+    },
+    {
+     "country_id": "RUS",
+     "country": "Russia",
+     "latest_year": 2024,
+     "women_share": 38.0
+    },
+    {
+     "country_id": "UGA",
+     "country": "Uganda",
+     "latest_year": 2023,
+     "women_share": 37.6
+    },
+    {
+     "country_id": "ITA",
+     "country": "Italy",
+     "latest_year": 2023,
+     "women_share": 37.5
+    },
+    {
+     "country_id": "TUR",
+     "country": "Türkiye",
+     "latest_year": 2023,
+     "women_share": 37.4
+    },
+    {
+     "country_id": "TJK",
+     "country": "Tajikistan",
+     "latest_year": 2020,
+     "women_share": 37.0
+    },
+    {
+     "country_id": "CHE",
+     "country": "Switzerland",
+     "latest_year": 2023,
+     "women_share": 36.8
+    },
+    {
+     "country_id": "MLT",
+     "country": "Malta",
+     "latest_year": 2023,
+     "women_share": 36.0
+    },
+    {
+     "country_id": "POL",
+     "country": "Poland",
+     "latest_year": 2023,
+     "women_share": 36.0
+    },
+    {
+     "country_id": "BEL",
+     "country": "Belgium",
+     "latest_year": 2023,
+     "women_share": 35.9
+    },
+    {
+     "country_id": "SVN",
+     "country": "Slovenia",
+     "latest_year": 2023,
+     "women_share": 35.9
+    },
+    {
+     "country_id": "SWE",
+     "country": "Sweden",
+     "latest_year": 2023,
+     "women_share": 34.9
+    },
+    {
+     "country_id": "FIN",
+     "country": "Finland",
+     "latest_year": 2023,
+     "women_share": 34.6
+    },
+    {
+     "country_id": "CHL",
+     "country": "Chile",
+     "latest_year": 2022,
+     "women_share": 34.1
+    },
+    {
+     "country_id": "ARE",
+     "country": "United Arab Emirates",
+     "latest_year": 2021,
+     "women_share": 33.6
+    },
+    {
+     "country_id": "ISL",
+     "country": "Iceland",
+     "latest_year": 2023,
+     "women_share": 32.9
+    },
+    {
+     "country_id": "PER",
+     "country": "Peru",
+     "latest_year": 2023,
+     "women_share": 32.3
+    },
+    {
+     "country_id": "AUT",
+     "country": "Austria",
+     "latest_year": 2023,
+     "women_share": 32.1
+    },
+    {
+     "country_id": "LUX",
+     "country": "Luxembourg",
+     "latest_year": 2023,
+     "women_share": 32.1
+    },
+    {
+     "country_id": "QAT",
+     "country": "Qatar",
+     "latest_year": 2021,
+     "women_share": 31.9
+    },
+    {
+     "country_id": "SGP",
+     "country": "Singapore",
+     "latest_year": 2022,
+     "women_share": 31.7
+    },
+    {
+     "country_id": "MWI",
+     "country": "Malawi",
+     "latest_year": 2019,
+     "women_share": 31.3
+    },
+    {
+     "country_id": "FRA",
+     "country": "France",
+     "latest_year": 2023,
+     "women_share": 30.6
+    },
+    {
+     "country_id": "NGA",
+     "country": "Nigeria",
+     "latest_year": 2019,
+     "women_share": 30.6
+    },
+    {
+     "country_id": "IRN",
+     "country": "Iran",
+     "latest_year": 2021,
+     "women_share": 30.2
+    },
+    {
+     "country_id": "NLD",
+     "country": "Netherlands",
+     "latest_year": 2023,
+     "women_share": 30.2
+    },
+    {
+     "country_id": "HUN",
+     "country": "Hungary",
+     "latest_year": 2023,
+     "women_share": 29.8
+    },
+    {
+     "country_id": "DEU",
+     "country": "Germany",
+     "latest_year": 2023,
+     "women_share": 29.6
+    },
+    {
+     "country_id": "CZE",
+     "country": "Czechia",
+     "latest_year": 2023,
+     "women_share": 28.1
+    },
+    {
+     "country_id": "RWA",
+     "country": "Rwanda",
+     "latest_year": 2023,
+     "women_share": 26.2
+    },
+    {
+     "country_id": "BTN",
+     "country": "Bhutan",
+     "latest_year": 2024,
+     "women_share": 25.3
+    },
+    {
+     "country_id": "KOR",
+     "country": "South Korea",
+     "latest_year": 2023,
+     "women_share": 23.7
+    },
+    {
+     "country_id": "COG",
+     "country": "Congo",
+     "latest_year": 2022,
+     "women_share": 18.9
+    },
+    {
+     "country_id": "JPN",
+     "country": "Japan",
+     "latest_year": 2023,
+     "women_share": 18.5
+    },
+    {
+     "country_id": "BFA",
+     "country": "Burkina Faso",
+     "latest_year": 2024,
+     "women_share": 17.5
+    },
+    {
+     "country_id": "MLI",
+     "country": "Mali",
+     "latest_year": 2023,
+     "women_share": 16.1
+    },
+    {
+     "country_id": "COM",
+     "country": "Comoros",
+     "latest_year": 2021,
+     "women_share": 11.6
+    },
+    {
+     "country_id": "TGO",
+     "country": "Togo",
+     "latest_year": 2024,
+     "women_share": 11.5
+    }
+   ],
+   "metadata": {
+    "country_id": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "latest_year": {
+     "type": "integer",
+     "levels": []
+    },
+    "women_share": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with v as (\n        select COUNTRY_ID as country_id, country, year, value\n        from read_parquet('data/rd_opri_national.parquet')\n        where indicator_id = 'FRESP.THC' and year between 2019 and 2024\n          and value is not null and coalesce(magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    ),\n    population as (\n        select COUNTRY_ID as country_id, value as thousands\n        from read_parquet('data/dem_national.parquet')\n        where indicator_id = '200101'\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    )\n    select v.country_id, v.country, v.year as latest_year, round(value, 1) as women_share\n    from v join population using (country_id)\n    where population.thousands >= 100\n    order by women_share desc, v.country\n\"\"\").df()\nout['country'] = out.country.replace({'Bolivia (Plurinational State of)': 'Bolivia', 'China, Hong Kong Special Administrative Region': 'Hong Kong', 'China, Macao Special Administrative Region': 'Macao', \"Democratic People's Republic of Korea\": 'North Korea', 'Democratic Republic of the Congo': 'DR Congo', 'Iran (Islamic Republic of)': 'Iran', \"Lao People's Democratic Republic\": 'Laos', 'Micronesia (Federated States of)': 'Micronesia', 'Republic of Korea': 'South Korea', 'Republic of Moldova': 'Moldova', 'Russian Federation': 'Russia', 'Syrian Arab Republic': 'Syria', 'United Kingdom of Great Britain and Northern Ireland': 'UK', 'United Republic of Tanzania': 'Tanzania', 'United States of America': 'US', 'Venezuela (Bolivarian Republic of)': 'Venezuela', 'Viet Nam': 'Vietnam'})\n",
+    "outputVariable": "out",
+    "source": [
+     "dem_national",
+     "rd_opri_national"
+    ],
+    "trigger": {
+     "tableId": "dem_national",
+     "resultTableId": "women_researchers",
+     "chart": {
+      "id": "chart-trigger-women_researchers",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "dem_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "women_researchers",
+    "rowCount": 104
+   },
+   "description": "Women as a share of researchers (%, headcount), each country's latest figure in 2019–2024 (latest_year). Source: UIS, February 2026 release; indicator FRESP.THC.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794705400000_step_2",
+   "createdAt": 1794705404000
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-31fdbbd5a1f0",
+   "chartType": "Bar Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-women_share-474707385627-0.8501710883756374017",
+     "dtype": "quantitative"
+    },
+    "y": {
+     "fieldID": "concept-country-688423079826-0.1501932204251610972",
+     "dtype": "nominal",
+     "sortBy": "x",
+     "sortOrder": "descending"
+    },
+    "color": {
+     "channel": "color",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "women_at_least_half_of_researchers",
+   "source": "user",
+   "title": "Where women are at least half of researchers",
+   "subtitle": "Women as a share of researchers (headcount); latest figure, 2019–2024; UIS, February 2026 release; indicator FRESP.THC",
+   "unread": false,
+   "themeId": "datawrapper",
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-women_share-474707385627-0.8501710883756374017:|y:concept-country-688423079826-0.1501932204251610972:"
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-women_share-474707385627-0.8501710883756374017",
+   "name": "women_share",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-country-688423079826-0.1501932204251610972",
+   "name": "country",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794705400000_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1794705400000_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Where are women at least half of researchers?",
+   "parentNodeId": "conversation-root:d36dba7e-bcbf-55a0-85ac-17aa734985d4",
+   "actionId": "exploreDataFromNL_1794705400000",
+   "createdAt": 1794705400000
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794705400000_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1794705400000_step_1",
+   "textKind": "explain",
+   "content": "Picking out the countries where women are at least half.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794705400000_prompt",
+   "actionId": "exploreDataFromNL_1794705400000",
+   "createdAt": 1794705401000,
+   "startedAt": 1794705400000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794705400000-1-1",
+     "kind": "tool",
+     "label": "Querying: dem_national, rd_opri_national",
+     "status": "completed",
+     "tool": "create_data"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794705400000_step_2",
+   "displayId": "textTurn_exploreDataFromNL_1794705400000_step_2",
+   "textKind": "explain",
+   "content": "Checking women's share of researchers in each country.",
+   "parentNodeId": "women_at_least_half_of_researchers",
+   "actionId": "exploreDataFromNL_1794705400000",
+   "createdAt": 1794705403000,
+   "startedAt": 1794705400000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794705400000-2-1",
+     "kind": "tool",
+     "label": "Querying: dem_national, rd_opri_national",
+     "status": "completed",
+     "tool": "create_data"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794705400000-2-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "Map created: Women's share of researchers"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794705400000_closing_turn",
+   "displayId": "textTurn_exploreDataFromNL_1794705400000_closing",
+   "textKind": "explain",
+   "content": "**Women are at least half of researchers in 23 of the 104 countries with recent data.** The highest shares:\n\n- **Myanmar:** 76.5% (2023)\n- **Kyrgyzstan:** 61.4% (2024)\n- **Azerbaijan:** 60.6% (2024)\n- **Albania:** 57.7% (2022)\n- **Mongolia:** 57.4% (2022)\n\nIn the typical country, 43% of researchers are women. The map shades countries above parity (50%) and below it in different colours. It uses each country's latest headcount from 2019–2024. Source: UIS, February 2026 release; indicator FRESP.THC.",
+   "parentNodeId": "file-women_researchers.map.json",
+   "actionId": "exploreDataFromNL_1794705400000",
+   "createdAt": 1794705406000,
+   "startedAt": 1794705400000,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "women_researchers",
+   "fields": {
+    "country_id": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "latest_year": {
+     "semanticType": "Year",
+     "displayName": "Latest year with data",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+     }
+    },
+    "women_share": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Women among researchers",
+     "divergingMidpoint": 50,
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Women among researchers",
+      "divergingMidpoint": 50
+     }
+    }
+   }
+  },
+  {
+   "tableId": "women_at_least_half_of_researchers",
+   "fields": {
+    "country_id": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "latest_year": {
+     "semanticType": "Year",
+     "displayName": "Latest year with data",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+     }
+    },
+    "women_share": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Women among researchers",
+     "divergingMidpoint": 50,
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Women among researchers",
+      "divergingMidpoint": 50
+     }
+    }
+   }
+  }
+ ],
+ "fileNodes": [
+  {
+   "kind": "file",
+   "id": "file-women_researchers.map.json",
+   "path": "women_researchers.map.json",
+   "displayName": "Women's share of researchers",
+   "contentHash": "209c0e3cdb52df292edffa621dd53c0603b6ece83ecd6a5eef6f61470a55c665",
+   "parentNodeId": "women_researchers",
+   "createdAt": 1794705405000
+  }
+ ],
+ "focusedId": {
+  "type": "file",
+  "fileName": "women_researchers.map.json"
+ },
+ "canvasTabs": [
+  {
+   "key": "file:women_researchers.map.json",
+   "target": {
+    "type": "file",
+    "fileName": "women_researchers.map.json"
+   },
+   "addedAt": 1794700000000,
+   "viewedAt": 1794700000000
+  }
+ ],
+ "canvasTabActive": "file:women_researchers.map.json"
+}

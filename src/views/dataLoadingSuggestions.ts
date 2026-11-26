@@ -1,14 +1,11 @@
-// Shared sample-task suggestions for the Data Loading Agent. Both the
-// upload-dialog entry point (`UnifiedDataUploadDialog`) and the in-session
-// chat panel (`DataLoadingChat`) render these via `AgentChatInput`'s
-// `focusSuggestions` dropdown. Keep this single source of truth so the
-// two surfaces stay in sync.
+// Shared sample-task suggestions for the landing and upload-menu agent inputs.
 
 import { TFunction } from 'i18next';
 import React from 'react';
 import SearchIcon from '@mui/icons-material/Search';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
-import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
+import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import { apiRequest } from '../app/apiClient';
 import { getUrls } from '../app/utils';
@@ -54,21 +51,24 @@ export function buildDataLoadingSuggestions(
 ): DataLoadingSuggestion[] {
     const kindFind = t('upload.agentChatSuggestion.kind.find', { defaultValue: 'find' });
     const kindExtract = t('upload.agentChatSuggestion.kind.extract', { defaultValue: 'extract' });
+    const kindMap = t('upload.agentChatSuggestion.kind.map', { defaultValue: 'map' });
+    const kindApp = t('upload.agentChatSuggestion.kind.app', { defaultValue: 'app' });
 
     const findLabel = t('upload.agentChatSuggestion.findCPI', {
         defaultValue: 'Help me load consumer price index data',
+    });
+    // Both use the example datasets, so they work before the user connects anything.
+    const mapLabel = t('upload.agentChatSuggestion.mapLifeExpectancy', {
+        defaultValue: 'Map life expectancy around the world over time',
+    });
+    const appLabel = t('upload.agentChatSuggestion.dashboardIncome', {
+        defaultValue: 'Build a dashboard of US household income by state',
     });
     const extractExcelLabel = t('upload.agentChatSuggestion.extractFromExcel', {
         defaultValue: 'Extract data from an attached Excel file',
     });
     const extractImageLabel = t('dataLoading.examples.extractFromImageExample', {
         defaultValue: 'Extract revenue data from this image',
-    });
-    const extractTextLabel = t('dataLoading.examples.extractFromTextExample', {
-        defaultValue: 'Extract revenue growth data from this text: Business Highlights ...',
-    });
-    const extractTextPrompt = t('dataLoading.examples.extractFromTextPrompt', {
-        defaultValue: extractTextLabel,
     });
 
     const iconSx = { fontSize: textVar.lg };
@@ -89,6 +89,18 @@ export function buildDataLoadingSuggestions(
             label: findLabel,
             icon: React.createElement(SearchIcon, { sx: iconSx }),
             onClick: () => fillAndMaybeSend({ text: findLabel, images: [], attachments: [] }),
+        },
+        {
+            kind: kindMap,
+            label: mapLabel,
+            icon: React.createElement(MapOutlinedIcon, { sx: iconSx }),
+            onClick: () => fillAndMaybeSend({ text: mapLabel, images: [], attachments: [] }),
+        },
+        {
+            kind: kindApp,
+            label: appLabel,
+            icon: React.createElement(DashboardOutlinedIcon, { sx: iconSx }),
+            onClick: () => fillAndMaybeSend({ text: appLabel, images: [], attachments: [] }),
         },
         {
             kind: kindExtract,
@@ -155,12 +167,6 @@ export function buildDataLoadingSuggestions(
                     });
             },
         },
-        {
-            kind: kindExtract,
-            label: extractTextLabel,
-            icon: React.createElement(DescriptionOutlinedIcon, { sx: iconSx }),
-            onClick: () => fillAndMaybeSend({ text: extractTextPrompt, images: [], attachments: [] }),
-        },
     ];
 }
 
@@ -170,40 +176,58 @@ export interface DataLoadingQuickAction {
     onClick: () => void;
 }
 
+/** What the user already has; quick actions suggest the next step (connect, explore, automate). */
+export interface QuickActionContext {
+    hasUserSources: boolean;
+    hasSessions: boolean;
+    hasWorkflows: boolean;
+    /** Whether the deployment offers workflows at all. */
+    canWorkflow?: boolean;
+    canSchedule: boolean;
+    hasSchedules: boolean;
+}
+
 /**
- * A short list of one-tap "quick actions" surfaced as pills above the
- * composer (distinct from the `focusSuggestions` dropdown, which holds
- * example prompts). These are the highest-intent entry points — connect a
- * source, or see what connected data is already available. Rendered without
- * icons to keep the empty-state / front page clean.
+ * One-tap "quick actions" surfaced as pills above the composer (distinct from the
+ * `focusSuggestions` dropdown, which holds example prompts). Listing connected data
+ * is always first; the second rotates, by `seed` in [0, 1), among next steps that
+ * fit what the user already has.
  */
 export function buildDataLoadingQuickActions(
     { t, setInput, setImages, setAttachments, requestAutoSend }: BuildSuggestionsArgs,
+    context?: QuickActionContext,
+    seed = 0,
 ): DataLoadingQuickAction[] {
-    const connectLabel = t('upload.agentChatQuickAction.connect', {
-        defaultValue: 'Help me connect to my data source',
-    });
-    const askLabel = t('upload.agentChatQuickAction.askConnected', {
-        defaultValue: 'What data do we have from connected sources?',
-    });
-
+    const label = (key: string, defaultValue: string) => t(`upload.agentChatQuickAction.${key}`, { defaultValue });
     const fillAndSend = (text: string) => {
         setImages([]);
         setAttachments([]);
         setInput(text);
         requestAutoSend?.({ text, images: [], attachments: [] });
     };
+    const action = (kind: string, text: string) => ({ kind, label: text, onClick: () => fillAndSend(text) });
+    const nextSteps = [
+        action('connect', label('connect', 'Help me connect a database or data source')),
+        context?.hasSessions && !context.hasWorkflows && context.canWorkflow !== false
+            && action('workflow', label('workflowFromSession', 'Turn my last analysis into a workflow')),
+        context?.canSchedule && context.hasWorkflows && !context.hasSchedules
+            && action('schedule', label('scheduleWorkflow', 'Schedule a workflow to run daily')),
+    ].filter((item): item is DataLoadingQuickAction => !!item);
+    // Without a connected source, connecting is the only sensible next step.
+    const next = context && !context.hasUserSources ? nextSteps[0]
+        : nextSteps[Math.min(nextSteps.length - 1, Math.floor(seed * nextSteps.length))];
+    return [action('ask', label('askConnected', 'List tables from my connected sources')), next];
+}
 
+/** What a blank session offers to ask the agent: listing data, then what the deployment allows (a recurring
+ *  workflow, a new source, tools to find data online on the user's own computer). */
+export function buildSessionStartPrompts(t: TFunction, allows: { workflows: boolean; schedules: boolean; connectors: boolean; local: boolean }): string[] {
+    const label = (key: string, defaultValue: string) => t(`upload.sessionStart.${key}`, { defaultValue }) as string;
     return [
-        {
-            kind: 'connect',
-            label: connectLabel,
-            onClick: () => fillAndSend(connectLabel),
-        },
-        {
-            kind: 'ask',
-            label: askLabel,
-            onClick: () => fillAndSend(askLabel),
-        },
-    ];
+        label('list', "Show me what's in my connected sources"),
+        allows.workflows && (allows.schedules ? label('scheduledWorkflow', 'I want to create a recurring workflow to create reports')
+            : label('workflow', 'I want to create a reusable workflow to create reports')),
+        allows.connectors && label('connect', 'Walk me through connecting a new data source'),
+        allows.local && label('discover', 'Help me set up tools to discover data online'),
+    ].filter((text): text is string => !!text);
 }

@@ -1,10 +1,40 @@
 {
   "upload": {
+    "livePick": {
+      "umbrella": "Do I need an umbrella this week?",
+      "umbrellaBusy": "Checking the sky…",
+      "umbrellaHint": "This week's forecast for cities near you, loaded live and charted on a map",
+      "warmer": "Is this week warmer than usual?",
+      "warmerBusy": "Digging through old weather…",
+      "warmerHint": "This week's forecast next to the same week in the past ten years, for cities near you",
+      "daylightShorter": "How fast are the days getting shorter?",
+      "daylightLonger": "How fast are the days getting longer?",
+      "daylightBusy": "Watching the sun…",
+      "daylightHint": "Hours of daylight over the next four months, from north to south",
+      "wiki": "What's the world reading about today?",
+      "wikiBusy": "Reading over the world's shoulder…",
+      "wikiHint": "Yesterday's most-read Wikipedia articles, and how they trended this week",
+      "countries": "What is each country reading today?",
+      "countriesBusy": "Peeking at the world's reading…",
+      "countriesHint": "Yesterday's most-read Wikipedia articles around the world, on a map",
+      "failed": "That didn't come through. Try again in a bit.",
+      "failedDetail": "Could not load live data for \"{{question}}\": {{reason}}",
+      "moon": "When's the next full moon?",
+      "moonBusy": "Checking the moon…",
+      "moonHint": "The moon's phases over the next two months"
+    },
+    "sessionStart": {
+      "list": "Show me what's in my connected sources",
+      "scheduledWorkflow": "I want to create a recurring workflow to create reports",
+      "workflow": "I want to create a reusable workflow to create reports",
+      "connect": "Walk me through connecting a new data source",
+      "discover": "Help me set up tools to discover data online"
+    },
     "title": "Load Data",
     "sampleDatasets": "Sample Datasets",
     "sampleDatasetsDesc": "Curated example datasets",
     "uploadFile": "Upload File",
-    "uploadFileDesc": "CSV, TSV, JSON, or Excel",
+    "uploadFileDesc": "Tables, Excel workbooks, or documents",
     "pasteData": "Paste Data",
     "pasteDataDesc": "Paste from clipboard",
     "extractData": "Data Loading Agent",
@@ -19,7 +49,16 @@
     "orBrowse": "or Browse",
     "or": "or",
     "browse": "Browse",
-    "supportedFormats": "Supported: CSV, TSV, JSON, Excel (xlsx, xls)",
+    "supportedFormats": "CSV, TSV, and JSON become tables; Excel and other files are kept for the agent",
+    "workspaceFile": "File",
+    "previewUnavailable": "A quick preview is not available for this file.",
+    "emptyFile": "This file is empty.",
+    "previewTruncated": "Preview truncated.",
+    "removeFile": "Remove file",
+    "filesSelected": "{{count}} files selected",
+    "addMoreFiles": "Add more files",
+    "addToWorkspace": "Add to workspace",
+    "addAllToWorkspace": "Add all to workspace",
     "placeholder": {
       "url": "Enter URL: https://example.com/data.json or /api/data",
       "paste": "Paste your data here (CSV, TSV, or JSON format)"
@@ -38,15 +77,17 @@
     "showFull": "Show Full",
     "dataLoadingAgent": "Data Loading Agent",
     "resumePreviousConversation": "Previous conversation →",
-    "agentChatPlaceholder": "Ask the agent to find datasets, or extract data from an image or text…",
+    "agentChatPlaceholder": "Load or connect data, then ask for charts, maps, dashboards or reports…",
     "agentChatTabSuggestion": "What datasets do we have here?",
     "agentChatSuggestionsLabel": "Try asking",
     "agentChatSendTooltip": "Start chatting with the agent",
     "dataSourcesLabel": "Connected to:",
-    "addSourceLabel": "Or add data directly:",
+    "addSourceLabel": "Add data:",
     "agentChatQuickAction": {
-      "connect": "Help me connect to my data source",
-      "askConnected": "What data do we have from connected sources?"
+      "connect": "Help me connect a database or data source",
+      "askConnected": "List tables from my connected sources",
+      "workflowFromSession": "Turn my last analysis into a workflow",
+      "scheduleWorkflow": "Schedule a workflow to run daily"
     },
     "agentChatSuggestion": {
       "askConnected": "What datasets do we have from connected sources?",
@@ -55,8 +96,12 @@
       "kind": {
         "ask": "ask",
         "find": "find",
-        "extract": "extract"
-      }
+        "extract": "extract",
+        "map": "map",
+        "app": "app"
+      },
+      "mapLifeExpectancy": "Map life expectancy around the world over time",
+      "dashboardIncome": "Build a dashboard of US household income by state"
     },
     "uploadData": "Upload Data",
     "importData": "Import data",
@@ -69,6 +114,7 @@
     "addConnectionDesc": "Connect to a live database",
     "connectorConnected": "Connected",
     "connectorDisconnected": "Click to connect",
+    "connectorNotConnected": "Not connected",
     "pickDataSourceType": "Choose a data source type to create a new connection.",
     "nameYourConnection": "Name your {{type}} connection.",
     "connectionName": "Connection name",
@@ -111,6 +157,14 @@
     "createConnectionTo": "Create a connection to {{name}}",
     "connectionNameLabel": "connection name",
     "dataSourceTypes": "Data Sources",
+    "connectorGroups": {
+      "samples": "Examples",
+      "files": "Files",
+      "databases": "Databases",
+      "warehouses": "Warehouses",
+      "semantic": "BI & semantic",
+      "other": "Other"
+    },
     "folderPathPlaceholder": "/path/to/your/data/folder",
     "includeSubfolders": "Include subfolders",
     "localFolder": "Link local folder",
@@ -134,6 +188,7 @@
       "cosmosdb": "Query Cosmos DB containers",
       "mongodb": "Query MongoDB collections",
       "bigquery": "Query BigQuery datasets",
+      "snowflake": "Query Snowflake tables",
       "athena": "Query Amazon Athena",
       "kusto": "Query Azure Data Explorer",
       "superset": "Browse Superset datasets",

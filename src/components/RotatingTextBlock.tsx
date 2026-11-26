@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Box, SxProps } from '@mui/material';
+import { weight } from '../app/tokens';
 
 interface RotatingTextBlockProps {
     texts: string[];
@@ -36,7 +37,7 @@ export const RotatingTextBlock: React.FC<RotatingTextBlockProps> = ({
             sx={{
                 display: 'inline',
                 position: 'relative',
-                fontWeight: 500,
+                fontWeight: weight(500),
                 opacity: isTransitioning ? 0 : 1,
                 transition: `opacity ${transitionDuration}ms ease-in-out`,
                 ...sx

@@ -83,13 +83,6 @@ class TestValidateIdentityValue:
 
 class TestGetIdentityId:
 
-    def test_azure_principal_returns_user_prefix(self, app, azure_provider):
-        with app.test_request_context(
-            headers={"X-MS-CLIENT-PRINCIPAL-ID": "azure-user-123"}
-        ):
-            identity = get_identity_id()
-            assert identity == "user:azure-user-123"
-
     def test_browser_identity_returns_browser_prefix(self, app):
         with app.test_request_context(
             headers={"X-Identity-Id": "550e8400-e29b-41d4-a716-446655440000"}

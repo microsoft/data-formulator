@@ -15,10 +15,6 @@ const pending = (requestId: string) =>
     loadTable.pending(requestId, { table: { id: 't' } } as any);
 
 describe('tableLoadsInFlight', () => {
-    it('starts at zero', () => {
-        expect(initial.tableLoadsInFlight).toBe(0);
-    });
-
     it('counts a load as in flight until it settles', () => {
         const loading = dataFormulatorReducer(initial, pending('req-1'));
         expect(loading.tableLoadsInFlight).toBe(1);

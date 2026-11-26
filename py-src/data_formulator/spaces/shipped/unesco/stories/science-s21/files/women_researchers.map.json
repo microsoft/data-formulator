@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "title": "Women's share of researchers",
+  "subtitle": "Women as a share of researchers (headcount); latest figure, 2019–2024; parity at 50%",
+  "source": "UIS, February 2026 release; indicator FRESP.THC",
+  "template": "choropleth",
+  "data": {
+    "table": "women_researchers"
+  },
+  "encoding": {
+    "region": "country_id",
+    "color": "women_share",
+    "tooltip": [
+      "country",
+      "women_share",
+      "latest_year"
+    ]
+  },
+  "properties": {
+    "geography": "world",
+    "keyType": "iso3"
+  },
+  "fields": {
+    "country_id": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+    },
+    "country": {
+      "semanticType": "Country",
+      "displayName": "Country"
+    },
+    "latest_year": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+    },
+    "women_share": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Women among researchers",
+      "divergingMidpoint": 50
+    }
+  },
+  "view": {
+    "style": "light"
+  }
+}

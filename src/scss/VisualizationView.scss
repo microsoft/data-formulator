@@ -54,9 +54,10 @@
         cursor: pointer !important;
     }
 
+    // The lift and shadow are dropped by the sharp contrast (theme.ts lineVariables).
     .vega-thumbnail-box:hover {
-        transform: translateY(-1px);
-        box-shadow: '0 2px 6px rgba(0,0,0,0.1)',
+        transform: var(--df-hover-lift, translateY(-1px));
+        box-shadow: var(--df-ambient-shadow, 0 2px 6px rgba(0,0,0,0.1));
     }
 }
 
@@ -68,7 +69,7 @@
     font-size: 14px !important;
     font-weight: 100 !important;
     white-space: nowrap !important;
-    color: #434a56 !important;
+    color: var(--df-text-muted, #434a56) !important;
     text-decoration: none !important;
 } ;
 
@@ -78,13 +79,13 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
 
 @keyframes bump {
     0% {
-      background-color: #fff;
+      background-color: rgba(var(--df-paper-rgb, 255, 255, 255), 1);
     }
     50% {
       background-color: rgba( 2, 136, 209, 0.2);
     }
     100% {
-      background-color: #fff;
+      background-color: rgba(var(--df-paper-rgb, 255, 255, 255), 1);
     }
 }
 
@@ -213,8 +214,8 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
 }
 
 .data-thread-card:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+    transform: var(--df-hover-lift, translateY(-1px));
+    box-shadow: var(--df-ambient-shadow, 0 1px 4px rgba(0,0,0,0.12));
     z-index: 1;
 }
 
@@ -226,8 +227,8 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
 }
 
 .hover-card:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 0 3px rgba(33,33,33,.2);
+    transform: var(--df-hover-lift, translateY(-1px));
+    box-shadow: var(--df-ambient-shadow, 0 0 3px rgba(33,33,33,.2));
 }
 
 .visualization-carousel {

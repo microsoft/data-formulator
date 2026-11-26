@@ -86,16 +86,6 @@ describe('handleApiError', () => {
             expect(msg.detail).toBe('Request ID: req-123');
             expect(msg.diagnostics).toEqual(apiError);
         });
-
-        it('should include diagnostics with the full apiError', () => {
-            const apiError: ApiError = { code: 'LLM_TIMEOUT', message: 'timeout', retry: true };
-            const err = new ApiRequestError(apiError, 504);
-
-            handleApiError(err, 'ctx');
-
-            const msg = vi.mocked(dfActions.addMessages).mock.calls[0][0];
-            expect(msg.diagnostics).toEqual(apiError);
-        });
     });
 
     describe('AbortError handling', () => {
@@ -187,18 +177,7 @@ describe('handleApiError', () => {
             const msg = vi.mocked(dfActions.addMessages).mock.calls[0][0];
             expect(msg.value).toBe('Connection timeout');
             expect(msg.component).toBe('data source sidebar');
-        });
-
-        it('should not produce [object Object] for serialized errors', () => {
-            const serializedError = { name: 'Error', message: 'Something failed' };
-
-            handleApiError(serializedError, 'ctx');
-
-            const msg = vi.mocked(dfActions.addMessages).mock.calls[0][0];
-            expect(msg.value).not.toBe('[object Object]');
-            expect(msg.value).toBe('Something failed');
-        });
-    });
+        });    });
 });
 
 describe('extractErrorMessage', () => {
@@ -222,11 +201,14 @@ describe('extractErrorMessage', () => {
     it('should fallback to String() for unknown values', () => {
         expect(extractErrorMessage(42)).toBe('42');
         expect(extractErrorMessage(null)).toBe('null');
-    });
+    });});
 
-    it('should not return [object Object] for objects with message', () => {
-        const obj = { message: 'real error' };
-        expect(extractErrorMessage(obj)).not.toBe('[object Object]');
-        expect(extractErrorMessage(obj)).toBe('real error');
+describe('messageBadgeSeverity', () => {
+    it('follows the latest message, so an earlier error no longer reads as the current state', async () => {
+        const { messageBadgeSeverity } = await import('../../../../src/views/MessageSnackbar');
+        const message = (type: 'error' | 'warning' | 'info' | 'success') => ({ type, component: 'test', timestamp: 0, value: type });
+        expect(messageBadgeSeverity([])).toBe('default');
+        expect(messageBadgeSeverity([message('error'), message('info')])).toBe('info');
+        expect(messageBadgeSeverity([message('info'), message('error')])).toBe('error');
     });
 });

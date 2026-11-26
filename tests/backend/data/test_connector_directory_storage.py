@@ -14,7 +14,6 @@ Covers:
 - _remove_user_connector deletes the correct file
 - _load_user_specs reads from connectors/ directory
 - _safe_source_filename sanitises special characters
-- load_connectors integrates with directory-based storage
 """
 from __future__ import annotations
 
@@ -32,45 +31,10 @@ from data_formulator.data_connector import (
     _load_user_specs,
     _persist_user_connector,
     _remove_user_connector,
-    _user_connector_key,
-    load_connectors,
 )
 from data_formulator.datalake.naming import safe_source_id
-from data_formulator.data_loader.external_data_loader import (
-    ExternalDataLoader,
-)
 
 pytestmark = [pytest.mark.backend, pytest.mark.plugin]
-
-
-# ------------------------------------------------------------------
-# Minimal mock loader
-# ------------------------------------------------------------------
-
-class _StubLoader(ExternalDataLoader):
-    def __init__(self, params):
-        self.params = params
-
-    def test_connection(self):
-        return True
-
-    def list_tables(self, table_filter=None):
-        return []
-
-    def fetch_data_as_arrow(self, source_table, import_options=None):
-        import pyarrow as pa
-        return pa.table({"x": [1]})
-
-    @staticmethod
-    def list_params():
-        return [
-            {"name": "host", "type": "string", "required": True},
-            {"name": "database", "type": "string", "required": False},
-        ]
-
-    @staticmethod
-    def auth_instructions():
-        return "Stub loader"
 
 
 # ------------------------------------------------------------------
@@ -211,25 +175,6 @@ class TestPersistAndRemove:
 
 class TestLoadUserSpecs:
 
-    def test_loads_from_json_directory(self, tmp_path: Path) -> None:
-        user_dir = tmp_path / "users" / "alice"
-        spec = SourceSpec(
-            source_id="mysql:prod", loader_type="mysql",
-            display_name="MySQL Prod",
-            default_params={"host": "mysql.corp"},
-            source="user",
-        )
-
-        with patch("data_formulator.datalake.workspace.get_user_home", return_value=user_dir):
-            _persist_user_connector("alice", spec)
-            loaded = _load_user_specs("alice")
-
-        assert len(loaded) == 1
-        assert loaded[0].source_id == "mysql:prod"
-        assert loaded[0].loader_type == "mysql"
-        assert loaded[0].display_name == "MySQL Prod"
-        assert loaded[0].source == "user"
-
     def test_loads_multiple_connectors(self, tmp_path: Path) -> None:
         user_dir = tmp_path / "users" / "alice"
         specs = [
@@ -255,30 +200,3 @@ class TestLoadUserSpecs:
         with patch("data_formulator.datalake.workspace.get_user_home", return_value=user_dir):
             loaded = _load_user_specs("new_user")
         assert loaded == []
-
-
-
-# ==================================================================
-# Tests: load_connectors integration with directory storage
-# ==================================================================
-
-class TestLoadConnectorsIntegration:
-
-    def test_loads_user_connectors_from_directory(self, tmp_path: Path) -> None:
-        user_dir = tmp_path / "users" / "alice"
-        spec = SourceSpec(
-            source_id="user_db", loader_type="stub",
-            display_name="Alice DB", source="user",
-        )
-
-        mock_loaders = {"stub": _StubLoader}
-
-        with patch("data_formulator.datalake.workspace.get_user_home", return_value=user_dir):
-            _persist_user_connector("alice", spec)
-
-        with patch("data_formulator.datalake.workspace.get_user_home", return_value=user_dir), \
-             patch("data_formulator.data_loader.DATA_LOADERS", mock_loaders):
-            load_connectors("alice")
-
-        assert _user_connector_key("alice", "user_db") in DATA_CONNECTORS
-

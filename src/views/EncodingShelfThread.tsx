@@ -24,6 +24,7 @@ import { InsightIcon } from '../icons';
 
 
 import { EncodingShelfCard } from './EncodingShelfCard';
+import { paper } from '../app/tokens';
 
 // Property and state of an encoding shelf
 export interface EncodingShelfThreadProps { 
@@ -62,7 +63,7 @@ export let ChartElementFC: FC<{
     if (thumbnail) {
         return (
             <Box sx={{ margin: "auto", display: 'flex', justifyContent: 'center', alignItems: 'center',
-                       backgroundColor: "white" }}>
+                       backgroundColor: paper() }}>
                 <img 
                     src={thumbnail} 
                     alt={`${chart.chartType} chart`}

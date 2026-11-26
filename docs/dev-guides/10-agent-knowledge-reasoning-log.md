@@ -1,10 +1,12 @@
 # Agent 知识系统与推理日志开发规范
 
-> **维护者**: DF 核心团队  
-> **最后更新**: 2026-05-03  
-> **适用范围**: 后端 Agent、知识库路由、推理日志、前端知识面板、保存经验流程
+> **Superseded (2026-11):** the knowledge store (rules, workflows, distillation, `/api/knowledge`, the knowledge panel) was removed. Saved workflows are `workflows://` with the configure skill; per-session notes are `files/notes/` (design-docs/74); earlier work is read with `past_sessions` (design-docs/75). The reasoning log described here is still in use.
 
-本规范记录已经落地的 Agent 知识系统、推理日志和经验提炼实现。设计背景和历史计划见 `design-docs/15-agent-knowledge-reasoning-log.md`；仍未完成的后续优化见 `design-docs/15.2-knowledge-system-followup-improvements.md`。
+> **维护者**: DF 核心团队  
+> **最后更新**: 2026-10-12  
+> **适用范围**: 后端 Agent、知识库路由、推理日志、前端知识面板、工作流提炼流程
+
+本规范记录已经落地的 Agent 知识系统、推理日志和工作流提炼实现。设计背景和历史计划见 `design-docs/15-agent-knowledge-reasoning-log.md`；仍未完成的后续优化见 `design-docs/15.2-knowledge-system-followup-improvements.md`。
 
 ## 1. 架构概览
 
@@ -14,7 +16,7 @@ Agent 知识系统由三部分组成：
 |---|---|---|
 | `KnowledgeStore` | `py-src/data_formulator/knowledge/store.py` | 用户知识文件的 CRUD、搜索、front matter 解析、路径安全和内容长度限制 |
 | `ReasoningLogger` | `py-src/data_formulator/agents/reasoning_log.py` | DataAgent 会话的结构化 JSONL 调试日志 |
-| `ExperienceDistillAgent` | `py-src/data_formulator/agents/agent_experience_distill.py` | 从前端传入的 `experience_context` 提炼可复用经验文档 |
+| `WorkflowDistillAgent` | `py-src/data_formulator/agents/agent_workflow_distill.py` | 从前端传入的 `workflow_context` 提炼可复用工作流文档 |
 
 知识库存储在当前用户 home 下：
 
@@ -22,10 +24,10 @@ Agent 知识系统由三部分组成：
 <user_home>/
 └── knowledge/
     ├── rules/
-    └── experiences/
+    └── workflows/
 ```
 
-`rules` 只允许扁平 `.md` 文件；`experiences` 最多允许一级子目录。所有知识文件访问必须通过 `KnowledgeStore`，不要在调用方直接拼接 `Path(user_home) / "knowledge" / user_input`。
+`rules` 只允许扁平 `.md` 文件；`workflows` 最多允许一级子目录。所有知识文件访问必须通过 `KnowledgeStore`，不要在调用方直接拼接 `Path(user_home) / "knowledge" / user_input`。旧版本留下的 `knowledge/experiences/` 文件会在 `KnowledgeStore` 初始化时一次性迁移到 `workflows/`。
 
 ## 2. 知识文件格式
 
@@ -51,7 +53,7 @@ ROI = (revenue - cost) / cost
 | `tags` | 搜索标签。应使用数组 |
 | `created` / `updated` | 日期或时间戳 |
 | `source` | `manual` 或 `agent_summarized` |
-| `source_context` | 经验提炼来源上下文 ID，可选 |
+| `source_context` | 工作流提炼来源上下文 ID，可选 |
 
 Rules 额外支持：
 
@@ -72,16 +74,16 @@ from data_formulator.knowledge.store import KnowledgeStore
 store = KnowledgeStore(user_home_path)
 items = store.list_all("rules")
 content = store.read("rules", "roi.md")
-store.write("experiences", "cleaning/missing-values.md", content)
-store.delete("experiences", "sales/quarterly-trend.md")
-results = store.search("missing values", categories=["experiences"])
+store.write("workflows", "cleaning/missing-values.md", content)
+store.delete("workflows", "sales/quarterly-trend.md")
+results = store.search("missing values", categories=["workflows"])
 ```
 
 必须遵守：
 
-- 只使用 `rules`、`experiences` 两个 category。
+- 只使用 `rules`、`workflows` 两个 category。
 - 所有知识文件必须是 `.md`。
-- `rules` 路径只能是 `file.md`；`experiences` 路径最多是 `folder/file.md`。
+- `rules` 路径只能是 `file.md`；`workflows` 路径最多是 `folder/file.md`。
 - 路径穿越、绝对路径和 symlink 逃逸由 `ConfinedDir` 拦截。
 - 搜索结果只返回摘要，完整内容通过 `read()` 读取。
 
@@ -120,7 +122,7 @@ results = store.search("missing values", categories=["experiences"])
 ```python
 results = store.search(
     "分析各区域的ROI",
-    categories=["rules", "experiences"],
+    categories=["rules", "workflows"],
     max_results=5,
     table_names=["sales_data", "regions"],  # 可选，用于 tag 加分
 )
@@ -140,7 +142,7 @@ results = store.search(
 | `/api/knowledge/write` | POST | `{ category, path, content }` | 创建或更新知识文件 |
 | `/api/knowledge/delete` | POST | `{ category, path }` | 删除知识文件 |
 | `/api/knowledge/search` | POST | `{ query, categories? }` | 跨类别搜索知识 |
-| `/api/knowledge/distill-experience` | POST | `{ experience_context, model, category_hint? }` | 提炼并保存经验 |
+| `/api/knowledge/distill-workflow` | POST | `{ workflow_context, model, user_instruction?, category_hint?, timeout_seconds? }` | 提炼并保存工作流 |
 
 路由通过 `get_identity_id()` 和 `get_user_home(identity_id)` 定位当前用户目录。不要让前端传入用户目录、workspace 目录或绝对路径。
 
@@ -180,6 +182,29 @@ DataAgent 当前记录的主要事件：
 
 注意：当前 `on` 模式仍会记录 `user_question` / `query` 等问题文本；如果新增埋点涉及 credentials、连接串、tokens 或原始数据正文，必须先脱敏或只记录摘要。
 
+### 失败日志
+
+推理日志默认关闭，且按会话分文件；跨会话找出反复出现的失败（design-docs/73）需要另一份常开的记录。
+`agents/failure_log.py` 把 Agent 每次失败的工具调用或 action 追加为一行 JSON：
+
+```text
+DATA_FORMULATOR_HOME/logs/agent-failures.jsonl   # 超过 5 MB 轮转，保留 3 份
+```
+
+每行包含 `ts`、`agent`（`analyst` / `workflow`）、`workspace`、`model`、`tool`、`category`（按错误文本分类，
+如 `sandbox_write_denied`、`view_path_in_code`、`os_access_denied`）、`error`（截尾）和 `args`（截断，
+经 `sanitize_params` 与 `sanitize_text` 脱敏）。失败的判定：工具状态不是 `ok`，或 action 的 observation
+以 `[ERROR]` / `[… NOT CREATED]` 等开头，或终端结果带 `error_code`、非零退出码或超时。
+
+`DF_AGENT_FAILURE_LOG=off` 关闭。汇总：
+
+```bash
+uv run python -m data_formulator.agents.failure_log --days 30            # 按类别、工具计数，并列出常见错误
+uv run python -m data_formulator.agents.failure_log --category view_path_in_code --json
+```
+
+新增失败类型时，在 `CATEGORIES` 中按“具体在前”的顺序加一条正则。
+
 ## 6. Agent 知识集成
 
 路由层通过 `routes/agents.py` 的 `_get_knowledge_store(identity_id)` 创建 `KnowledgeStore`，并传给对应 Agent。知识不可用时必须优雅降级，不能影响原有 Agent 流程。
@@ -213,7 +238,7 @@ combined_rules = _combine_rules(agent_coding_rules, knowledge_rules)
 
 ### 模式 B：Library 知识上下文注入
 
-适用于 DataAgent、DataLoadingAgent、InteractiveExploreAgent、ChartInsightAgent。运行时搜索相关 `experiences` 条目，把摘要注入上下文。`KnowledgeStore.search()` 自动跳过 `alwaysApply=true` 的 rules，避免与 system prompt 重复注入。
+适用于 DataAgent、DataLoadingAgent、InteractiveExploreAgent、ChartInsightAgent。运行时搜索相关 `workflows` 条目，把摘要注入上下文。`KnowledgeStore.search()` 自动跳过 `alwaysApply=true` 的 rules，避免与 system prompt 重复注入。
 
 - **DataAgent** 使用 `_search_relevant_knowledge(user_question, table_names)` 搜索，user question 作为 query，table_names 通过 `search()` 的 `table_names` 参数独立传入以获得 tag 加分。
 - **DataLoadingAgent** 使用最近一条用户消息作为搜索 query；无用户消息时回退到 `"data loading cleaning preparation"`。
@@ -227,20 +252,19 @@ DataAgent 提供两个内部工具：
 
 工具错误应返回安全、简短的文本结果，并在服务端日志中记录异常类型；不要把 traceback 或内部路径返回给 LLM/用户。
 
-## 7. 经验提炼
+## 7. 工作流提炼
 
-前端只在当前可见分析链的 leaf derived table 上展示“保存为经验”按钮。leaf table 的判断标准是：该表是 derived table，且没有其他未 anchored derived table 从它继续派生。
+提炼以会话（workspace）为单位。`KnowledgePanel` 中的提炼入口打开 `SessionDistillDialog`（`src/views/SessionDistill.tsx`）。`collectSessionThreads()` 找出当前会话里所有 leaf derived table，每个 leaf 对应一个 thread。leaf table 的判断标准是：该表是 derived table，且没有其他 derived table 从它继续派生。
 
-`SaveExperienceButton` 构建 `experience_context` 时，从触发保存的 leaf table 沿当前 Redux 中仍存在的链向上回溯，只收集当前可见链上的：
+`buildLeafEvents()`（`src/views/workflowContext.ts`）从 leaf table 沿当前 Redux 中仍存在的链向上回溯到 root，按时间顺序生成 `events`，类型包括：
 
-- `dialog`
-- `interaction`
-- `result_summary`
-- `execution_attempts`
+- `message`（用户、Agent 消息和 `tool_call`）
+- `create_table`
+- `create_chart`
 
-用户已删除的中间节点不会进入经验上下文。`execution_attempts` 只携带失败/修复代码的结构化摘要，不应携带失败代码或修复代码原文。
+用户已删除的中间节点不会进入工作流上下文，没有用户消息的 thread 会被丢弃。`buildSessionWorkflowContext()` 把各 thread 组装为 `workflow_context`（`context_id`、`workspace_id`、`workspace_name`、`threads`、可选 `payload_notes`）。超出长度预算时依次丢弃 tool call 事件、把 `sample_rows` 缩减到 1 行、丢弃最早的 thread。
 
-后端 `/api/knowledge/distill-experience` 使用前端提交的 `experience_context` 调用 `ExperienceDistillAgent`，然后写入 `knowledge/experiences/`。`ExperienceDistillAgent` 的 prompt 引导提取可复用的通用方法论，而非特定案例细节。这个端点不读取管理员推理日志。
+后端 `/api/knowledge/distill-workflow` 要求 `workflow_context`（含非空 `threads`、`workspace_id`、`workspace_name`）和 `model`，使用 `WorkflowDistillAgent` 提炼后写入 `knowledge/workflows/`，响应为 `{ path, category: "workflows" }`。同一个 workspace 重复提炼时按 `source_workspace_id` 更新同一个文件。`WorkflowDistillAgent` 的 prompt 引导提取可复用的通用方法论，而非特定案例细节。这个端点不读取管理员推理日志。
 
 ## 8. 前端实现约定
 
@@ -252,8 +276,8 @@ DataAgent 提供两个内部工具：
 | `src/app/useKnowledgeStore.ts` | 知识面板状态管理，使用 React hooks，不走 Redux |
 | `src/views/KnowledgePanel.tsx` | 知识树、搜索、编辑、删除 |
 | `src/views/AgentRulesDialog.tsx` | knowledge-backed rules 快捷编辑器 |
-| `src/views/SaveExperienceButton.tsx` | 保存为经验入口和 `experience_context` 构建 |
-| `src/views/DataThreadCards.tsx` | 仅对 leaf derived table 渲染保存经验入口 |
+| `src/views/SessionDistill.tsx` | 会话级工作流提炼对话框和 `workflow_context` 构建 |
+| `src/views/workflowContext.ts` | leaf table 事件构建和提炼 payload 辅助函数 |
 | `src/views/DataSourceSidebar.tsx` | 知识库侧栏入口 |
 
 所有用户可见文本必须走 i18n。知识系统当前使用 `common.json` 的 `knowledge.*` key，新增 key 时必须同步更新 `src/i18n/locales/en/common.json` 和 `src/i18n/locales/zh/common.json`。
@@ -262,7 +286,7 @@ DataAgent 提供两个内部工具：
 
 ```typescript
 window.dispatchEvent(new CustomEvent('knowledge-changed', {
-    detail: { category: 'experiences' },
+    detail: { category: 'workflows' },
 }));
 ```
 
@@ -272,7 +296,7 @@ window.dispatchEvent(new CustomEvent('knowledge-changed', {
 
 添加新 Agent 或修改知识集成时：
 
-- [ ] 明确该 Agent 需要 `rules`、`experiences` 中哪些类别。
+- [ ] 明确该 Agent 需要 `rules`、`workflows` 中哪些类别。
 - [ ] 在 Agent 构造函数中添加可选 `knowledge_store` 参数。
 - [ ] 在 `routes/agents.py` 对应路由中传入 `_get_knowledge_store(identity_id)`。
 - [ ] 选择集成模式：Rules 注入、上下文注入或 DataAgent 工具调用。
@@ -294,13 +318,13 @@ python -m pytest \
   tests/backend/agents/test_agent_knowledge_integration.py -q
 ```
 
-前端相关流程当前主要依赖手动验证和通用 `yarn test`。修改 `KnowledgePanel`、`SaveExperienceButton` 或 leaf-table 逻辑时，至少手动覆盖：
+前端相关流程当前主要依赖手动验证和通用 `yarn test`。修改 `KnowledgePanel`、`SessionDistill` 或 leaf-table 逻辑时，至少手动覆盖：
 
-- 创建、编辑、删除 rules / experiences。
+- 创建、编辑、删除 rules / workflows。
 - 搜索知识条目。
-- 多步 DataAgent 分析后只在最终 leaf table 显示保存经验按钮。
-- 删除中间 table 后，保存经验上下文不包含已删除节点。
-- 经验保存成功后知识面板自动刷新。
+- 多步 DataAgent 分析后，会话中存在 leaf table 时才可以在知识面板打开工作流提炼对话框。
+- 删除中间 table 后，工作流上下文不包含已删除节点。
+- 工作流保存成功后知识面板自动刷新。
 
 ## 11. 已知后续优化
 

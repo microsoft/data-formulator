@@ -1,0 +1,1418 @@
+{
+ "__stateVersion": 15,
+ "activeWorkspace": {
+  "id": "education-sdg4-e20",
+  "displayName": "Finishing upper secondary school is rarest in sub-Saharan Africa"
+ },
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "lowest_upper_secondary_completion",
+   "displayId": "15 countries with the lowest upper secondary completion",
+   "names": [
+    "country_id",
+    "country",
+    "latest_year",
+    "completion"
+   ],
+   "rows": [
+    {
+     "country_id": "SSD",
+     "country": "South Sudan",
+     "latest_year": 2025,
+     "completion": 2.1
+    },
+    {
+     "country_id": "NER",
+     "country": "Niger",
+     "latest_year": 2025,
+     "completion": 4.9
+    },
+    {
+     "country_id": "CAF",
+     "country": "Central African Republic",
+     "latest_year": 2025,
+     "completion": 5.6
+    },
+    {
+     "country_id": "TCD",
+     "country": "Chad",
+     "latest_year": 2025,
+     "completion": 6.6
+    },
+    {
+     "country_id": "ZWE",
+     "country": "Zimbabwe",
+     "latest_year": 2025,
+     "completion": 8.1
+    },
+    {
+     "country_id": "MOZ",
+     "country": "Mozambique",
+     "latest_year": 2025,
+     "completion": 8.6
+    },
+    {
+     "country_id": "TZA",
+     "country": "Tanzania",
+     "latest_year": 2025,
+     "completion": 8.7
+    },
+    {
+     "country_id": "SOM",
+     "country": "Somalia",
+     "latest_year": 2025,
+     "completion": 8.8
+    },
+    {
+     "country_id": "GNQ",
+     "country": "Equatorial Guinea",
+     "latest_year": 2025,
+     "completion": 9.0
+    },
+    {
+     "country_id": "BDI",
+     "country": "Burundi",
+     "latest_year": 2025,
+     "completion": 10.2
+    },
+    {
+     "country_id": "MLI",
+     "country": "Mali",
+     "latest_year": 2025,
+     "completion": 11.3
+    },
+    {
+     "country_id": "VUT",
+     "country": "Vanuatu",
+     "latest_year": 2025,
+     "completion": 11.3
+    },
+    {
+     "country_id": "GNB",
+     "country": "Guinea-Bissau",
+     "latest_year": 2025,
+     "completion": 12.7
+    },
+    {
+     "country_id": "SLE",
+     "country": "Sierra Leone",
+     "latest_year": 2025,
+     "completion": 13.3
+    },
+    {
+     "country_id": "PNG",
+     "country": "Papua New Guinea",
+     "latest_year": 2025,
+     "completion": 14.2
+    }
+   ],
+   "metadata": {
+    "country_id": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "latest_year": {
+     "type": "integer",
+     "levels": []
+    },
+    "completion": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with v as (\n        select COUNTRY_ID as country_id, country, year, value\n        from read_parquet('data/sdg4_national.parquet')\n        where indicator_id = 'CR.MOD.3' and year between 2020 and 2025\n          and value is not null and coalesce(magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    ),\n    population as (\n        select COUNTRY_ID as country_id, value as thousands\n        from read_parquet('data/dem_national.parquet')\n        where indicator_id = '200101'\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    )\n    select v.country_id, v.country, v.year as latest_year, round(value, 1) as completion\n    from v join population using (country_id)\n    where population.thousands >= 100\n    order by completion asc, v.country\n    limit 15\n\"\"\").df()\nout['country'] = out.country.replace({'Bolivia (Plurinational State of)': 'Bolivia', 'China, Hong Kong Special Administrative Region': 'Hong Kong', 'China, Macao Special Administrative Region': 'Macao', \"Democratic People's Republic of Korea\": 'North Korea', 'Democratic Republic of the Congo': 'DR Congo', 'Iran (Islamic Republic of)': 'Iran', \"Lao People's Democratic Republic\": 'Laos', 'Micronesia (Federated States of)': 'Micronesia', 'Republic of Korea': 'South Korea', 'Republic of Moldova': 'Moldova', 'Russian Federation': 'Russia', 'Syrian Arab Republic': 'Syria', 'United Kingdom of Great Britain and Northern Ireland': 'UK', 'United Republic of Tanzania': 'Tanzania', 'United States of America': 'US', 'Venezuela (Bolivarian Republic of)': 'Venezuela', 'Viet Nam': 'Vietnam'})\n",
+    "outputVariable": "out",
+    "source": [
+     "dem_national",
+     "sdg4_national"
+    ],
+    "trigger": {
+     "tableId": "dem_national",
+     "resultTableId": "lowest_upper_secondary_completion",
+     "chart": {
+      "id": "chart-trigger-lowest_upper_secondary_completion",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "dem_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "lowest_upper_secondary_completion",
+    "rowCount": 15
+   },
+   "description": "Upper secondary completion rate (%), both sexes, the 15 lowest countries' latest UIS modelled estimate in 2020–2025 (latest_year); territories under 100,000 people left out. Source: UIS, November 2026 release; indicator CR.MOD.3.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794700000000_step_1",
+   "createdAt": 1794700002000
+  },
+  {
+   "kind": "table",
+   "id": "upper_secondary_completion",
+   "displayId": "Upper secondary completion by country",
+   "names": [
+    "country_id",
+    "country",
+    "latest_year",
+    "completion"
+   ],
+   "rows": [
+    {
+     "country_id": "SSD",
+     "country": "South Sudan",
+     "latest_year": 2025,
+     "completion": 2.1
+    },
+    {
+     "country_id": "NER",
+     "country": "Niger",
+     "latest_year": 2025,
+     "completion": 4.9
+    },
+    {
+     "country_id": "CAF",
+     "country": "Central African Republic",
+     "latest_year": 2025,
+     "completion": 5.6
+    },
+    {
+     "country_id": "TCD",
+     "country": "Chad",
+     "latest_year": 2025,
+     "completion": 6.6
+    },
+    {
+     "country_id": "ZWE",
+     "country": "Zimbabwe",
+     "latest_year": 2025,
+     "completion": 8.1
+    },
+    {
+     "country_id": "MOZ",
+     "country": "Mozambique",
+     "latest_year": 2025,
+     "completion": 8.6
+    },
+    {
+     "country_id": "TZA",
+     "country": "Tanzania",
+     "latest_year": 2025,
+     "completion": 8.7
+    },
+    {
+     "country_id": "SOM",
+     "country": "Somalia",
+     "latest_year": 2025,
+     "completion": 8.8
+    },
+    {
+     "country_id": "GNQ",
+     "country": "Equatorial Guinea",
+     "latest_year": 2025,
+     "completion": 9.0
+    },
+    {
+     "country_id": "BDI",
+     "country": "Burundi",
+     "latest_year": 2025,
+     "completion": 10.2
+    },
+    {
+     "country_id": "MLI",
+     "country": "Mali",
+     "latest_year": 2025,
+     "completion": 11.3
+    },
+    {
+     "country_id": "VUT",
+     "country": "Vanuatu",
+     "latest_year": 2025,
+     "completion": 11.3
+    },
+    {
+     "country_id": "GNB",
+     "country": "Guinea-Bissau",
+     "latest_year": 2025,
+     "completion": 12.7
+    },
+    {
+     "country_id": "SLE",
+     "country": "Sierra Leone",
+     "latest_year": 2025,
+     "completion": 13.3
+    },
+    {
+     "country_id": "PNG",
+     "country": "Papua New Guinea",
+     "latest_year": 2025,
+     "completion": 14.2
+    },
+    {
+     "country_id": "LBR",
+     "country": "Liberia",
+     "latest_year": 2025,
+     "completion": 14.3
+    },
+    {
+     "country_id": "MDG",
+     "country": "Madagascar",
+     "latest_year": 2025,
+     "completion": 14.6
+    },
+    {
+     "country_id": "ETH",
+     "country": "Ethiopia",
+     "latest_year": 2025,
+     "completion": 15.4
+    },
+    {
+     "country_id": "BFA",
+     "country": "Burkina Faso",
+     "latest_year": 2025,
+     "completion": 16.0
+    },
+    {
+     "country_id": "SEN",
+     "country": "Senegal",
+     "latest_year": 2025,
+     "completion": 16.2
+    },
+    {
+     "country_id": "CIV",
+     "country": "Côte d'Ivoire",
+     "latest_year": 2025,
+     "completion": 16.9
+    },
+    {
+     "country_id": "UGA",
+     "country": "Uganda",
+     "latest_year": 2025,
+     "completion": 17.8
+    },
+    {
+     "country_id": "MWI",
+     "country": "Malawi",
+     "latest_year": 2025,
+     "completion": 18.1
+    },
+    {
+     "country_id": "BEN",
+     "country": "Benin",
+     "latest_year": 2025,
+     "completion": 18.3
+    },
+    {
+     "country_id": "HTI",
+     "country": "Haiti",
+     "latest_year": 2025,
+     "completion": 18.5
+    },
+    {
+     "country_id": "BLZ",
+     "country": "Belize",
+     "latest_year": 2025,
+     "completion": 19.5
+    },
+    {
+     "country_id": "KIR",
+     "country": "Kiribati",
+     "latest_year": 2025,
+     "completion": 21.4
+    },
+    {
+     "country_id": "TGO",
+     "country": "Togo",
+     "latest_year": 2025,
+     "completion": 22.1
+    },
+    {
+     "country_id": "CMR",
+     "country": "Cameroon",
+     "latest_year": 2025,
+     "completion": 22.7
+    },
+    {
+     "country_id": "RWA",
+     "country": "Rwanda",
+     "latest_year": 2025,
+     "completion": 22.7
+    },
+    {
+     "country_id": "GAB",
+     "country": "Gabon",
+     "latest_year": 2025,
+     "completion": 22.8
+    },
+    {
+     "country_id": "MRT",
+     "country": "Mauritania",
+     "latest_year": 2025,
+     "completion": 23.0
+    },
+    {
+     "country_id": "AGO",
+     "country": "Angola",
+     "latest_year": 2025,
+     "completion": 24.4
+    },
+    {
+     "country_id": "MMR",
+     "country": "Myanmar",
+     "latest_year": 2025,
+     "completion": 24.4
+    },
+    {
+     "country_id": "GIN",
+     "country": "Guinea",
+     "latest_year": 2025,
+     "completion": 25.0
+    },
+    {
+     "country_id": "KHM",
+     "country": "Cambodia",
+     "latest_year": 2025,
+     "completion": 25.6
+    },
+    {
+     "country_id": "COD",
+     "country": "DR Congo",
+     "latest_year": 2025,
+     "completion": 26.4
+    },
+    {
+     "country_id": "MAR",
+     "country": "Morocco",
+     "latest_year": 2025,
+     "completion": 27.0
+    },
+    {
+     "country_id": "ZMB",
+     "country": "Zambia",
+     "latest_year": 2025,
+     "completion": 28.0
+    },
+    {
+     "country_id": "LSO",
+     "country": "Lesotho",
+     "latest_year": 2025,
+     "completion": 28.4
+    },
+    {
+     "country_id": "COG",
+     "country": "Congo",
+     "latest_year": 2025,
+     "completion": 32.0
+    },
+    {
+     "country_id": "SDN",
+     "country": "Sudan",
+     "latest_year": 2025,
+     "completion": 33.6
+    },
+    {
+     "country_id": "GMB",
+     "country": "Gambia",
+     "latest_year": 2025,
+     "completion": 34.0
+    },
+    {
+     "country_id": "SUR",
+     "country": "Suriname",
+     "latest_year": 2025,
+     "completion": 34.5
+    },
+    {
+     "country_id": "DJI",
+     "country": "Djibouti",
+     "latest_year": 2025,
+     "completion": 35.1
+    },
+    {
+     "country_id": "COM",
+     "country": "Comoros",
+     "latest_year": 2025,
+     "completion": 35.9
+    },
+    {
+     "country_id": "SLV",
+     "country": "El Salvador",
+     "latest_year": 2025,
+     "completion": 36.1
+    },
+    {
+     "country_id": "AFG",
+     "country": "Afghanistan",
+     "latest_year": 2025,
+     "completion": 36.3
+    },
+    {
+     "country_id": "LAO",
+     "country": "Laos",
+     "latest_year": 2025,
+     "completion": 36.4
+    },
+    {
+     "country_id": "SYR",
+     "country": "Syria",
+     "latest_year": 2025,
+     "completion": 36.8
+    },
+    {
+     "country_id": "NAM",
+     "country": "Namibia",
+     "latest_year": 2025,
+     "completion": 37.6
+    },
+    {
+     "country_id": "SWZ",
+     "country": "Eswatini",
+     "latest_year": 2025,
+     "completion": 37.7
+    },
+    {
+     "country_id": "BGD",
+     "country": "Bangladesh",
+     "latest_year": 2025,
+     "completion": 38.9
+    },
+    {
+     "country_id": "PAK",
+     "country": "Pakistan",
+     "latest_year": 2025,
+     "completion": 39.0
+    },
+    {
+     "country_id": "NIC",
+     "country": "Nicaragua",
+     "latest_year": 2025,
+     "completion": 39.5
+    },
+    {
+     "country_id": "YEM",
+     "country": "Yemen",
+     "latest_year": 2025,
+     "completion": 39.9
+    },
+    {
+     "country_id": "MDV",
+     "country": "Maldives",
+     "latest_year": 2025,
+     "completion": 40.5
+    },
+    {
+     "country_id": "GTM",
+     "country": "Guatemala",
+     "latest_year": 2025,
+     "completion": 40.8
+    },
+    {
+     "country_id": "KEN",
+     "country": "Kenya",
+     "latest_year": 2025,
+     "completion": 41.6
+    },
+    {
+     "country_id": "NPL",
+     "country": "Nepal",
+     "latest_year": 2025,
+     "completion": 42.5
+    },
+    {
+     "country_id": "URY",
+     "country": "Uruguay",
+     "latest_year": 2025,
+     "completion": 42.6
+    },
+    {
+     "country_id": "VEN",
+     "country": "Venezuela",
+     "latest_year": 2025,
+     "completion": 44.5
+    },
+    {
+     "country_id": "GHA",
+     "country": "Ghana",
+     "latest_year": 2025,
+     "completion": 47.2
+    },
+    {
+     "country_id": "HND",
+     "country": "Honduras",
+     "latest_year": 2025,
+     "completion": 48.1
+    },
+    {
+     "country_id": "TUN",
+     "country": "Tunisia",
+     "latest_year": 2025,
+     "completion": 48.5
+    },
+    {
+     "country_id": "DZA",
+     "country": "Algeria",
+     "latest_year": 2025,
+     "completion": 50.7
+    },
+    {
+     "country_id": "VNM",
+     "country": "Vietnam",
+     "latest_year": 2025,
+     "completion": 52.0
+    },
+    {
+     "country_id": "ZAF",
+     "country": "South Africa",
+     "latest_year": 2025,
+     "completion": 54.1
+    },
+    {
+     "country_id": "STP",
+     "country": "Sao Tome and Principe",
+     "latest_year": 2025,
+     "completion": 55.1
+    },
+    {
+     "country_id": "MUS",
+     "country": "Mauritius",
+     "latest_year": 2025,
+     "completion": 56.0
+    },
+    {
+     "country_id": "TLS",
+     "country": "Timor-Leste",
+     "latest_year": 2025,
+     "completion": 56.7
+    },
+    {
+     "country_id": "IRQ",
+     "country": "Iraq",
+     "latest_year": 2025,
+     "completion": 57.2
+    },
+    {
+     "country_id": "NGA",
+     "country": "Nigeria",
+     "latest_year": 2025,
+     "completion": 57.8
+    },
+    {
+     "country_id": "CRI",
+     "country": "Costa Rica",
+     "latest_year": 2025,
+     "completion": 58.0
+    },
+    {
+     "country_id": "FJI",
+     "country": "Fiji",
+     "latest_year": 2025,
+     "completion": 59.0
+    },
+    {
+     "country_id": "WSM",
+     "country": "Samoa",
+     "latest_year": 2025,
+     "completion": 61.2
+    },
+    {
+     "country_id": "MEX",
+     "country": "Mexico",
+     "latest_year": 2025,
+     "completion": 61.6
+    },
+    {
+     "country_id": "MYS",
+     "country": "Malaysia",
+     "latest_year": 2025,
+     "completion": 63.3
+    },
+    {
+     "country_id": "PAN",
+     "country": "Panama",
+     "latest_year": 2025,
+     "completion": 64.2
+    },
+    {
+     "country_id": "DOM",
+     "country": "Dominican Republic",
+     "latest_year": 2025,
+     "completion": 64.7
+    },
+    {
+     "country_id": "IND",
+     "country": "India",
+     "latest_year": 2025,
+     "completion": 65.1
+    },
+    {
+     "country_id": "BWA",
+     "country": "Botswana",
+     "latest_year": 2025,
+     "completion": 65.4
+    },
+    {
+     "country_id": "ISL",
+     "country": "Iceland",
+     "latest_year": 2025,
+     "completion": 66.4
+    },
+    {
+     "country_id": "BIH",
+     "country": "Bosnia and Herzegovina",
+     "latest_year": 2025,
+     "completion": 66.5
+    },
+    {
+     "country_id": "COL",
+     "country": "Colombia",
+     "latest_year": 2025,
+     "completion": 67.1
+    },
+    {
+     "country_id": "ARG",
+     "country": "Argentina",
+     "latest_year": 2025,
+     "completion": 68.6
+    },
+    {
+     "country_id": "PRY",
+     "country": "Paraguay",
+     "latest_year": 2025,
+     "completion": 68.7
+    },
+    {
+     "country_id": "JOR",
+     "country": "Jordan",
+     "latest_year": 2025,
+     "completion": 70.1
+    },
+    {
+     "country_id": "GUY",
+     "country": "Guyana",
+     "latest_year": 2025,
+     "completion": 70.7
+    },
+    {
+     "country_id": "BRA",
+     "country": "Brazil",
+     "latest_year": 2025,
+     "completion": 72.2
+    },
+    {
+     "country_id": "THA",
+     "country": "Thailand",
+     "latest_year": 2025,
+     "completion": 72.7
+    },
+    {
+     "country_id": "IDN",
+     "country": "Indonesia",
+     "latest_year": 2025,
+     "completion": 72.8
+    },
+    {
+     "country_id": "PHL",
+     "country": "Philippines",
+     "latest_year": 2025,
+     "completion": 73.5
+    },
+    {
+     "country_id": "CUB",
+     "country": "Cuba",
+     "latest_year": 2025,
+     "completion": 74.1
+    },
+    {
+     "country_id": "ESP",
+     "country": "Spain",
+     "latest_year": 2025,
+     "completion": 74.8
+    },
+    {
+     "country_id": "IRN",
+     "country": "Iran",
+     "latest_year": 2025,
+     "completion": 75.5
+    },
+    {
+     "country_id": "PSE",
+     "country": "Palestine",
+     "latest_year": 2025,
+     "completion": 76.1
+    },
+    {
+     "country_id": "DNK",
+     "country": "Denmark",
+     "latest_year": 2025,
+     "completion": 76.7
+    },
+    {
+     "country_id": "BTN",
+     "country": "Bhutan",
+     "latest_year": 2025,
+     "completion": 76.8
+    },
+    {
+     "country_id": "ECU",
+     "country": "Ecuador",
+     "latest_year": 2025,
+     "completion": 77.7
+    },
+    {
+     "country_id": "TUR",
+     "country": "Türkiye",
+     "latest_year": 2025,
+     "completion": 78.1
+    },
+    {
+     "country_id": "NLD",
+     "country": "Netherlands (Kingdom of the)",
+     "latest_year": 2025,
+     "completion": 80.0
+    },
+    {
+     "country_id": "NOR",
+     "country": "Norway",
+     "latest_year": 2025,
+     "completion": 80.8
+    },
+    {
+     "country_id": "DEU",
+     "country": "Germany",
+     "latest_year": 2025,
+     "completion": 80.9
+    },
+    {
+     "country_id": "LUX",
+     "country": "Luxembourg",
+     "latest_year": 2025,
+     "completion": 81.7
+    },
+    {
+     "country_id": "ROU",
+     "country": "Romania",
+     "latest_year": 2025,
+     "completion": 81.9
+    },
+    {
+     "country_id": "BOL",
+     "country": "Bolivia",
+     "latest_year": 2025,
+     "completion": 82.5
+    },
+    {
+     "country_id": "SRB",
+     "country": "Serbia",
+     "latest_year": 2025,
+     "completion": 82.8
+    },
+    {
+     "country_id": "PRT",
+     "country": "Portugal",
+     "latest_year": 2025,
+     "completion": 83.1
+    },
+    {
+     "country_id": "MLT",
+     "country": "Malta",
+     "latest_year": 2025,
+     "completion": 84.0
+    },
+    {
+     "country_id": "TTO",
+     "country": "Trinidad and Tobago",
+     "latest_year": 2025,
+     "completion": 84.8
+    },
+    {
+     "country_id": "TJK",
+     "country": "Tajikistan",
+     "latest_year": 2025,
+     "completion": 85.2
+    },
+    {
+     "country_id": "EST",
+     "country": "Estonia",
+     "latest_year": 2025,
+     "completion": 85.9
+    },
+    {
+     "country_id": "AUT",
+     "country": "Austria",
+     "latest_year": 2025,
+     "completion": 86.1
+    },
+    {
+     "country_id": "TON",
+     "country": "Tonga",
+     "latest_year": 2025,
+     "completion": 86.2
+    },
+    {
+     "country_id": "BEL",
+     "country": "Belgium",
+     "latest_year": 2025,
+     "completion": 86.3
+    },
+    {
+     "country_id": "HUN",
+     "country": "Hungary",
+     "latest_year": 2025,
+     "completion": 86.3
+    },
+    {
+     "country_id": "MKD",
+     "country": "North Macedonia",
+     "latest_year": 2025,
+     "completion": 86.3
+    },
+    {
+     "country_id": "PER",
+     "country": "Peru",
+     "latest_year": 2025,
+     "completion": 86.7
+    },
+    {
+     "country_id": "CHL",
+     "country": "Chile",
+     "latest_year": 2025,
+     "completion": 86.9
+    },
+    {
+     "country_id": "BGR",
+     "country": "Bulgaria",
+     "latest_year": 2025,
+     "completion": 87.2
+    },
+    {
+     "country_id": "ITA",
+     "country": "Italy",
+     "latest_year": 2025,
+     "completion": 87.5
+    },
+    {
+     "country_id": "LVA",
+     "country": "Latvia",
+     "latest_year": 2025,
+     "completion": 87.5
+    },
+    {
+     "country_id": "FRA",
+     "country": "France",
+     "latest_year": 2025,
+     "completion": 87.6
+    },
+    {
+     "country_id": "EGY",
+     "country": "Egypt",
+     "latest_year": 2025,
+     "completion": 88.2
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "latest_year": 2025,
+     "completion": 88.4
+    },
+    {
+     "country_id": "ALB",
+     "country": "Albania",
+     "latest_year": 2025,
+     "completion": 88.9
+    },
+    {
+     "country_id": "MNE",
+     "country": "Montenegro",
+     "latest_year": 2025,
+     "completion": 89.0
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "latest_year": 2025,
+     "completion": 89.1
+    },
+    {
+     "country_id": "SWE",
+     "country": "Sweden",
+     "latest_year": 2025,
+     "completion": 89.1
+    },
+    {
+     "country_id": "CHN",
+     "country": "China",
+     "latest_year": 2025,
+     "completion": 89.8
+    },
+    {
+     "country_id": "FIN",
+     "country": "Finland",
+     "latest_year": 2025,
+     "completion": 89.8
+    },
+    {
+     "country_id": "MNG",
+     "country": "Mongolia",
+     "latest_year": 2025,
+     "completion": 90.3
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "latest_year": 2025,
+     "completion": 90.3
+    },
+    {
+     "country_id": "CZE",
+     "country": "Czechia",
+     "latest_year": 2025,
+     "completion": 90.4
+    },
+    {
+     "country_id": "RUS",
+     "country": "Russia",
+     "latest_year": 2025,
+     "completion": 91.4
+    },
+    {
+     "country_id": "POL",
+     "country": "Poland",
+     "latest_year": 2025,
+     "completion": 91.8
+    },
+    {
+     "country_id": "JAM",
+     "country": "Jamaica",
+     "latest_year": 2025,
+     "completion": 92.0
+    },
+    {
+     "country_id": "QAT",
+     "country": "Qatar",
+     "latest_year": 2025,
+     "completion": 92.1
+    },
+    {
+     "country_id": "LTU",
+     "country": "Lithuania",
+     "latest_year": 2025,
+     "completion": 92.3
+    },
+    {
+     "country_id": "GEO",
+     "country": "Georgia",
+     "latest_year": 2025,
+     "completion": 92.5
+    },
+    {
+     "country_id": "MDA",
+     "country": "Moldova",
+     "latest_year": 2025,
+     "completion": 92.8
+    },
+    {
+     "country_id": "CHE",
+     "country": "Switzerland",
+     "latest_year": 2025,
+     "completion": 93.0
+    },
+    {
+     "country_id": "ISR",
+     "country": "Israel",
+     "latest_year": 2025,
+     "completion": 93.2
+    },
+    {
+     "country_id": "SVN",
+     "country": "Slovenia",
+     "latest_year": 2025,
+     "completion": 93.2
+    },
+    {
+     "country_id": "CYP",
+     "country": "Cyprus",
+     "latest_year": 2025,
+     "completion": 93.3
+    },
+    {
+     "country_id": "SVK",
+     "country": "Slovakia",
+     "latest_year": 2025,
+     "completion": 93.3
+    },
+    {
+     "country_id": "KGZ",
+     "country": "Kyrgyzstan",
+     "latest_year": 2025,
+     "completion": 93.4
+    },
+    {
+     "country_id": "USA",
+     "country": "US",
+     "latest_year": 2025,
+     "completion": 93.5
+    },
+    {
+     "country_id": "LCA",
+     "country": "Saint Lucia",
+     "latest_year": 2025,
+     "completion": 94.3
+    },
+    {
+     "country_id": "ARM",
+     "country": "Armenia",
+     "latest_year": 2025,
+     "completion": 94.4
+    },
+    {
+     "country_id": "BLR",
+     "country": "Belarus",
+     "latest_year": 2025,
+     "completion": 94.6
+    },
+    {
+     "country_id": "IRL",
+     "country": "Ireland",
+     "latest_year": 2025,
+     "completion": 95.1
+    },
+    {
+     "country_id": "GRC",
+     "country": "Greece",
+     "latest_year": 2025,
+     "completion": 95.2
+    },
+    {
+     "country_id": "TKM",
+     "country": "Turkmenistan",
+     "latest_year": 2025,
+     "completion": 95.4
+    },
+    {
+     "country_id": "BRB",
+     "country": "Barbados",
+     "latest_year": 2025,
+     "completion": 95.7
+    },
+    {
+     "country_id": "AZE",
+     "country": "Azerbaijan",
+     "latest_year": 2025,
+     "completion": 95.9
+    },
+    {
+     "country_id": "UKR",
+     "country": "Ukraine",
+     "latest_year": 2025,
+     "completion": 97.3
+    },
+    {
+     "country_id": "KAZ",
+     "country": "Kazakhstan",
+     "latest_year": 2025,
+     "completion": 97.9
+    },
+    {
+     "country_id": "HRV",
+     "country": "Croatia",
+     "latest_year": 2025,
+     "completion": 98.2
+    },
+    {
+     "country_id": "UZB",
+     "country": "Uzbekistan",
+     "latest_year": 2025,
+     "completion": 99.0
+    },
+    {
+     "country_id": "KOR",
+     "country": "South Korea",
+     "latest_year": 2025,
+     "completion": 99.3
+    }
+   ],
+   "metadata": {
+    "country_id": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "latest_year": {
+     "type": "integer",
+     "levels": []
+    },
+    "completion": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with v as (\n        select COUNTRY_ID as country_id, country, year, value\n        from read_parquet('data/sdg4_national.parquet')\n        where indicator_id = 'CR.MOD.3' and year between 2020 and 2025\n          and value is not null and coalesce(magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    ),\n    population as (\n        select COUNTRY_ID as country_id, value as thousands\n        from read_parquet('data/dem_national.parquet')\n        where indicator_id = '200101'\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    )\n    select v.country_id, v.country, v.year as latest_year, round(value, 1) as completion\n    from v join population using (country_id)\n    where population.thousands >= 100\n    order by completion asc, v.country\n\"\"\").df()\nout['country'] = out.country.replace({'Bolivia (Plurinational State of)': 'Bolivia', 'China, Hong Kong Special Administrative Region': 'Hong Kong', 'China, Macao Special Administrative Region': 'Macao', \"Democratic People's Republic of Korea\": 'North Korea', 'Democratic Republic of the Congo': 'DR Congo', 'Iran (Islamic Republic of)': 'Iran', \"Lao People's Democratic Republic\": 'Laos', 'Micronesia (Federated States of)': 'Micronesia', 'Republic of Korea': 'South Korea', 'Republic of Moldova': 'Moldova', 'Russian Federation': 'Russia', 'Syrian Arab Republic': 'Syria', 'United Kingdom of Great Britain and Northern Ireland': 'UK', 'United Republic of Tanzania': 'Tanzania', 'United States of America': 'US', 'Venezuela (Bolivarian Republic of)': 'Venezuela', 'Viet Nam': 'Vietnam'})\n",
+    "outputVariable": "out",
+    "source": [
+     "dem_national",
+     "sdg4_national"
+    ],
+    "trigger": {
+     "tableId": "dem_national",
+     "resultTableId": "upper_secondary_completion",
+     "chart": {
+      "id": "chart-trigger-upper_secondary_completion",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "dem_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "upper_secondary_completion",
+    "rowCount": 162
+   },
+   "description": "Upper secondary completion rate (%), both sexes, each country's latest UIS modelled estimate in 2020–2025 (latest_year); territories under 100,000 people left out. Source: UIS, November 2026 release; indicator CR.MOD.3.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794700000000_step_2",
+   "createdAt": 1794700004000
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-936e54aa653f",
+   "chartType": "Bar Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-completion-888504974995-0.6194617094716289824",
+     "dtype": "quantitative"
+    },
+    "y": {
+     "fieldID": "concept-country-613947879215-0.4593753628491884969",
+     "dtype": "nominal",
+     "sortBy": "x",
+     "sortOrder": "ascending"
+    },
+    "color": {
+     "channel": "color",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "lowest_upper_secondary_completion",
+   "source": "user",
+   "title": "Fewest finish upper secondary school",
+   "subtitle": "Share of young people who finished upper secondary school, latest modelled estimates, 2020–2025; UIS, November 2026 release; indicator CR.MOD.3",
+   "unread": false,
+   "themeId": "datawrapper",
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-completion-888504974995-0.6194617094716289824:|y:concept-country-613947879215-0.4593753628491884969:"
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-completion-888504974995-0.6194617094716289824",
+   "name": "completion",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-country-613947879215-0.4593753628491884969",
+   "name": "country",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794700000000_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1794700000000_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Where do young people finish upper secondary school least often?",
+   "parentNodeId": "conversation-root:8cf2cf9c-c9b0-5999-b475-996c0d0d2a47",
+   "actionId": "exploreDataFromNL_1794700000000",
+   "createdAt": 1794700000000
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794700000000_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1794700000000_step_1",
+   "textKind": "explain",
+   "content": "Then the 15 lowest, where the gap is widest.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794700000000_prompt",
+   "actionId": "exploreDataFromNL_1794700000000",
+   "createdAt": 1794700001000,
+   "startedAt": 1794700000000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794700000000-1-1",
+     "kind": "tool",
+     "label": "Querying: dem_national, sdg4_national",
+     "status": "completed",
+     "tool": "create_data"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794700000000_step_2",
+   "displayId": "textTurn_exploreDataFromNL_1794700000000_step_2",
+   "textKind": "explain",
+   "content": "I'll take each country's latest upper secondary completion rate.",
+   "parentNodeId": "lowest_upper_secondary_completion",
+   "actionId": "exploreDataFromNL_1794700000000",
+   "createdAt": 1794700003000,
+   "startedAt": 1794700000000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794700000000-2-1",
+     "kind": "tool",
+     "label": "Querying: dem_national, sdg4_national",
+     "status": "completed",
+     "tool": "create_data"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794700000000-2-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "Map created: Where young people finish upper secondary school"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794700000000_closing_turn",
+   "displayId": "textTurn_exploreDataFromNL_1794700000000_closing",
+   "textKind": "explain",
+   "content": "**South Sudan has the lowest upper secondary completion rate: just 2.1% (2025).** 13 of the 15 lowest rates are in sub-Saharan Africa:\n\n- **South Sudan:** 2.1% (2025)\n- **Niger:** 4.9% (2025)\n- **Central African Republic:** 5.6% (2025)\n- **Chad:** 6.6% (2025)\n- **Zimbabwe:** 8.1% (2025)\n\nThe map shows every country's latest rate; hover a country for its figure. These are UIS modelled estimates, and blank countries have no recent estimate. Source: UIS, November 2026 release; indicator CR.MOD.3.",
+   "parentNodeId": "file-upper_secondary_completion.map.json",
+   "actionId": "exploreDataFromNL_1794700000000",
+   "createdAt": 1794700006000,
+   "startedAt": 1794700000000,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "upper_secondary_completion",
+   "fields": {
+    "country_id": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "latest_year": {
+     "semanticType": "Year",
+     "displayName": "Latest year with data",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+     }
+    },
+    "completion": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Upper secondary completion",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Upper secondary completion"
+     }
+    }
+   }
+  },
+  {
+   "tableId": "lowest_upper_secondary_completion",
+   "fields": {
+    "country_id": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "latest_year": {
+     "semanticType": "Year",
+     "displayName": "Latest year with data",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+     }
+    },
+    "completion": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Upper secondary completion",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Upper secondary completion"
+     }
+    }
+   }
+  }
+ ],
+ "fileNodes": [
+  {
+   "kind": "file",
+   "id": "file-upper_secondary_completion.map.json",
+   "path": "upper_secondary_completion.map.json",
+   "displayName": "Where young people finish upper secondary school",
+   "contentHash": "708236956aadd175cd357ed5f328a9cfaf632252749e4938febf6e8204017ddc",
+   "parentNodeId": "upper_secondary_completion",
+   "createdAt": 1794700005000
+  }
+ ],
+ "focusedId": {
+  "type": "file",
+  "fileName": "upper_secondary_completion.map.json"
+ },
+ "canvasTabs": [
+  {
+   "key": "file:upper_secondary_completion.map.json",
+   "target": {
+    "type": "file",
+    "fileName": "upper_secondary_completion.map.json"
+   },
+   "addedAt": 1794700000000,
+   "viewedAt": 1794700000000
+  }
+ ],
+ "canvasTabActive": "file:upper_secondary_completion.map.json"
+}

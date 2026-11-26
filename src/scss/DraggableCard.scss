@@ -49,11 +49,11 @@
     .draggable-card-body {
         padding: 0px 8px 8px 4px !important;
         margin-left: 8px;
-        background-color: rgba(255, 255, 255, 0.93);
+        background-color: rgba(var(--df-paper-rgb, 255, 255, 255), 0.93);
     }
 
     .draggable-card-body-edit-mode {
-        background-color: rgba(255, 255, 255, 0.98);
+        background-color: rgba(var(--df-paper-rgb, 255, 255, 255), 0.98);
         padding: 8px 8px 8px 4px !important;
         margin-left: 8px;
     }

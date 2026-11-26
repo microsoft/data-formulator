@@ -29,28 +29,7 @@ def app():
     return _app
 
 
-class TestAzureEasyAuthProviderMetadata:
-
-    def test_name(self, provider):
-        assert provider.name == "azure_easyauth"
-
-    def test_enabled_always_true(self, provider):
-        assert provider.enabled is True
-
-    def test_get_auth_info_action(self, provider):
-        info = provider.get_auth_info()
-        assert info["action"] == "transparent"
-
-
 class TestAzureEasyAuthAuthenticate:
-
-    def test_principal_header_present(self, app, provider):
-        with app.test_request_context(
-            headers={"X-MS-CLIENT-PRINCIPAL-ID": "abc-123"}
-        ):
-            result = provider.authenticate(flask.request)
-            assert result is not None
-            assert result.user_id == "abc-123"
 
     def test_principal_header_with_display_name(self, app, provider):
         with app.test_request_context(

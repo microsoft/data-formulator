@@ -10,20 +10,17 @@ describe('formatCellValue', () => {
     expect(formatCellValue(undefined)).toBe('');
   });
 
-  it('should format numbers with locale separators', () => {
-    expect(formatCellValue(1234567)).toBe('1,234,567');
-    expect(formatCellValue(3.14159)).toMatch(/3\.141/);
+  it('shows numbers as they are, without thousands separators', () => {
+    expect(formatCellValue(1234567)).toBe('1234567');
+    expect(formatCellValue(2022, Type.Integer)).toBe('2022');
+    expect(formatCellValue(-98765.4321)).toBe('-98765.4321');
+    expect(formatCellValue(3.14159)).toBe('3.1416');
   });
 
-  it('should not add separators for non-measure numeric semantics', () => {
-    expect(formatCellValue(2026, Type.Integer, 'Year')).toBe('2026');
-    expect(formatCellValue(10001, Type.Integer, 'ZipCode')).toBe('10001');
-    expect(formatCellValue(123456, Type.Integer, 'ID')).toBe('123456');
-  });
-
-  it('should keep separators for measure numeric semantics', () => {
-    expect(formatCellValue(1234567, Type.Number, 'Amount')).toBe('1,234,567');
-    expect(formatCellValue(1234567, Type.Integer, 'Count')).toBe('1,234,567');
+  it('keeps small decimals that 4 decimal places would round to 0', () => {
+    expect(formatCellValue(0.00001234)).toBe('0.00001234');
+    expect(formatCellValue(-0.00001)).toBe('-0.00001');
+    expect(formatCellValue(0.000012345678)).toBe('0.00001235');
   });
 
   it('should format booleans as strings', () => {
@@ -53,6 +50,18 @@ describe('formatCellValue', () => {
 
   it('should handle invalid date gracefully', () => {
     expect(formatCellValue('not-a-date', Type.Date)).toBe('not-a-date');
+  });
+
+  it('shows a bare date as the same calendar day west of UTC', () => {
+    const timeZone = process.env.TZ;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      expect(formatCellValue('2024-01-15', Type.Date)).toBe(new Date(2024, 0, 15).toLocaleDateString());
+      expect(formatCellValue('2024-01-15', Type.Date)).toContain('15');
+    } finally {
+      if (timeZone === undefined) delete process.env.TZ;
+      else process.env.TZ = timeZone;
+    }
   });
 
   // --- DateTime formatting ---

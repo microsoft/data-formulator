@@ -1,0 +1,1208 @@
+{
+ "__stateVersion": 15,
+ "activeWorkspace": {
+  "id": "education-opri-o23",
+  "displayName": "From 14 years of school to fewer than two"
+ },
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "fewest_years_of_schooling",
+   "displayId": "15 countries where adults have the fewest years of schooling",
+   "names": [
+    "country_id",
+    "country",
+    "latest_year",
+    "years_of_schooling"
+   ],
+   "rows": [
+    {
+     "country_id": "MLI",
+     "country": "Mali",
+     "latest_year": 2020,
+     "years_of_schooling": 1.6
+    },
+    {
+     "country_id": "SOM",
+     "country": "Somalia",
+     "latest_year": 2022,
+     "years_of_schooling": 1.9
+    },
+    {
+     "country_id": "BFA",
+     "country": "Burkina Faso",
+     "latest_year": 2021,
+     "years_of_schooling": 2.3
+    },
+    {
+     "country_id": "AFG",
+     "country": "Afghanistan",
+     "latest_year": 2022,
+     "years_of_schooling": 2.5
+    },
+    {
+     "country_id": "BEN",
+     "country": "Benin",
+     "latest_year": 2021,
+     "years_of_schooling": 3.2
+    },
+    {
+     "country_id": "SEN",
+     "country": "Senegal",
+     "latest_year": 2023,
+     "years_of_schooling": 3.3
+    },
+    {
+     "country_id": "ETH",
+     "country": "Ethiopia",
+     "latest_year": 2024,
+     "years_of_schooling": 4.3
+    },
+    {
+     "country_id": "NPL",
+     "country": "Nepal",
+     "latest_year": 2021,
+     "years_of_schooling": 4.5
+    },
+    {
+     "country_id": "MDG",
+     "country": "Madagascar",
+     "latest_year": 2021,
+     "years_of_schooling": 4.6
+    },
+    {
+     "country_id": "MOZ",
+     "country": "Mozambique",
+     "latest_year": 2022,
+     "years_of_schooling": 4.6
+    },
+    {
+     "country_id": "SDN",
+     "country": "Sudan",
+     "latest_year": 2022,
+     "years_of_schooling": 4.7
+    },
+    {
+     "country_id": "SLE",
+     "country": "Sierra Leone",
+     "latest_year": 2025,
+     "years_of_schooling": 4.8
+    },
+    {
+     "country_id": "CIV",
+     "country": "Côte d'Ivoire",
+     "latest_year": 2021,
+     "years_of_schooling": 4.9
+    },
+    {
+     "country_id": "KHM",
+     "country": "Cambodia",
+     "latest_year": 2021,
+     "years_of_schooling": 5.2
+    },
+    {
+     "country_id": "PAK",
+     "country": "Pakistan",
+     "latest_year": 2025,
+     "years_of_schooling": 5.3
+    }
+   ],
+   "metadata": {
+    "country_id": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "latest_year": {
+     "type": "integer",
+     "levels": []
+    },
+    "years_of_schooling": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with v as (\n        select COUNTRY_ID as country_id, country, year, value\n        from read_parquet('data/opri_national.parquet')\n        where indicator_id = 'MYS.1T8.AG25T99' and year between 2020 and 2026\n          and value is not null and coalesce(magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    ),\n    population as (\n        select COUNTRY_ID as country_id, value as thousands\n        from read_parquet('data/dem_national.parquet')\n        where indicator_id = '200101'\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    )\n    select v.country_id, v.country, v.year as latest_year, round(value, 1) as years_of_schooling\n    from v join population using (country_id)\n    where population.thousands >= 100\n    order by years_of_schooling asc, v.country\n    limit 15\n\"\"\").df()\nout['country'] = out.country.replace({'Bolivia (Plurinational State of)': 'Bolivia', 'China, Hong Kong Special Administrative Region': 'Hong Kong', 'China, Macao Special Administrative Region': 'Macao', \"Democratic People's Republic of Korea\": 'North Korea', 'Democratic Republic of the Congo': 'DR Congo', 'Iran (Islamic Republic of)': 'Iran', \"Lao People's Democratic Republic\": 'Laos', 'Micronesia (Federated States of)': 'Micronesia', 'Republic of Korea': 'South Korea', 'Republic of Moldova': 'Moldova', 'Russian Federation': 'Russia', 'Syrian Arab Republic': 'Syria', 'United Kingdom of Great Britain and Northern Ireland': 'UK', 'United Republic of Tanzania': 'Tanzania', 'United States of America': 'US', 'Venezuela (Bolivarian Republic of)': 'Venezuela', 'Viet Nam': 'Vietnam'})\n",
+    "outputVariable": "out",
+    "source": [
+     "dem_national",
+     "opri_national"
+    ],
+    "trigger": {
+     "tableId": "dem_national",
+     "resultTableId": "fewest_years_of_schooling",
+     "chart": {
+      "id": "chart-trigger-fewest_years_of_schooling",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "dem_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "fewest_years_of_schooling",
+    "rowCount": 15
+   },
+   "description": "Mean years of schooling of adults aged 25 and over, both sexes, the 15 lowest countries' latest figure in 2020–2026 (latest_year). Source: UIS, November 2026 release; indicator MYS.1T8.AG25T99.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794704200000_step_1",
+   "createdAt": 1794704202000
+  },
+  {
+   "kind": "table",
+   "id": "adult_years_of_schooling",
+   "displayId": "Adults' average years of schooling by country",
+   "names": [
+    "country_id",
+    "country",
+    "latest_year",
+    "years_of_schooling"
+   ],
+   "rows": [
+    {
+     "country_id": "DEU",
+     "country": "Germany",
+     "latest_year": 2020,
+     "years_of_schooling": 14.3
+    },
+    {
+     "country_id": "USA",
+     "country": "US",
+     "latest_year": 2024,
+     "years_of_schooling": 14.0
+    },
+    {
+     "country_id": "CAN",
+     "country": "Canada",
+     "latest_year": 2021,
+     "years_of_schooling": 13.9
+    },
+    {
+     "country_id": "ISL",
+     "country": "Iceland",
+     "latest_year": 2020,
+     "years_of_schooling": 13.8
+    },
+    {
+     "country_id": "EST",
+     "country": "Estonia",
+     "latest_year": 2021,
+     "years_of_schooling": 13.6
+    },
+    {
+     "country_id": "GBR",
+     "country": "UK",
+     "latest_year": 2021,
+     "years_of_schooling": 13.5
+    },
+    {
+     "country_id": "POL",
+     "country": "Poland",
+     "latest_year": 2021,
+     "years_of_schooling": 13.3
+    },
+    {
+     "country_id": "ARE",
+     "country": "United Arab Emirates",
+     "latest_year": 2025,
+     "years_of_schooling": 13.3
+    },
+    {
+     "country_id": "LTU",
+     "country": "Lithuania",
+     "latest_year": 2021,
+     "years_of_schooling": 13.2
+    },
+    {
+     "country_id": "DNK",
+     "country": "Denmark",
+     "latest_year": 2020,
+     "years_of_schooling": 13.0
+    },
+    {
+     "country_id": "FIN",
+     "country": "Finland",
+     "latest_year": 2021,
+     "years_of_schooling": 13.0
+    },
+    {
+     "country_id": "AUS",
+     "country": "Australia",
+     "latest_year": 2022,
+     "years_of_schooling": 12.9
+    },
+    {
+     "country_id": "NZL",
+     "country": "New Zealand",
+     "latest_year": 2020,
+     "years_of_schooling": 12.9
+    },
+    {
+     "country_id": "GEO",
+     "country": "Georgia",
+     "latest_year": 2024,
+     "years_of_schooling": 12.8
+    },
+    {
+     "country_id": "ISR",
+     "country": "Israel",
+     "latest_year": 2022,
+     "years_of_schooling": 12.8
+    },
+    {
+     "country_id": "JPN",
+     "country": "Japan",
+     "latest_year": 2020,
+     "years_of_schooling": 12.8
+    },
+    {
+     "country_id": "PRI",
+     "country": "Puerto Rico",
+     "latest_year": 2024,
+     "years_of_schooling": 12.8
+    },
+    {
+     "country_id": "CZE",
+     "country": "Czechia",
+     "latest_year": 2021,
+     "years_of_schooling": 12.7
+    },
+    {
+     "country_id": "BHS",
+     "country": "Bahamas",
+     "latest_year": 2022,
+     "years_of_schooling": 12.6
+    },
+    {
+     "country_id": "NLD",
+     "country": "Netherlands (Kingdom of the)",
+     "latest_year": 2020,
+     "years_of_schooling": 12.6
+    },
+    {
+     "country_id": "HRV",
+     "country": "Croatia",
+     "latest_year": 2021,
+     "years_of_schooling": 12.4
+    },
+    {
+     "country_id": "CYP",
+     "country": "Cyprus",
+     "latest_year": 2020,
+     "years_of_schooling": 12.4
+    },
+    {
+     "country_id": "KAZ",
+     "country": "Kazakhstan",
+     "latest_year": 2024,
+     "years_of_schooling": 12.4
+    },
+    {
+     "country_id": "RUS",
+     "country": "Russia",
+     "latest_year": 2021,
+     "years_of_schooling": 12.4
+    },
+    {
+     "country_id": "HUN",
+     "country": "Hungary",
+     "latest_year": 2022,
+     "years_of_schooling": 12.3
+    },
+    {
+     "country_id": "SAU",
+     "country": "Saudi Arabia",
+     "latest_year": 2024,
+     "years_of_schooling": 12.3
+    },
+    {
+     "country_id": "CHL",
+     "country": "Chile",
+     "latest_year": 2024,
+     "years_of_schooling": 12.2
+    },
+    {
+     "country_id": "HKG",
+     "country": "Hong Kong",
+     "latest_year": 2022,
+     "years_of_schooling": 12.2
+    },
+    {
+     "country_id": "MLT",
+     "country": "Malta",
+     "latest_year": 2020,
+     "years_of_schooling": 12.2
+    },
+    {
+     "country_id": "SGP",
+     "country": "Singapore",
+     "latest_year": 2024,
+     "years_of_schooling": 12.1
+    },
+    {
+     "country_id": "AUT",
+     "country": "Austria",
+     "latest_year": 2021,
+     "years_of_schooling": 11.9
+    },
+    {
+     "country_id": "CUW",
+     "country": "Curaçao",
+     "latest_year": 2020,
+     "years_of_schooling": 11.9
+    },
+    {
+     "country_id": "MDA",
+     "country": "Moldova",
+     "latest_year": 2024,
+     "years_of_schooling": 11.9
+    },
+    {
+     "country_id": "SRB",
+     "country": "Serbia",
+     "latest_year": 2022,
+     "years_of_schooling": 11.9
+    },
+    {
+     "country_id": "BGR",
+     "country": "Bulgaria",
+     "latest_year": 2021,
+     "years_of_schooling": 11.8
+    },
+    {
+     "country_id": "OMN",
+     "country": "Oman",
+     "latest_year": 2024,
+     "years_of_schooling": 11.8
+    },
+    {
+     "country_id": "ARM",
+     "country": "Armenia",
+     "latest_year": 2022,
+     "years_of_schooling": 11.5
+    },
+    {
+     "country_id": "BHR",
+     "country": "Bahrain",
+     "latest_year": 2024,
+     "years_of_schooling": 11.5
+    },
+    {
+     "country_id": "QAT",
+     "country": "Qatar",
+     "latest_year": 2024,
+     "years_of_schooling": 11.5
+    },
+    {
+     "country_id": "ROU",
+     "country": "Romania",
+     "latest_year": 2022,
+     "years_of_schooling": 11.5
+    },
+    {
+     "country_id": "TKM",
+     "country": "Turkmenistan",
+     "latest_year": 2022,
+     "years_of_schooling": 11.5
+    },
+    {
+     "country_id": "GRC",
+     "country": "Greece",
+     "latest_year": 2020,
+     "years_of_schooling": 11.4
+    },
+    {
+     "country_id": "UZB",
+     "country": "Uzbekistan",
+     "latest_year": 2025,
+     "years_of_schooling": 11.4
+    },
+    {
+     "country_id": "KGZ",
+     "country": "Kyrgyzstan",
+     "latest_year": 2025,
+     "years_of_schooling": 11.3
+    },
+    {
+     "country_id": "AZE",
+     "country": "Azerbaijan",
+     "latest_year": 2023,
+     "years_of_schooling": 11.1
+    },
+    {
+     "country_id": "MYS",
+     "country": "Malaysia",
+     "latest_year": 2022,
+     "years_of_schooling": 11.1
+    },
+    {
+     "country_id": "TON",
+     "country": "Tonga",
+     "latest_year": 2023,
+     "years_of_schooling": 11.1
+    },
+    {
+     "country_id": "ALB",
+     "country": "Albania",
+     "latest_year": 2023,
+     "years_of_schooling": 11.0
+    },
+    {
+     "country_id": "BIH",
+     "country": "Bosnia and Herzegovina",
+     "latest_year": 2022,
+     "years_of_schooling": 11.0
+    },
+    {
+     "country_id": "PAN",
+     "country": "Panama",
+     "latest_year": 2025,
+     "years_of_schooling": 11.0
+    },
+    {
+     "country_id": "BOL",
+     "country": "Bolivia",
+     "latest_year": 2025,
+     "years_of_schooling": 10.9
+    },
+    {
+     "country_id": "LKA",
+     "country": "Sri Lanka",
+     "latest_year": 2024,
+     "years_of_schooling": 10.9
+    },
+    {
+     "country_id": "TLS",
+     "country": "Timor-Leste",
+     "latest_year": 2022,
+     "years_of_schooling": 10.9
+    },
+    {
+     "country_id": "TTO",
+     "country": "Trinidad and Tobago",
+     "latest_year": 2025,
+     "years_of_schooling": 10.9
+    },
+    {
+     "country_id": "ITA",
+     "country": "Italy",
+     "latest_year": 2025,
+     "years_of_schooling": 10.8
+    },
+    {
+     "country_id": "ZAF",
+     "country": "South Africa",
+     "latest_year": 2026,
+     "years_of_schooling": 10.6
+    },
+    {
+     "country_id": "ESP",
+     "country": "Spain",
+     "latest_year": 2020,
+     "years_of_schooling": 10.6
+    },
+    {
+     "country_id": "NAM",
+     "country": "Namibia",
+     "latest_year": 2023,
+     "years_of_schooling": 10.5
+    },
+    {
+     "country_id": "ARG",
+     "country": "Argentina",
+     "latest_year": 2022,
+     "years_of_schooling": 10.4
+    },
+    {
+     "country_id": "ABW",
+     "country": "Aruba",
+     "latest_year": 2023,
+     "years_of_schooling": 10.4
+    },
+    {
+     "country_id": "BRA",
+     "country": "Brazil",
+     "latest_year": 2025,
+     "years_of_schooling": 10.4
+    },
+    {
+     "country_id": "FJI",
+     "country": "Fiji",
+     "latest_year": 2021,
+     "years_of_schooling": 10.4
+    },
+    {
+     "country_id": "PHL",
+     "country": "Philippines",
+     "latest_year": 2024,
+     "years_of_schooling": 10.3
+    },
+    {
+     "country_id": "BLZ",
+     "country": "Belize",
+     "latest_year": 2024,
+     "years_of_schooling": 10.2
+    },
+    {
+     "country_id": "JOR",
+     "country": "Jordan",
+     "latest_year": 2023,
+     "years_of_schooling": 10.2
+    },
+    {
+     "country_id": "MKD",
+     "country": "North Macedonia",
+     "latest_year": 2020,
+     "years_of_schooling": 10.2
+    },
+    {
+     "country_id": "URY",
+     "country": "Uruguay",
+     "latest_year": 2025,
+     "years_of_schooling": 10.2
+    },
+    {
+     "country_id": "PSE",
+     "country": "Palestine",
+     "latest_year": 2022,
+     "years_of_schooling": 10.1
+    },
+    {
+     "country_id": "JAM",
+     "country": "Jamaica",
+     "latest_year": 2022,
+     "years_of_schooling": 10.0
+    },
+    {
+     "country_id": "PRY",
+     "country": "Paraguay",
+     "latest_year": 2025,
+     "years_of_schooling": 10.0
+    },
+    {
+     "country_id": "KIR",
+     "country": "Kiribati",
+     "latest_year": 2024,
+     "years_of_schooling": 9.8
+    },
+    {
+     "country_id": "MEX",
+     "country": "Mexico",
+     "latest_year": 2024,
+     "years_of_schooling": 9.8
+    },
+    {
+     "country_id": "PER",
+     "country": "Peru",
+     "latest_year": 2025,
+     "years_of_schooling": 9.8
+    },
+    {
+     "country_id": "BWA",
+     "country": "Botswana",
+     "latest_year": 2023,
+     "years_of_schooling": 9.7
+    },
+    {
+     "country_id": "COL",
+     "country": "Colombia",
+     "latest_year": 2025,
+     "years_of_schooling": 9.6
+    },
+    {
+     "country_id": "LCA",
+     "country": "Saint Lucia",
+     "latest_year": 2025,
+     "years_of_schooling": 9.6
+    },
+    {
+     "country_id": "DOM",
+     "country": "Dominican Republic",
+     "latest_year": 2025,
+     "years_of_schooling": 9.5
+    },
+    {
+     "country_id": "MNG",
+     "country": "Mongolia",
+     "latest_year": 2020,
+     "years_of_schooling": 9.4
+    },
+    {
+     "country_id": "PRT",
+     "country": "Portugal",
+     "latest_year": 2021,
+     "years_of_schooling": 9.4
+    },
+    {
+     "country_id": "CRI",
+     "country": "Costa Rica",
+     "latest_year": 2025,
+     "years_of_schooling": 9.2
+    },
+    {
+     "country_id": "SUR",
+     "country": "Suriname",
+     "latest_year": 2022,
+     "years_of_schooling": 9.1
+    },
+    {
+     "country_id": "ECU",
+     "country": "Ecuador",
+     "latest_year": 2025,
+     "years_of_schooling": 9.0
+    },
+    {
+     "country_id": "THA",
+     "country": "Thailand",
+     "latest_year": 2022,
+     "years_of_schooling": 9.0
+    },
+    {
+     "country_id": "VNM",
+     "country": "Vietnam",
+     "latest_year": 2022,
+     "years_of_schooling": 9.0
+    },
+    {
+     "country_id": "SWZ",
+     "country": "Eswatini",
+     "latest_year": 2022,
+     "years_of_schooling": 8.7
+    },
+    {
+     "country_id": "IDN",
+     "country": "Indonesia",
+     "latest_year": 2021,
+     "years_of_schooling": 8.7
+    },
+    {
+     "country_id": "KEN",
+     "country": "Kenya",
+     "latest_year": 2024,
+     "years_of_schooling": 8.7
+    },
+    {
+     "country_id": "EGY",
+     "country": "Egypt",
+     "latest_year": 2024,
+     "years_of_schooling": 8.4
+    },
+    {
+     "country_id": "ZWE",
+     "country": "Zimbabwe",
+     "latest_year": 2022,
+     "years_of_schooling": 8.3
+    },
+    {
+     "country_id": "NGA",
+     "country": "Nigeria",
+     "latest_year": 2024,
+     "years_of_schooling": 8.2
+    },
+    {
+     "country_id": "CHN",
+     "country": "China",
+     "latest_year": 2020,
+     "years_of_schooling": 8.0
+    },
+    {
+     "country_id": "SLV",
+     "country": "El Salvador",
+     "latest_year": 2025,
+     "years_of_schooling": 8.0
+    },
+    {
+     "country_id": "LSO",
+     "country": "Lesotho",
+     "latest_year": 2024,
+     "years_of_schooling": 8.0
+    },
+    {
+     "country_id": "COD",
+     "country": "DR Congo",
+     "latest_year": 2023,
+     "years_of_schooling": 7.7
+    },
+    {
+     "country_id": "ZMB",
+     "country": "Zambia",
+     "latest_year": 2024,
+     "years_of_schooling": 7.7
+    },
+    {
+     "country_id": "TUN",
+     "country": "Tunisia",
+     "latest_year": 2023,
+     "years_of_schooling": 7.6
+    },
+    {
+     "country_id": "GHA",
+     "country": "Ghana",
+     "latest_year": 2024,
+     "years_of_schooling": 7.4
+    },
+    {
+     "country_id": "IND",
+     "country": "India",
+     "latest_year": 2023,
+     "years_of_schooling": 7.3
+    },
+    {
+     "country_id": "VUT",
+     "country": "Vanuatu",
+     "latest_year": 2023,
+     "years_of_schooling": 7.1
+    },
+    {
+     "country_id": "HND",
+     "country": "Honduras",
+     "latest_year": 2025,
+     "years_of_schooling": 6.9
+    },
+    {
+     "country_id": "BGD",
+     "country": "Bangladesh",
+     "latest_year": 2021,
+     "years_of_schooling": 6.8
+    },
+    {
+     "country_id": "AGO",
+     "country": "Angola",
+     "latest_year": 2023,
+     "years_of_schooling": 6.6
+    },
+    {
+     "country_id": "TZA",
+     "country": "Tanzania",
+     "latest_year": 2024,
+     "years_of_schooling": 6.5
+    },
+    {
+     "country_id": "LAO",
+     "country": "Laos",
+     "latest_year": 2023,
+     "years_of_schooling": 6.4
+    },
+    {
+     "country_id": "CPV",
+     "country": "Cabo Verde",
+     "latest_year": 2024,
+     "years_of_schooling": 6.2
+    },
+    {
+     "country_id": "UGA",
+     "country": "Uganda",
+     "latest_year": 2024,
+     "years_of_schooling": 6.1
+    },
+    {
+     "country_id": "COM",
+     "country": "Comoros",
+     "latest_year": 2022,
+     "years_of_schooling": 6.0
+    },
+    {
+     "country_id": "GTM",
+     "country": "Guatemala",
+     "latest_year": 2024,
+     "years_of_schooling": 6.0
+    },
+    {
+     "country_id": "MWI",
+     "country": "Malawi",
+     "latest_year": 2024,
+     "years_of_schooling": 5.8
+    },
+    {
+     "country_id": "RWA",
+     "country": "Rwanda",
+     "latest_year": 2025,
+     "years_of_schooling": 5.5
+    },
+    {
+     "country_id": "YEM",
+     "country": "Yemen",
+     "latest_year": 2023,
+     "years_of_schooling": 5.5
+    },
+    {
+     "country_id": "GMB",
+     "country": "Gambia",
+     "latest_year": 2025,
+     "years_of_schooling": 5.4
+    },
+    {
+     "country_id": "PAK",
+     "country": "Pakistan",
+     "latest_year": 2025,
+     "years_of_schooling": 5.3
+    },
+    {
+     "country_id": "KHM",
+     "country": "Cambodia",
+     "latest_year": 2021,
+     "years_of_schooling": 5.2
+    },
+    {
+     "country_id": "CIV",
+     "country": "Côte d'Ivoire",
+     "latest_year": 2021,
+     "years_of_schooling": 4.9
+    },
+    {
+     "country_id": "SLE",
+     "country": "Sierra Leone",
+     "latest_year": 2025,
+     "years_of_schooling": 4.8
+    },
+    {
+     "country_id": "SDN",
+     "country": "Sudan",
+     "latest_year": 2022,
+     "years_of_schooling": 4.7
+    },
+    {
+     "country_id": "MDG",
+     "country": "Madagascar",
+     "latest_year": 2021,
+     "years_of_schooling": 4.6
+    },
+    {
+     "country_id": "MOZ",
+     "country": "Mozambique",
+     "latest_year": 2022,
+     "years_of_schooling": 4.6
+    },
+    {
+     "country_id": "NPL",
+     "country": "Nepal",
+     "latest_year": 2021,
+     "years_of_schooling": 4.5
+    },
+    {
+     "country_id": "ETH",
+     "country": "Ethiopia",
+     "latest_year": 2024,
+     "years_of_schooling": 4.3
+    },
+    {
+     "country_id": "SEN",
+     "country": "Senegal",
+     "latest_year": 2023,
+     "years_of_schooling": 3.3
+    },
+    {
+     "country_id": "BEN",
+     "country": "Benin",
+     "latest_year": 2021,
+     "years_of_schooling": 3.2
+    },
+    {
+     "country_id": "AFG",
+     "country": "Afghanistan",
+     "latest_year": 2022,
+     "years_of_schooling": 2.5
+    },
+    {
+     "country_id": "BFA",
+     "country": "Burkina Faso",
+     "latest_year": 2021,
+     "years_of_schooling": 2.3
+    },
+    {
+     "country_id": "SOM",
+     "country": "Somalia",
+     "latest_year": 2022,
+     "years_of_schooling": 1.9
+    },
+    {
+     "country_id": "MLI",
+     "country": "Mali",
+     "latest_year": 2020,
+     "years_of_schooling": 1.6
+    }
+   ],
+   "metadata": {
+    "country_id": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "latest_year": {
+     "type": "integer",
+     "levels": []
+    },
+    "years_of_schooling": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with v as (\n        select COUNTRY_ID as country_id, country, year, value\n        from read_parquet('data/opri_national.parquet')\n        where indicator_id = 'MYS.1T8.AG25T99' and year between 2020 and 2026\n          and value is not null and coalesce(magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    ),\n    population as (\n        select COUNTRY_ID as country_id, value as thousands\n        from read_parquet('data/dem_national.parquet')\n        where indicator_id = '200101'\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    )\n    select v.country_id, v.country, v.year as latest_year, round(value, 1) as years_of_schooling\n    from v join population using (country_id)\n    where population.thousands >= 100\n    order by years_of_schooling desc, v.country\n\"\"\").df()\nout['country'] = out.country.replace({'Bolivia (Plurinational State of)': 'Bolivia', 'China, Hong Kong Special Administrative Region': 'Hong Kong', 'China, Macao Special Administrative Region': 'Macao', \"Democratic People's Republic of Korea\": 'North Korea', 'Democratic Republic of the Congo': 'DR Congo', 'Iran (Islamic Republic of)': 'Iran', \"Lao People's Democratic Republic\": 'Laos', 'Micronesia (Federated States of)': 'Micronesia', 'Republic of Korea': 'South Korea', 'Republic of Moldova': 'Moldova', 'Russian Federation': 'Russia', 'Syrian Arab Republic': 'Syria', 'United Kingdom of Great Britain and Northern Ireland': 'UK', 'United Republic of Tanzania': 'Tanzania', 'United States of America': 'US', 'Venezuela (Bolivarian Republic of)': 'Venezuela', 'Viet Nam': 'Vietnam'})\n",
+    "outputVariable": "out",
+    "source": [
+     "dem_national",
+     "opri_national"
+    ],
+    "trigger": {
+     "tableId": "dem_national",
+     "resultTableId": "adult_years_of_schooling",
+     "chart": {
+      "id": "chart-trigger-adult_years_of_schooling",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "dem_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "adult_years_of_schooling",
+    "rowCount": 127
+   },
+   "description": "Mean years of schooling of adults aged 25 and over, both sexes, each country's latest figure in 2020–2026 (latest_year). Source: UIS, November 2026 release; indicator MYS.1T8.AG25T99.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794704200000_step_2",
+   "createdAt": 1794704204000
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-f0b652c86dc3",
+   "chartType": "Bar Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-years_of_schooling-773666593563-0.14974922362440394517",
+     "dtype": "quantitative"
+    },
+    "y": {
+     "fieldID": "concept-country-994379002787-0.10628514584476346948",
+     "dtype": "nominal",
+     "sortBy": "x",
+     "sortOrder": "ascending"
+    },
+    "color": {
+     "channel": "color",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "fewest_years_of_schooling",
+   "source": "user",
+   "title": "Where adults have the fewest years of schooling",
+   "subtitle": "Average years of schooling of adults aged 25 and over; latest figure, 2020–2026; UIS, November 2026 release; indicator MYS.1T8.AG25T99",
+   "unread": false,
+   "themeId": "datawrapper",
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-years_of_schooling-773666593563-0.14974922362440394517:|y:concept-country-994379002787-0.10628514584476346948:"
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-years_of_schooling-773666593563-0.14974922362440394517",
+   "name": "years_of_schooling",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-country-994379002787-0.10628514584476346948",
+   "name": "country",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794704200000_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1794704200000_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "How many years of school do adults have, on average?",
+   "parentNodeId": "conversation-root:a4b724d6-50c8-5d55-8af7-5ca0a0e2aca7",
+   "actionId": "exploreDataFromNL_1794704200000",
+   "createdAt": 1794704200000
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794704200000_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1794704200000_step_1",
+   "textKind": "explain",
+   "content": "Then the 15 countries where adults have had the least.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794704200000_prompt",
+   "actionId": "exploreDataFromNL_1794704200000",
+   "createdAt": 1794704201000,
+   "startedAt": 1794704200000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794704200000-1-1",
+     "kind": "tool",
+     "label": "Querying: dem_national, opri_national",
+     "status": "completed",
+     "tool": "create_data"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794704200000_step_2",
+   "displayId": "textTurn_exploreDataFromNL_1794704200000_step_2",
+   "textKind": "explain",
+   "content": "Taking how many years of school adults have had on average.",
+   "parentNodeId": "fewest_years_of_schooling",
+   "actionId": "exploreDataFromNL_1794704200000",
+   "createdAt": 1794704203000,
+   "startedAt": 1794704200000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794704200000-2-1",
+     "kind": "tool",
+     "label": "Querying: dem_national, opri_national",
+     "status": "completed",
+     "tool": "create_data"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794704200000-2-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "Map created: How many years of school adults have"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794704200000_closing_turn",
+   "displayId": "textTurn_exploreDataFromNL_1794704200000_closing",
+   "textKind": "explain",
+   "content": "**Adults aged 25 and over have 14.3 years of schooling on average in Germany, the most, and 1.6 in Mali, the fewest.** The US averages 14 years, China 8 and India 7.3.\n\nThe fewest years of schooling:\n\n- **Mali:** 1.6 years (2020)\n- **Somalia:** 1.9 years (2022)\n- **Burkina Faso:** 2.3 years (2021)\n- **Afghanistan:** 2.5 years (2022)\n- **Benin:** 3.2 years (2021)\n\nThe map uses each country's latest figure from 2020–2026; blank countries have none. Source: UIS, November 2026 release; indicator MYS.1T8.AG25T99.",
+   "parentNodeId": "file-adult_years_of_schooling.map.json",
+   "actionId": "exploreDataFromNL_1794704200000",
+   "createdAt": 1794704206000,
+   "startedAt": 1794704200000,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "adult_years_of_schooling",
+   "fields": {
+    "country_id": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "latest_year": {
+     "semanticType": "Year",
+     "displayName": "Latest year with data",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+     }
+    },
+    "years_of_schooling": {
+     "semanticType": "Number",
+     "unit": "years",
+     "displayName": "Average years of schooling, adults 25+",
+     "authored": {
+      "semanticType": "Number",
+      "unit": "years",
+      "displayName": "Average years of schooling, adults 25+"
+     }
+    }
+   }
+  },
+  {
+   "tableId": "fewest_years_of_schooling",
+   "fields": {
+    "country_id": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "latest_year": {
+     "semanticType": "Year",
+     "displayName": "Latest year with data",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+     }
+    },
+    "years_of_schooling": {
+     "semanticType": "Number",
+     "unit": "years",
+     "displayName": "Average years of schooling, adults 25+",
+     "authored": {
+      "semanticType": "Number",
+      "unit": "years",
+      "displayName": "Average years of schooling, adults 25+"
+     }
+    }
+   }
+  }
+ ],
+ "fileNodes": [
+  {
+   "kind": "file",
+   "id": "file-adult_years_of_schooling.map.json",
+   "path": "adult_years_of_schooling.map.json",
+   "displayName": "How many years of school adults have",
+   "contentHash": "2011734b8262f4b5e34eb6d396b97ecd0abbffe4cbe394a393d85491bebae04c",
+   "parentNodeId": "adult_years_of_schooling",
+   "createdAt": 1794704205000
+  }
+ ],
+ "focusedId": {
+  "type": "file",
+  "fileName": "adult_years_of_schooling.map.json"
+ },
+ "canvasTabs": [
+  {
+   "key": "file:adult_years_of_schooling.map.json",
+   "target": {
+    "type": "file",
+    "fileName": "adult_years_of_schooling.map.json"
+   },
+   "addedAt": 1794700000000,
+   "viewedAt": 1794700000000
+  }
+ ],
+ "canvasTabActive": "file:adult_years_of_schooling.map.json"
+}

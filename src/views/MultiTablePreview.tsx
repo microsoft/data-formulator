@@ -10,12 +10,12 @@ import {
     IconButton,
     Typography,
     Tooltip,
-    LinearProgress,
     alpha,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { DictTable } from '../components/ComponentType';
 import { DataFrameTable } from './DataFrameTable';
+import { InlineLoadingStatus, LoadingStatus } from '../components/FunComponents';
 
 export interface MultiTablePreviewProps {
     /** Loading state indicator */
@@ -46,6 +46,8 @@ export interface MultiTablePreviewProps {
     showPreviewLabel?: boolean;
     /** Whether to hide the row count display */
     hideRowCount?: boolean;
+    /** Whether to show table-selection chips above the preview */
+    showTableSelector?: boolean;
 }
 
 export const MultiTablePreview: React.FC<MultiTablePreviewProps> = ({
@@ -62,6 +64,7 @@ export const MultiTablePreview: React.FC<MultiTablePreviewProps> = ({
     maxRows = 12,
     compact = true,
     hideRowCount = false,
+    showTableSelector = true,
 }) => {
     const { t } = useTranslation();
     const previewTables = tables ?? (table ? [table] : null);
@@ -101,7 +104,9 @@ export const MultiTablePreview: React.FC<MultiTablePreviewProps> = ({
                 minHeight: 120,
             }}
         >
-            {loading && <LinearProgress />}
+            {loading && (activeTable
+                ? <InlineLoadingStatus label={t('connectorPreview.refreshingPreview', { defaultValue: 'Refreshing preview...' })} />
+                : <LoadingStatus label={t('connectorPreview.loadingPreview', { defaultValue: 'Loading preview...' })} sx={{ minHeight: 120 }} />)}
 
             {error && (
                 <Typography variant="caption" color="error">
@@ -118,7 +123,7 @@ export const MultiTablePreview: React.FC<MultiTablePreviewProps> = ({
             {previewTables && previewTables.length > 0 && (
                 <Box>
                     {/* Table selection chips */}
-                    <Box
+                    {showTableSelector && <Box
                         sx={{
                             display: 'flex',
                             alignItems: 'center',
@@ -193,7 +198,7 @@ export const MultiTablePreview: React.FC<MultiTablePreviewProps> = ({
                                 </IconButton>
                             </Tooltip>
                         )}
-                    </Box>
+                    </Box>}
 
                     {activeTable && (
                         <Box>

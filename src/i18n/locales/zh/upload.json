@@ -1,10 +1,40 @@
 {
   "upload": {
+    "livePick": {
+      "umbrella": "这周要带伞吗？",
+      "umbrellaBusy": "正在看天…",
+      "umbrellaHint": "附近城市本周天气预报，实时加载并画在地图上",
+      "warmer": "这周比往常更暖和吗？",
+      "warmerBusy": "正在翻看往年的天气…",
+      "warmerHint": "附近城市本周预报，与过去十年同一周对比",
+      "daylightShorter": "白天变短得有多快？",
+      "daylightLonger": "白天变长得有多快？",
+      "daylightBusy": "正在看太阳…",
+      "daylightHint": "未来四个月的白昼时长，从北到南",
+      "wiki": "今天世界在读什么？",
+      "wikiBusy": "正在越过世界的肩膀偷看…",
+      "wikiHint": "昨天最多人读的维基百科条目，以及本周的走势",
+      "countries": "今天每个国家都在读什么？",
+      "countriesBusy": "正在偷看世界在读什么…",
+      "countriesHint": "昨天世界各地阅读最多的维基百科条目，画在地图上",
+      "failed": "没有成功，稍后再试。",
+      "failedDetail": "无法加载“{{question}}”的实时数据：{{reason}}",
+      "moon": "下一个满月是什么时候？",
+      "moonBusy": "正在看月亮…",
+      "moonHint": "未来两个月的月相"
+    },
+    "sessionStart": {
+      "list": "看看我已连接的数据源里有什么",
+      "scheduledWorkflow": "我想创建一个定期生成报告的工作流",
+      "workflow": "我想创建一个可重复使用、用来生成报告的工作流",
+      "connect": "一步步带我连接新的数据源",
+      "discover": "帮我设置在线发现数据的工具"
+    },
     "title": "加载数据",
     "sampleDatasets": "示例数据集",
     "sampleDatasetsDesc": "精选示例数据集",
     "uploadFile": "上传文件",
-    "uploadFileDesc": "CSV、TSV、JSON 或 Excel",
+    "uploadFileDesc": "数据表、Excel 工作簿或文档",
     "pasteData": "粘贴数据",
     "pasteDataDesc": "从剪贴板粘贴",
     "extractData": "数据加载助手",
@@ -19,7 +49,16 @@
     "orBrowse": "或浏览",
     "or": "或",
     "browse": "浏览",
-    "supportedFormats": "支持格式：CSV、TSV、JSON、Excel（xlsx、xls）",
+    "supportedFormats": "CSV、TSV 和 JSON 将转换为数据表；Excel 和其他文件将保留给智能助手处理",
+    "workspaceFile": "文件",
+    "previewUnavailable": "无法快速预览此文件。",
+    "emptyFile": "此文件为空。",
+    "previewTruncated": "预览内容已截断。",
+    "removeFile": "移除文件",
+    "filesSelected": "已选择 {{count}} 个文件",
+    "addMoreFiles": "添加更多文件",
+    "addToWorkspace": "添加到工作区",
+    "addAllToWorkspace": "全部添加到工作区",
     "placeholder": {
       "url": "输入 URL：https://example.com/data.json 或 /api/data",
       "paste": "在此粘贴数据（CSV、TSV 或 JSON 格式）"
@@ -38,15 +77,17 @@
     "showFull": "显示完整",
     "dataLoadingAgent": "数据加载助手",
     "resumePreviousConversation": "上次对话 →",
-    "agentChatPlaceholder": "让助手查找数据集，或从图片、文本中提取数据…",
+    "agentChatPlaceholder": "加载或连接数据，然后让助手生成图表、地图、仪表板或报告…",
     "agentChatTabSuggestion": "这里有哪些数据集？",
     "agentChatSuggestionsLabel": "试试这样问",
     "agentChatSendTooltip": "开始与助手对话",
     "dataSourcesLabel": "已连接：",
-    "addSourceLabel": "或直接添加数据：",
+    "addSourceLabel": "添加数据：",
     "agentChatQuickAction": {
-      "connect": "帮我连接数据源",
-      "askConnected": "已连接的数据源里有哪些数据？"
+      "connect": "帮我连接数据库或数据源",
+      "askConnected": "列出已连接数据源中的表",
+      "workflowFromSession": "把我上次的分析变成工作流",
+      "scheduleWorkflow": "安排工作流每天运行"
     },
     "agentChatSuggestion": {
       "askConnected": "已连接的数据源里有哪些数据集？",
@@ -55,8 +96,12 @@
       "kind": {
         "ask": "提问",
         "find": "查找",
-        "extract": "提取"
-      }
+        "extract": "提取",
+        "map": "地图",
+        "app": "应用"
+      },
+      "mapLifeExpectancy": "用地图展示全球预期寿命随时间的变化",
+      "dashboardIncome": "创建美国各州家庭收入仪表板"
     },
     "uploadData": "上传数据",
     "importData": "导入数据",
@@ -69,6 +114,7 @@
     "addConnectionDesc": "连接到实时数据库",
     "connectorConnected": "已连接",
     "connectorDisconnected": "点击连接",
+    "connectorNotConnected": "未连接",
     "pickDataSourceType": "选择数据源类型以创建新连接。",
     "nameYourConnection": "为您的 {{type}} 连接命名。",
     "connectionName": "连接名称",
@@ -111,6 +157,14 @@
     "createConnectionTo": "创建 {{name}} 连接",
     "connectionNameLabel": "连接名称",
     "dataSourceTypes": "数据源",
+    "connectorGroups": {
+      "samples": "示例",
+      "files": "文件",
+      "databases": "数据库",
+      "warehouses": "数据仓库",
+      "semantic": "BI 与语义层",
+      "other": "其他"
+    },
     "folderPathPlaceholder": "/你的数据文件夹路径",
     "includeSubfolders": "包含子文件夹",
     "localFolder": "链接本地文件夹",
@@ -134,6 +188,7 @@
       "cosmosdb": "查询 Cosmos DB 容器",
       "mongodb": "查询 MongoDB 集合",
       "bigquery": "查询 BigQuery 数据集",
+      "snowflake": "查询 Snowflake 表",
       "athena": "查询 Amazon Athena",
       "kusto": "查询 Azure Data Explorer",
       "superset": "浏览 Superset 数据集",

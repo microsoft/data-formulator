@@ -359,3 +359,61 @@ class TestBuildColumnEntryExtra:
         assert "Sum of line items" in desc
         assert "expr: SUM(line_total)" in desc
         assert "Verified metric" in desc
+
+
+# ── SupersetLoader.list_tables_tree ───────────────────────────────────
+
+class TestListTablesTreeTableKey:
+    """``list_tables_tree`` bypasses ``_tables_to_catalog_tree`` entirely.
+
+    It builds nodes from ``ls()``, so the ``table_key`` backfill has to reach
+    this path on its own.  The key also has to agree with the one the
+    ``list_tables`` path already uses, which is the dataset uuid.
+    """
+
+    def test_all_datasets_children_carry_uuid_key(self):
+        datasets = [
+            {
+                "id": 42,
+                "table_name": "orders",
+                "uuid": "uuid-42",
+                "row_count": 100,
+                "schema": "public",
+                "database": {"database_name": "analytics"},
+            },
+        ]
+        loader = _make_mock_loader(datasets=datasets)
+
+        tree = loader.list_tables_tree()["tree"]
+        tables = [
+            child
+            for node in tree
+            for child in (node.get("children") or [])
+            if child.get("node_type") == "table"
+        ]
+
+        assert tables
+        assert tables[0]["metadata"]["table_key"] == "uuid-42"
+
+    def test_dashboard_children_carry_uuid_key(self):
+        loader = _make_mock_loader(
+            datasets=[],
+            dashboards=[{"id": 3, "dashboard_title": "Sales Overview"}],
+        )
+        loader._client.get_dashboard_datasets.side_effect = (
+            lambda token, dashboard_id: {
+                "result": [
+                    {
+                        "id": 42,
+                        "table_name": "orders",
+                        "uuid": "uuid-42",
+                        "row_count": 100,
+                    },
+                ],
+            }
+        )
+
+        tree = loader.list_tables_tree()["tree"]
+        group = [n for n in tree if n.get("node_type") == "table_group"][0]
+
+        assert group["children"][0]["metadata"]["table_key"] == "uuid-42"

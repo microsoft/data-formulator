@@ -1,0 +1,134 @@
+{
+  "tables": [
+    {
+      "kind": "table",
+      "id": "t-1",
+      "displayId": "By region",
+      "names": [
+        "region",
+        "total",
+        "month"
+      ],
+      "metadata": {},
+      "virtual": {
+        "tableId": "d_by_region",
+        "rowCount": 4
+      },
+      "derive": {
+        "source": [],
+        "code": "",
+        "trigger": {
+          "tableId": "s"
+        }
+      }
+    },
+    {
+      "kind": "table",
+      "id": "t-2",
+      "displayId": "No virtual",
+      "names": [
+        "a"
+      ],
+      "metadata": {},
+      "derive": {
+        "source": [],
+        "code": "",
+        "trigger": {
+          "tableId": "s"
+        }
+      }
+    }
+  ],
+  "fields": [
+    {
+      "id": "f-region",
+      "name": "region"
+    },
+    {
+      "id": "f-total",
+      "name": "total"
+    },
+    {
+      "id": "f-month",
+      "name": "month"
+    },
+    {
+      "id": "f-a",
+      "name": "a"
+    }
+  ],
+  "charts": [
+    {
+      "id": "chart-1",
+      "chartType": "Bar Chart",
+      "tableRef": "t-1",
+      "title": "Totals",
+      "subtitle": "",
+      "encodingMap": {
+        "x": {
+          "fieldID": "f-region",
+          "sortBy": "[\"N\",\"S\"]"
+        },
+        "y": {
+          "fieldID": "f-total",
+          "aggregate": "sum",
+          "dtype": "quantitative"
+        },
+        "color": {},
+        "size": {
+          "fieldID": "f-missing"
+        }
+      },
+      "config": {
+        "cornerRadius": 2
+      },
+      "themeId": "economist"
+    },
+    {
+      "id": "chart-2",
+      "chartType": "Line Chart",
+      "tableRef": "t-2",
+      "config": {},
+      "encodingMap": {
+        "x": {
+          "fieldID": "f-a",
+          "sortOrder": "descending",
+          "scheme": "blues"
+        }
+      }
+    }
+  ],
+  "expected": {
+    "chart-1": {
+      "chart_type": "Bar Chart",
+      "table": "d_by_region",
+      "title": "Totals",
+      "encodings": {
+        "x": {
+          "field": "region",
+          "sortBy": "[\"N\",\"S\"]"
+        },
+        "y": {
+          "field": "total",
+          "type": "quantitative",
+          "aggregate": "sum"
+        }
+      },
+      "config": {
+        "cornerRadius": 2
+      },
+      "theme": "economist"
+    },
+    "chart-2": {
+      "chart_type": "Line Chart",
+      "table": "t-2",
+      "encodings": {
+        "x": {
+          "field": "a",
+          "sortOrder": "descending",
+          "scheme": "blues"
+        }
+      }
+    }
+  }
+}

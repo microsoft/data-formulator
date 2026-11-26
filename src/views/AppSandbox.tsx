@@ -1,0 +1,482 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+/**
+ * Host for sandboxed app artifacts (HTML and React). Runs the app document in an
+ * opaque-origin iframe inside a container that blocks navigation, serves the
+ * app's data queries for the tables its manifest declares, and shows errors with
+ * an optional "Ask agent to fix" action: an app that cannot render at all is
+ * replaced by a crash page, other errors show in a banner above the running app.
+ */
+
+import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSelector } from 'react-redux';
+import { Alert, Box, Button, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Typography } from '@mui/material';
+import SentimentDissatisfiedOutlinedIcon from '@mui/icons-material/SentimentDissatisfiedOutlined';
+import { alpha, useTheme } from '@mui/material/styles';
+import { useTranslation } from 'react-i18next';
+
+import {
+    APP_SANDBOX,
+    CONTAINER_DOCUMENT,
+    collectLinks,
+    collectRowLinks,
+    normalizeAppQuery,
+    stripRowIds,
+    webLink,
+    type HtmlAppManifest,
+    type HtmlAppTheme,
+} from '../app/htmlApp/htmlAppDocument';
+import { apiRequest } from '../app/apiClient';
+import type { DataFormulatorState } from '../app/dfSlice';
+import { useLayout } from '../app/LayoutProvider';
+import { borderColorValue, readingTypography, paper, weight } from '../app/tokens';
+import { appLook } from '../app/look';
+import { getUrls } from '../app/utils';
+
+const MAX_CONCURRENT_QUERIES = 4;
+const MAX_QUEUED_QUERIES = 100;
+const MAX_ERRORS = 3;
+export const APP_PALETTE = ['#4c78a8', '#f58518', '#e45756', '#72b7b2', '#54a24b', '#eeca3b', '#b279a2', '#ff9da6', '#9d755d', '#bab0ac'];
+
+type QueryJob =
+    | { kind: 'query'; id: number; table: unknown; options: unknown }
+    | { kind: 'sql'; id: number; sql: unknown; params: unknown; options: unknown }
+    | { kind: 'source'; id: number; source: unknown; query: unknown; options: unknown };
+
+/** A connected source an app declared, as the backend addresses it. */
+export type AppSource = { connectorId: string; tableKey: string };
+
+const requestLimit = (options: unknown): number | undefined => {
+    const limit = options && typeof options === 'object' ? (options as { limit?: unknown }).limit : undefined;
+    return typeof limit === 'number' && Number.isInteger(limit) ? limit : undefined;
+};
+
+const newChannel = () => (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
+
+/** Open a web page outside the app; a plain link also takes the desktop wrapper's system-browser route. */
+const openWebLink = (href: string) => {
+    const link = document.createElement('a');
+    link.href = href;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+};
+
+/**
+ * Results the app could not have composed text in: plain table queries and structured source
+ * queries. SQL and native source queries can build any string, such as an address carrying data.
+ */
+const servesStoredValues = (job: QueryJob) => job.kind === 'query'
+    || (job.kind === 'source' && !(job.query && typeof job.query === 'object' && 'native' in job.query));
+
+/** DF's design tokens for apps, following the active palette and density. */
+export function useAppTheme(): HtmlAppTheme {
+    const muiTheme = useTheme();
+    const { density, tokens } = useLayout();
+    return useMemo<HtmlAppTheme>(() => {
+        const palette = muiTheme.palette as unknown as Record<string, { main: string; bgcolor?: string; textColor?: string }>;
+        // A dark look's page and panels; the light looks keep the kit's white tiles on a pale page.
+        const dark = muiTheme.palette.mode === 'dark';
+        return {
+            font: readingTypography.fontFamily,
+            fontMono: getComputedStyle(document.documentElement).getPropertyValue('--df-font-mono').trim() || 'ui-monospace, monospace',
+            text: muiTheme.palette.text.primary,
+            muted: muiTheme.palette.text.secondary,
+            bg: dark ? muiTheme.palette.background.paper : '#ffffff',
+            canvas: dark ? muiTheme.palette.background.default : '#f6f7f9',
+            surface: dark ? muiTheme.palette.background.paper : '#ffffff',
+            border: dark ? muiTheme.palette.divider : borderColorValue.divider,
+            primary: muiTheme.palette.primary.main,
+            primarySoft: palette.primary.bgcolor ?? alpha(muiTheme.palette.primary.main, 0.1),
+            primaryText: palette.primary.textColor ?? muiTheme.palette.primary.main,
+            secondary: muiTheme.palette.secondary.main,
+            accent: palette.custom?.main ?? muiTheme.palette.secondary.main,
+            positive: muiTheme.palette.success.main,
+            negative: muiTheme.palette.error.main,
+            warning: muiTheme.palette.warning.main,
+            textSize: { xxs: tokens.text.xxs, xs: tokens.text.xs, sm: tokens.text.sm, md: tokens.text.md, lg: tokens.text.lg, xl: tokens.text.xl, xxl: tokens.text.xxl },
+            palette: APP_PALETTE,
+            lookVars: appLook(muiTheme).vars,
+        };
+        // Tokens only change with density; the object identity changes on every resize.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [muiTheme, density]);
+}
+
+export interface AppSandboxProps {
+    title: string;
+    manifest: HtmlAppManifest;
+    /** Build the app document for a bridge channel; null when the app cannot run. */
+    buildDocument: ((channel: string) => string) | null;
+    /** Errors known before the app runs (e.g. compile errors); the app cannot render. */
+    initialErrors?: string[];
+    reloadKey?: number;
+    /** Leave room in the error banner for controls floating over the app. */
+    reserveTopRight?: boolean;
+    /** Offer "Ask agent to fix" with the current errors. */
+    onAskFix?: (errors: string[]) => void;
+    /**
+     * The agent just wrote this app: if it fails when it opens, ask the agent to fix it right away and
+     * show that it is being fixed instead of the broken app.
+     */
+    autoFix?: boolean;
+    /** The app opened without errors (only reported with `autoFix`). */
+    onHealthy?: () => void;
+    /** The agent is working (or about to): an automatic repair is still on its way. */
+    fixPending?: boolean;
+    /** Resolve a source the app declared (an external reference id) for live queries. */
+    resolveSource?: (source: string) => AppSource | undefined;
+    /** The session the app's queries read (by default the open one), e.g. a sample shown outside its session. */
+    workspaceId?: string;
+    /** Draw the app as a picture once it has loaded its data and gone quiet (for the agent's view requests):
+     *  `script` is the capture library's source, which the app frame cannot load itself; the preview builds it into
+     *  the app document, so no code is ever sent to the frame in a message. */
+    capture?: AppCapture;
+    /** The app's code: web addresses written in it, like those in table data it reads, open without asking. */
+    linkSource?: string;
+}
+
+export interface AppCapture {
+    script: string;
+    /** Pixels per CSS pixel of the picture (1 by default). */
+    scale?: number;
+    onImage: (dataUrl: string) => void;
+    onError: (message: string) => void;
+}
+
+/** An app is captured once it has gone this long without a data request (and has run at least as long). */
+const CAPTURE_QUIET_MS = 1200;
+/** An app that never goes quiet (or never starts) is not captured. */
+const CAPTURE_TIMEOUT_MS = 30_000;
+
+/** Errors within this long after an app opens are failures of the app as written, not of later use. */
+const AUTO_FIX_WINDOW_MS = 8000;
+
+export const AppSandbox: FC<AppSandboxProps> = ({ title, manifest, buildDocument, initialErrors, reloadKey = 0, reserveTopRight = false, onAskFix,
+    autoFix = false, onHealthy, fixPending = false, resolveSource, workspaceId, capture, linkSource }) => {
+    const { t } = useTranslation();
+    const containerRef = useRef<HTMLIFrameElement>(null);
+    const [containerReady, setContainerReady] = useState(false);
+    const [errors, setErrors] = useState<string[]>([]);
+    const [stopped, setStopped] = useState(false);
+    // The app cannot render at all: it did not compile, failed to start, or crashed.
+    const [fatal, setFatal] = useState(false);
+    const [askedFix, setAskedFix] = useState(false);
+    // The app failed when it opened and the agent was asked to fix it: show that, not the broken app.
+    const [autoFixing, setAutoFixing] = useState(false);
+    const [openedAt, setOpenedAt] = useState(0);
+    // Read when a query runs, so a change to the session's sources does not reload the app.
+    const resolveSourceRef = useRef(resolveSource);
+    resolveSourceRef.current = resolveSource;
+    const captureRef = useRef(capture);
+    captureRef.current = capture;
+    const linkSourceRef = useRef(linkSource);
+    linkSourceRef.current = linkSource;
+    // A web address the app asked to open that it may have built itself: the user decides.
+    const [pendingLink, setPendingLink] = useState<URL | null>(null);
+    const [trustSite, setTrustSite] = useState(false);
+    // Sites the user chose to open without asking, for as long as this app runs.
+    const trustedSitesRef = useRef(new Set<string>());
+    useEffect(() => {
+        const containerWindow = containerRef.current?.contentWindow;
+        const containerDocument = containerRef.current?.contentDocument;
+        setErrors(initialErrors ?? []);
+        setFatal(!!initialErrors?.length);
+        setAskedFix(false);
+        setAutoFixing(false);
+        setOpenedAt(Date.now());
+        setStopped(false);
+        setPendingLink(null);
+        trustedSitesRef.current = new Set();
+        if (initialErrors?.length) captureRef.current?.onError(initialErrors[0]);
+        if (!containerReady || !containerWindow || !containerDocument || !buildDocument) return;
+        let disposed = false;
+        let loads = 0;
+        let active = 0;
+        const queue: QueryJob[] = [];
+        const channel = newChannel();
+        // Addresses the app cannot have built from data: written in its code or read from stored values.
+        const knownLinks = new Set<string>();
+        collectLinks(linkSourceRef.current ?? '', knownLinks);
+        // Capturing for a view request: when the app last asked for data, and whether it was captured.
+        let startedAt = Date.now();
+        let hiddenSince: number | undefined;
+        let lastActivity = startedAt;
+        let captured = false;
+        const captureId = newChannel();
+        const finishCapture = (result: { image?: string; error?: string }) => {
+            if (captured) return;
+            captured = true;
+            window.clearInterval(captureTimer);
+            if (result.image) captureRef.current?.onImage(result.image);
+            else captureRef.current?.onError(result.error || 'The app could not be drawn.');
+        };
+        const captureTimer = captureRef.current === undefined ? undefined : window.setInterval(() => {
+            const request = captureRef.current;
+            if (!request || captured || disposed) return;
+            const now = Date.now();
+            // A hidden page does not lay out, so charts sized to their container are not drawn: only time spent
+            // visible counts, toward going quiet and toward giving up.
+            if (document.visibilityState !== 'visible') {
+                hiddenSince = hiddenSince ?? now;
+                return;
+            }
+            if (hiddenSince !== undefined) {
+                startedAt += now - hiddenSince;
+                if (lastActivity !== Infinity) lastActivity = now;
+                hiddenSince = undefined;
+            }
+            if (now - startedAt > CAPTURE_TIMEOUT_MS) {
+                finishCapture({ error: 'The app did not finish loading.' });
+            } else if (!active && !queue.length && now - lastActivity >= CAPTURE_QUIET_MS && now - startedAt >= CAPTURE_QUIET_MS) {
+                lastActivity = Infinity;
+                post({ type: 'capture', id: captureId, scale: request.scale });
+            }
+        }, 250);
+
+        const frame = containerDocument.createElement('iframe');
+        frame.setAttribute('sandbox', APP_SANDBOX);
+        frame.setAttribute('referrerpolicy', 'no-referrer');
+        frame.setAttribute('title', manifest.title || title);
+
+        const post = (message: Record<string, unknown>) => {
+            if (!disposed) frame.contentWindow?.postMessage({ dfApp: channel, ...message }, '*');
+        };
+        const reportError = (message: string) => {
+            if (!disposed) setErrors(current => current.includes(message) ? current : [...current, message].slice(-MAX_ERRORS));
+        };
+        /** Validate a job against the manifest and turn it into an API request; throws for app bugs. */
+        const toRequest = (job: QueryJob): { label: string; url: string; body: unknown } => {
+            if (job.kind === 'query') {
+                return { label: 'DF.query', url: getUrls().SAMPLE_TABLE, body: normalizeAppQuery(job.table, job.options, manifest) };
+            }
+            if (job.kind === 'sql') {
+                if (typeof job.sql !== 'string' || !job.sql.trim()) throw new Error('Pass the SQL text to run.');
+                if (!manifest.tables.length) throw new Error('Declare the tables the SQL reads in the app manifest.');
+                if (!Array.isArray(job.params) || job.params.length > 100) throw new Error('params must be a list of at most 100 values.');
+                return { label: 'DF.sql', url: getUrls().APP_SQL, body: {
+                    tables: manifest.tables, sql: job.sql, params: job.params, limit: requestLimit(job.options) } };
+            }
+            const declared = typeof job.source === 'string' && (manifest.sources ?? []).includes(job.source);
+            const target = declared ? resolveSourceRef.current?.(job.source as string) : undefined;
+            if (!declared) throw new Error(`Source "${String(job.source)}" is not declared in the app manifest.`);
+            if (!target) throw new Error(`Source "${String(job.source)}" is not connected in this session.`);
+            return { label: 'DF.sourceQuery', url: getUrls().APP_SOURCE_QUERY, body: {
+                connector_id: target.connectorId, table_key: target.tableKey, query: job.query ?? {}, limit: requestLimit(job.options) } };
+        };
+        const pump = () => {
+            while (!disposed && active < MAX_CONCURRENT_QUERIES && queue.length) {
+                const job = queue.shift()!;
+                active += 1;
+                let request: ReturnType<typeof toRequest>;
+                try {
+                    request = toRequest(job);
+                } catch (error) {
+                    active -= 1;
+                    // Invalid queries are app bugs; surface them even if the app catches the rejection.
+                    const label = job.kind === 'query' ? 'DF.query' : job.kind === 'sql' ? 'DF.sql' : 'DF.sourceQuery';
+                    reportError(`${label}: ${(error as Error).message}`);
+                    post({ type: 'result', id: job.id, error: (error as Error).message });
+                    continue;
+                }
+                apiRequest<{ rows: unknown; total_row_count?: number; truncated?: boolean }>(request.url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}) },
+                    body: JSON.stringify(request.body),
+                })
+                    .then(({ data }) => {
+                        const rows = stripRowIds(data.rows);
+                        if (servesStoredValues(job)) collectRowLinks(rows, knownLinks);
+                        post({ type: 'result', id: job.id, rows, totalRowCount: data.total_row_count ?? (Array.isArray(rows) ? rows.length : 0),
+                            ...(data.truncated !== undefined ? { truncated: data.truncated } : {}) });
+                    })
+                    .catch(error => {
+                        const message = error instanceof Error ? error.message : 'Query failed';
+                        reportError(`${request.label}: ${message}`);
+                        post({ type: 'result', id: job.id, error: message });
+                    })
+                    .finally(() => { active -= 1; if (lastActivity !== Infinity) lastActivity = Date.now(); pump(); });
+            }
+        };
+        const onMessage = (event: MessageEvent) => {
+            if (disposed || event.source !== frame.contentWindow) return;
+            const data = event.data;
+            if (!data || typeof data !== 'object' || data.dfApp !== channel) return;
+            if (data.type === 'hello') {
+                post({ type: 'init' });
+                if (lastActivity !== Infinity) lastActivity = Date.now();
+            } else if (data.type === 'openExternal') {
+                const url = webLink(data.url);
+                if (!url) {
+                    reportError('Only absolute HTTP(S) web links without embedded credentials can be opened.');
+                    return;
+                }
+                // A click in the app frame activates this page too. Without the API (older WebKit), ask instead.
+                const clicked = navigator.userActivation?.isActive;
+                if (clicked === false) {
+                    reportError('External links must be opened by a user click.');
+                } else if (clicked && (knownLinks.has(url.href) || trustedSitesRef.current.has(url.origin))) {
+                    openWebLink(url.href);
+                } else {
+                    setTrustSite(false);
+                    setPendingLink(url);
+                }
+            } else if (data.type === 'captured' && data.id === captureId) {
+                finishCapture({ image: typeof data.image === 'string' && data.image.startsWith('data:image/png') ? data.image : undefined,
+                    error: typeof data.error === 'string' ? data.error : undefined });
+            } else if ((data.type === 'query' || data.type === 'sql' || data.type === 'source') && typeof data.id === 'number') {
+                if (queue.length >= MAX_QUEUED_QUERIES) {
+                    post({ type: 'result', id: data.id, error: t('htmlApp.tooManyQueries') });
+                    return;
+                }
+                queue.push(data.type === 'query' ? { kind: 'query', id: data.id, table: data.table, options: data.options }
+                    : data.type === 'sql' ? { kind: 'sql', id: data.id, sql: data.sql, params: data.params, options: data.options }
+                    : { kind: 'source', id: data.id, source: data.source, query: data.query, options: data.options });
+                if (lastActivity !== Infinity) lastActivity = Date.now();
+                pump();
+            } else if (data.type === 'error') {
+                reportError(String(data.message || '').slice(0, 500));
+                if (data.fatal === true && !disposed) {
+                    setFatal(true);
+                    finishCapture({ error: String(data.message || 'The app crashed.').slice(0, 300) });
+                }
+            }
+        };
+        frame.addEventListener('load', () => {
+            loads += 1;
+            // A second load means the app navigated; navigation away is blocked
+            // by the container CSP, so stop serving data to whatever loaded.
+            if (loads > 1 && !disposed) {
+                disposed = true;
+                frame.remove();
+                setStopped(true);
+            }
+        });
+        containerWindow.addEventListener('message', onMessage);
+        frame.srcdoc = buildDocument(channel);
+        containerDocument.body.appendChild(frame);
+        return () => {
+            disposed = true;
+            window.clearInterval(captureTimer);
+            queue.length = 0;
+            containerWindow.removeEventListener('message', onMessage);
+            frame.remove();
+        };
+    }, [containerReady, buildDocument, initialErrors, manifest, title, reloadKey, t, workspaceId]);
+
+    const askFix = onAskFix && !askedFix ? () => { setAskedFix(true); onAskFix(errors); } : undefined;
+
+    // An app the agent just wrote that fails when it opens goes straight back to the agent.
+    const onAskFixRef = useRef(onAskFix);
+    onAskFixRef.current = onAskFix;
+    const onHealthyRef = useRef(onHealthy);
+    onHealthyRef.current = onHealthy;
+    useEffect(() => {
+        if (!autoFix || askedFix || stopped || !errors.length || !onAskFixRef.current) return;
+        if (!fatal && Date.now() - openedAt > AUTO_FIX_WINDOW_MS) return;
+        setAskedFix(true);
+        setAutoFixing(true);
+        onAskFixRef.current(errors);
+    }, [autoFix, askedFix, stopped, errors, fatal, openedAt]);
+    useEffect(() => {
+        if (!autoFix || !buildDocument || errors.length) return;
+        const timer = setTimeout(() => onHealthyRef.current?.(), AUTO_FIX_WINDOW_MS);
+        return () => clearTimeout(timer);
+    }, [autoFix, buildDocument, errors.length, openedAt]);
+    // The agent finished without changing the app: show its errors (and the button to ask again).
+    useEffect(() => {
+        if (!autoFixing || fixPending) return;
+        const timer = setTimeout(() => setAutoFixing(false), 2000);
+        return () => clearTimeout(timer);
+    }, [autoFixing, fixPending]);
+
+    return (
+        <Box sx={{ position: 'relative', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', bgcolor: paper() }}>
+            {!fatal && !autoFixing && (errors.length > 0 || stopped) && (
+                <Alert severity={stopped ? 'warning' : 'error'}
+                    action={!stopped && onAskFix ? <Button color="inherit" size="small" disabled={askedFix} onClick={askFix}>
+                        {askedFix ? t('htmlApp.askedAgentToFix', { defaultValue: 'Sent to the agent' }) : t('htmlApp.askAgentToFix')}</Button> : undefined}
+                    sx={{ flexShrink: 0, borderRadius: 0, pr: reserveTopRight ? 19 : 2, '& .MuiAlert-message': { minWidth: 0 } }}>
+                    {stopped ? t('htmlApp.navigationBlocked') : <>
+                        <strong>{t('htmlApp.appError')}</strong>
+                        {errors.map(message => <Box key={message} component="div" sx={{ overflowWrap: 'anywhere' }}>{message}</Box>)}
+                    </>}
+                </Alert>
+            )}
+            <Box sx={{ position: 'relative', flex: 1, minHeight: 0 }}>
+                <iframe ref={containerRef} srcDoc={CONTAINER_DOCUMENT} title={t('htmlApp.frameTitle', { title: manifest.title || title })}
+                    onLoad={() => setContainerReady(true)}
+                    style={{ display: 'block', border: 0, width: '100%', height: '100%', visibility: fatal || autoFixing ? 'hidden' : 'visible' }} />
+                {autoFixing && (
+                    <Box data-app-fixing role="status" sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center',
+                        justifyContent: 'center', gap: 1.25, px: 4, bgcolor: 'grey.50', color: 'text.secondary', textAlign: 'center' }}>
+                        <CircularProgress size={22} thickness={5} />
+                        <Typography sx={{ fontSize: 15, fontWeight: weight(500), color: 'text.primary' }}>
+                            {t('htmlApp.autoFixing', { defaultValue: 'Fixing an error in this app' })}
+                        </Typography>
+                        <Typography sx={{ fontSize: 13, maxWidth: 480 }}>
+                            {t('htmlApp.autoFixingDetail', { defaultValue: 'The agent found a problem when the app opened and is fixing it.' })}
+                        </Typography>
+                        <Box sx={{ maxWidth: 560, maxHeight: 96, overflow: 'auto', fontFamily: 'var(--df-font-mono, ui-monospace, monospace)',
+                            fontSize: 11.5, lineHeight: 1.5, color: 'text.disabled', overflowWrap: 'anywhere' }}>
+                            {errors.map(message => <Box key={message} component="div">{message}</Box>)}
+                        </Box>
+                    </Box>
+                )}
+                {fatal && !autoFixing && (
+                    <Box data-app-crash role="alert" sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+                        alignItems: 'center', justifyContent: 'center', gap: 1.5, px: 4, bgcolor: 'grey.50', color: 'text.secondary', textAlign: 'center' }}>
+                        <SentimentDissatisfiedOutlinedIcon sx={{ fontSize: 48, color: 'text.disabled' }} />
+                        <Typography sx={{ fontSize: 16, fontWeight: weight(500), color: 'text.primary' }}>
+                            {t('htmlApp.crashTitle', { defaultValue: 'This app couldn\'t be displayed' })}
+                        </Typography>
+                        <Box sx={{ maxWidth: 560, maxHeight: 160, overflow: 'auto', fontFamily: 'var(--df-font-mono, ui-monospace, monospace)',
+                            fontSize: 12, lineHeight: 1.5, overflowWrap: 'anywhere' }}>
+                            {errors.map(message => <Box key={message} component="div">{message}</Box>)}
+                        </Box>
+                        {onAskFix && <Button variant="contained" size="small" disableElevation disabled={askedFix} onClick={askFix}>
+                            {askedFix ? t('htmlApp.askedAgentToFix', { defaultValue: 'Sent to the agent' }) : t('htmlApp.askAgentToFix')}
+                        </Button>}
+                    </Box>
+                )}
+            </Box>
+            <Dialog open={pendingLink !== null} onClose={() => setPendingLink(null)} maxWidth="xs" fullWidth
+                aria-describedby="df-app-link-detail">
+                <DialogTitle sx={{ fontSize: 16, fontWeight: weight(600) }}>{t('htmlApp.openLinkTitle')}</DialogTitle>
+                <DialogContent>
+                    <Typography sx={{ fontSize: 14, fontWeight: weight(600), overflowWrap: 'anywhere' }}>{pendingLink?.hostname}</Typography>
+                    <Box data-app-link-url sx={{ mt: 0.5, maxHeight: 96, overflow: 'auto', fontFamily: 'var(--df-font-mono, ui-monospace, monospace)',
+                        fontSize: 12, lineHeight: 1.5, color: 'text.secondary', overflowWrap: 'anywhere' }}>{pendingLink?.href}</Box>
+                    <Typography id="df-app-link-detail" sx={{ mt: 1.5, fontSize: 13, color: 'text.secondary' }}>
+                        {t('htmlApp.openLinkDetail')}
+                    </Typography>
+                    <FormControlLabel sx={{ mt: 1 }} control={<Checkbox size="small" checked={trustSite} onChange={event => setTrustSite(event.target.checked)} />}
+                        label={<Typography sx={{ fontSize: 13 }}>{t('htmlApp.trustLinkSite', { site: pendingLink?.hostname ?? '' })}</Typography>} />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setPendingLink(null)}>{t('app.cancel')}</Button>
+                    <Button variant="contained" disableElevation onClick={() => {
+                        if (!pendingLink) return;
+                        if (trustSite) trustedSitesRef.current.add(pendingLink.origin);
+                        openWebLink(pendingLink.href);
+                        setPendingLink(null);
+                    }}>{t('htmlApp.openLink')}</Button>
+                </DialogActions>
+            </Dialog>
+        </Box>
+    );
+};
+
+export default AppSandbox;
+
+/** Resolve an app's declared source (an external reference id) to the connector and table the backend reads live. */
+export function useAppSourceResolver(): (source: string) => AppSource | undefined {
+    const references = useSelector((state: DataFormulatorState) => state.externalTableReferences);
+    return useCallback((source: string) => {
+        const reference = references.find(item => item.id === source);
+        return reference ? { connectorId: reference.connectorId, tableKey: reference.tableKey } : undefined;
+    }, [references]);
+}

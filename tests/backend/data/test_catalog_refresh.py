@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -11,7 +12,9 @@ from data_formulator.datalake.catalog_cache import (
     record_catalog_refresh_failure,
     save_catalog,
 )
-from data_formulator.datalake.catalog_refresh import ensure_catalog_freshness
+from data_formulator.datalake.catalog_refresh import (
+    ensure_catalog_freshness, start_catalog_discovery, catalog_discovery_status,
+)
 from data_formulator.data_loader.external_data_loader import CatalogCachePolicy
 
 pytestmark = [pytest.mark.backend, pytest.mark.plugin]
@@ -29,6 +32,69 @@ class _LoaderClass:
     @classmethod
     def catalog_cache_policy(cls) -> CatalogCachePolicy:
         return cls.policy
+
+
+def test_discovery_runs_outside_request_and_deduplicates(tmp_path):
+    loader = MagicMock()
+    loader.list_tables.return_value = []
+    with patch("data_formulator.datalake.catalog_refresh._REFRESH_EXECUTOR.submit") as submit:
+        assert start_catalog_discovery(tmp_path, "src", loader)["status"] == "running"
+        assert start_catalog_discovery(tmp_path, "src", loader)["status"] == "running"
+        submit.assert_called_once()
+        loader.list_tables.assert_not_called()
+        assert catalog_discovery_status(tmp_path, "src")["status"] == "running"
+        submit.call_args.args[0]()
+    assert catalog_discovery_status(tmp_path, "src")["status"] == "complete"
+    assert load_catalog(tmp_path, "src") == []
+
+
+def test_discovery_failure_preserves_cache_and_can_retry(tmp_path):
+    save_catalog(tmp_path, "src", [{"name": "cached"}])
+    loader = MagicMock()
+    loader.list_tables.side_effect = TimeoutError("timed out")
+    with patch("data_formulator.datalake.catalog_refresh._REFRESH_EXECUTOR.submit", side_effect=lambda task: task()):
+        start_catalog_discovery(tmp_path, "src", loader)
+        assert catalog_discovery_status(tmp_path, "src")["status"] == "failed"
+        assert load_catalog(tmp_path, "src") == [{"name": "cached"}]
+        loader.list_tables.side_effect = None
+        loader.list_tables.return_value = [{"name": "fresh"}]
+        start_catalog_discovery(tmp_path, "src", loader)
+    assert catalog_discovery_status(tmp_path, "src")["status"] == "complete"
+
+
+def test_discovery_releases_lock_from_worker_thread(tmp_path):
+    loader = MagicMock()
+    loader.list_tables.return_value = []
+    with ThreadPoolExecutor(max_workers=1) as executor, \
+         patch("data_formulator.datalake.catalog_refresh._REFRESH_EXECUTOR.submit", wraps=executor.submit) as submit:
+        start_catalog_discovery(tmp_path, "src", loader)
+    assert catalog_discovery_status(tmp_path, "src")["status"] == "complete"
+    from filelock import FileLock
+    with FileLock(tmp_path / "catalog_discovery" / "src.lock", timeout=0):
+        pass
+    submit.assert_called_once()
+
+
+def test_discovery_status_is_user_scoped_and_detects_worker_exit(tmp_path):
+    from data_formulator.datalake.catalog_refresh import _discovery_paths, _write_discovery
+    path, _ = _discovery_paths(tmp_path / "alice", "src")
+    _write_discovery(path, {"status": "running", "message": "Alice's private catalog"})
+    assert catalog_discovery_status(tmp_path / "alice", "src")["status"] == "interrupted"
+    assert catalog_discovery_status(tmp_path / "bob", "src") == {"status": "idle"}
+
+
+def test_cancelled_discovery_does_not_recreate_deleted_cache(tmp_path):
+    from data_formulator.datalake.catalog_refresh import cancel_catalog_discovery
+    from data_formulator.datalake.catalog_cache import _load_catalog_raw
+    loader = MagicMock()
+    def listing():
+        cancel_catalog_discovery(tmp_path, "src")
+        return [{"name": "must-not-save"}]
+    loader.list_tables.side_effect = listing
+    with patch("data_formulator.datalake.catalog_refresh._REFRESH_EXECUTOR.submit", side_effect=lambda task: task()):
+        start_catalog_discovery(tmp_path, "src", loader)
+    assert catalog_discovery_status(tmp_path, "src")["status"] == "cancelled"
+    assert _load_catalog_raw(tmp_path, "src") is None
 
 
 def _make_stale(tmp_path: Path, source_id: str) -> None:
@@ -107,3 +173,55 @@ def test_recent_failure_suppresses_retry_and_preserves_tables(tmp_path: Path) ->
     assert snapshot.last_refresh_error == "timeout"
     assert load_catalog(tmp_path, "src") == [{"name": "stale"}]
     submit.assert_not_called()
+
+def _dataset(dataset_id: int, name: str, folder: str = "All Datasets") -> dict:
+    return {"name": f"{dataset_id}:{name}", "table_key": f"{dataset_id}:{name}", "path": [folder, name],
+            "metadata": {"dataset_id": dataset_id}}
+
+
+def test_table_outcomes_drop_missing_flag_unreadable_and_clear_on_success(tmp_path: Path) -> None:
+    from data_formulator.datalake.catalog_cache import note_table_outcome
+
+    save_catalog(tmp_path, "superset", [_dataset(2, "products"), _dataset(4, "returns"),
+                                        _dataset(4, "returns", "Sales dashboard")])
+
+    assert note_table_outcome(tmp_path, "superset", "4", table_state="missing") == 2
+    assert note_table_outcome(tmp_path, "superset", "2:products", table_state="unreadable", reason="no such table") == 1
+    [products] = load_catalog(tmp_path, "superset")
+    assert products["metadata"]["read_error"]["message"] == "no such table"
+
+    assert note_table_outcome(tmp_path, "superset", "2") == 1
+    assert note_table_outcome(tmp_path, "superset", "2") == 0
+    assert "read_error" not in load_catalog(tmp_path, "superset")[0]["metadata"]
+
+
+def test_resync_reports_changes_and_does_not_repeat_within_a_minute(tmp_path: Path) -> None:
+    from data_formulator.datalake.catalog_refresh import resync_catalog
+
+    save_catalog(tmp_path, "superset", [_dataset(2, "products"), _dataset(4, "returns")], refresh_kind="listing")
+    loader = MagicMock()
+    loader.sync_catalog_metadata.return_value = [_dataset(2, "products"), _dataset(5, "refunds")]
+
+    result = resync_catalog(tmp_path, "superset", loader)
+
+    assert result["refreshed"] and result["tables"] == 2
+    assert result["added"] == ["All Datasets/refunds"] and result["removed"] == ["All Datasets/returns"]
+    assert [table["table_key"] for table in load_catalog(tmp_path, "superset")] == ["2:products", "5:refunds"]
+    assert resync_catalog(tmp_path, "superset", loader)["refreshed"] is False
+    loader.sync_catalog_metadata.assert_called_once()
+
+
+def test_builtin_samples_relist_over_a_fresh_cache(tmp_path: Path) -> None:
+    from data_formulator.data_loader.sample_datasets_loader import SampleDatasetsLoader
+
+    # A cache written before a dataset was dropped from the config must not keep showing it.
+    save_catalog(tmp_path, "sample_datasets", [{"name": "Disasters", "table_key": "Disasters", "path": ["Disasters"]}])
+    with patch(
+        "data_formulator.data_connector.resolve_catalog_refresh_target",
+        return_value=(SampleDatasetsLoader, SampleDatasetsLoader()),
+    ):
+        snapshot = ensure_catalog_freshness(tmp_path, "sample_datasets")
+
+    names = {table["name"] for table in snapshot.tables}
+    assert "Disasters" not in names
+    assert "Space launches/launches" in names

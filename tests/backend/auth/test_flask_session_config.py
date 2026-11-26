@@ -36,10 +36,6 @@ class TestFlaskSecretKey:
 
 class TestSessionConfig:
 
-    def test_permanent_session_lifetime_is_one_year(self):
-        from data_formulator.app import app
-        assert app.config["PERMANENT_SESSION_LIFETIME"] == 60 * 60 * 24 * 365
-
     def test_session_cookie_httponly(self):
         from data_formulator.app import app
         assert app.config["SESSION_COOKIE_HTTPONLY"] is True

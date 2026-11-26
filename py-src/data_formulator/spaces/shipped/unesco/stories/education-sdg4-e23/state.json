@@ -1,0 +1,792 @@
+{
+ "__stateVersion": 15,
+ "activeWorkspace": {
+  "id": "education-sdg4-e23",
+  "displayName": "In Chad, 97% of primary schools have no power"
+ },
+ "derivedTables": [
+  {
+   "kind": "table",
+   "id": "most_primary_schools_without_electricity",
+   "displayId": "15 countries where most primary schools lack electricity",
+   "names": [
+    "country_id",
+    "country",
+    "latest_year",
+    "without_electricity"
+   ],
+   "rows": [
+    {
+     "country_id": "TCD",
+     "country": "Chad",
+     "latest_year": 2025,
+     "without_electricity": 96.9
+    },
+    {
+     "country_id": "NER",
+     "country": "Niger",
+     "latest_year": 2025,
+     "without_electricity": 91.9
+    },
+    {
+     "country_id": "COD",
+     "country": "DR Congo",
+     "latest_year": 2023,
+     "without_electricity": 90.0
+    },
+    {
+     "country_id": "MDG",
+     "country": "Madagascar",
+     "latest_year": 2024,
+     "without_electricity": 88.1
+    },
+    {
+     "country_id": "MLI",
+     "country": "Mali",
+     "latest_year": 2023,
+     "without_electricity": 82.0
+    },
+    {
+     "country_id": "SLE",
+     "country": "Sierra Leone",
+     "latest_year": 2025,
+     "without_electricity": 81.8
+    },
+    {
+     "country_id": "GIN",
+     "country": "Guinea",
+     "latest_year": 2021,
+     "without_electricity": 81.6
+    },
+    {
+     "country_id": "HTI",
+     "country": "Haiti",
+     "latest_year": 2025,
+     "without_electricity": 77.7
+    },
+    {
+     "country_id": "LBR",
+     "country": "Liberia",
+     "latest_year": 2022,
+     "without_electricity": 75.7
+    },
+    {
+     "country_id": "ETH",
+     "country": "Ethiopia",
+     "latest_year": 2023,
+     "without_electricity": 72.6
+    },
+    {
+     "country_id": "ERI",
+     "country": "Eritrea",
+     "latest_year": 2022,
+     "without_electricity": 71.4
+    },
+    {
+     "country_id": "BFA",
+     "country": "Burkina Faso",
+     "latest_year": 2025,
+     "without_electricity": 68.4
+    },
+    {
+     "country_id": "NIC",
+     "country": "Nicaragua",
+     "latest_year": 2022,
+     "without_electricity": 68.0
+    },
+    {
+     "country_id": "BEN",
+     "country": "Benin",
+     "latest_year": 2022,
+     "without_electricity": 66.3
+    },
+    {
+     "country_id": "SLB",
+     "country": "Solomon Islands",
+     "latest_year": 2023,
+     "without_electricity": 64.4
+    }
+   ],
+   "metadata": {
+    "country_id": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "latest_year": {
+     "type": "integer",
+     "levels": []
+    },
+    "without_electricity": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with v as (\n        select COUNTRY_ID as country_id, country, year, value\n        from read_parquet('data/sdg4_national.parquet')\n        where indicator_id = 'SCHBSP.1.WELEC' and year between 2020 and 2026\n          and value is not null and coalesce(magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    ),\n    population as (\n        select COUNTRY_ID as country_id, value as thousands\n        from read_parquet('data/dem_national.parquet')\n        where indicator_id = '200101'\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    )\n    select v.country_id, v.country, v.year as latest_year, round(100 - v.value, 1) as without_electricity\n    from v join population using (country_id)\n    where population.thousands >= 100\n    order by without_electricity desc, v.country\n    limit 15\n\"\"\").df()\nout['country'] = out.country.replace({'Bolivia (Plurinational State of)': 'Bolivia', 'China, Hong Kong Special Administrative Region': 'Hong Kong', 'China, Macao Special Administrative Region': 'Macao', \"Democratic People's Republic of Korea\": 'North Korea', 'Democratic Republic of the Congo': 'DR Congo', 'Iran (Islamic Republic of)': 'Iran', \"Lao People's Democratic Republic\": 'Laos', 'Micronesia (Federated States of)': 'Micronesia', 'Republic of Korea': 'South Korea', 'Republic of Moldova': 'Moldova', 'Russian Federation': 'Russia', 'Syrian Arab Republic': 'Syria', 'United Kingdom of Great Britain and Northern Ireland': 'UK', 'United Republic of Tanzania': 'Tanzania', 'United States of America': 'US', 'Venezuela (Bolivarian Republic of)': 'Venezuela', 'Viet Nam': 'Vietnam'})\n",
+    "outputVariable": "out",
+    "source": [
+     "dem_national",
+     "sdg4_national"
+    ],
+    "trigger": {
+     "tableId": "dem_national",
+     "resultTableId": "most_primary_schools_without_electricity",
+     "chart": {
+      "id": "chart-trigger-most_primary_schools_without_electricity",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "dem_national",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "most_primary_schools_without_electricity",
+    "rowCount": 15
+   },
+   "description": "Share of primary schools (%) without access to electricity (100 minus the share with access), the 15 highest countries' latest figure in 2020–2026 (latest_year). Source: UIS, November 2026 release; indicator SCHBSP.1.WELEC.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794701800000_step_1",
+   "createdAt": 1794701802000
+  },
+  {
+   "kind": "table",
+   "id": "african_schools_without_basic_services",
+   "displayId": "Primary schools without basic services, sub-Saharan Africa",
+   "names": [
+    "country_id",
+    "country",
+    "latest_year",
+    "without_electricity",
+    "without_internet",
+    "without_drinking_water"
+   ],
+   "rows": [
+    {
+     "country_id": "TCD",
+     "country": "Chad",
+     "latest_year": 2025,
+     "without_electricity": 97.0,
+     "without_internet": 99.0,
+     "without_drinking_water": 66.0
+    },
+    {
+     "country_id": "NER",
+     "country": "Niger",
+     "latest_year": 2025,
+     "without_electricity": 92.0,
+     "without_internet": 100.0,
+     "without_drinking_water": 67.0
+    },
+    {
+     "country_id": "COD",
+     "country": "DR Congo",
+     "latest_year": 2023,
+     "without_electricity": 90.0,
+     "without_internet": null,
+     "without_drinking_water": 63.0
+    },
+    {
+     "country_id": "MDG",
+     "country": "Madagascar",
+     "latest_year": 2024,
+     "without_electricity": 88.0,
+     "without_internet": null,
+     "without_drinking_water": 66.0
+    },
+    {
+     "country_id": "GIN",
+     "country": "Guinea",
+     "latest_year": 2021,
+     "without_electricity": 82.0,
+     "without_internet": null,
+     "without_drinking_water": 69.0
+    },
+    {
+     "country_id": "MLI",
+     "country": "Mali",
+     "latest_year": 2023,
+     "without_electricity": 82.0,
+     "without_internet": 99.0,
+     "without_drinking_water": null
+    },
+    {
+     "country_id": "SLE",
+     "country": "Sierra Leone",
+     "latest_year": 2025,
+     "without_electricity": 82.0,
+     "without_internet": 98.0,
+     "without_drinking_water": 49.0
+    },
+    {
+     "country_id": "LBR",
+     "country": "Liberia",
+     "latest_year": 2022,
+     "without_electricity": 76.0,
+     "without_internet": null,
+     "without_drinking_water": 37.0
+    },
+    {
+     "country_id": "ETH",
+     "country": "Ethiopia",
+     "latest_year": 2023,
+     "without_electricity": 73.0,
+     "without_internet": null,
+     "without_drinking_water": 80.0
+    },
+    {
+     "country_id": "ERI",
+     "country": "Eritrea",
+     "latest_year": 2022,
+     "without_electricity": 71.0,
+     "without_internet": null,
+     "without_drinking_water": null
+    },
+    {
+     "country_id": "BFA",
+     "country": "Burkina Faso",
+     "latest_year": 2025,
+     "without_electricity": 68.0,
+     "without_internet": 100.0,
+     "without_drinking_water": 26.0
+    },
+    {
+     "country_id": "BEN",
+     "country": "Benin",
+     "latest_year": 2022,
+     "without_electricity": 66.0,
+     "without_internet": null,
+     "without_drinking_water": 47.0
+    },
+    {
+     "country_id": "CMR",
+     "country": "Cameroon",
+     "latest_year": 2025,
+     "without_electricity": 61.0,
+     "without_internet": 87.0,
+     "without_drinking_water": 55.0
+    },
+    {
+     "country_id": "GHA",
+     "country": "Ghana",
+     "latest_year": 2021,
+     "without_electricity": 61.0,
+     "without_internet": null,
+     "without_drinking_water": null
+    },
+    {
+     "country_id": "MWI",
+     "country": "Malawi",
+     "latest_year": 2025,
+     "without_electricity": 61.0,
+     "without_internet": 98.0,
+     "without_drinking_water": 4.0
+    },
+    {
+     "country_id": "MRT",
+     "country": "Mauritania",
+     "latest_year": 2020,
+     "without_electricity": 61.0,
+     "without_internet": null,
+     "without_drinking_water": 55.0
+    },
+    {
+     "country_id": "TGO",
+     "country": "Togo",
+     "latest_year": 2025,
+     "without_electricity": 60.0,
+     "without_internet": 98.0,
+     "without_drinking_water": 31.0
+    },
+    {
+     "country_id": "GNQ",
+     "country": "Equatorial Guinea",
+     "latest_year": 2021,
+     "without_electricity": 56.0,
+     "without_internet": null,
+     "without_drinking_water": 70.0
+    },
+    {
+     "country_id": "GMB",
+     "country": "Gambia",
+     "latest_year": 2025,
+     "without_electricity": 43.0,
+     "without_internet": 92.0,
+     "without_drinking_water": 4.0
+    },
+    {
+     "country_id": "COM",
+     "country": "Comoros",
+     "latest_year": 2025,
+     "without_electricity": 42.0,
+     "without_internet": 82.0,
+     "without_drinking_water": 18.0
+    },
+    {
+     "country_id": "ZMB",
+     "country": "Zambia",
+     "latest_year": 2024,
+     "without_electricity": 42.0,
+     "without_internet": 68.0,
+     "without_drinking_water": 8.0
+    },
+    {
+     "country_id": "SEN",
+     "country": "Senegal",
+     "latest_year": 2025,
+     "without_electricity": 41.0,
+     "without_internet": 73.0,
+     "without_drinking_water": 15.0
+    },
+    {
+     "country_id": "ZWE",
+     "country": "Zimbabwe",
+     "latest_year": 2025,
+     "without_electricity": 35.0,
+     "without_internet": 65.0,
+     "without_drinking_water": 30.0
+    },
+    {
+     "country_id": "CIV",
+     "country": "Côte d'Ivoire",
+     "latest_year": 2025,
+     "without_electricity": 33.0,
+     "without_internet": 99.0,
+     "without_drinking_water": 32.0
+    },
+    {
+     "country_id": "TZA",
+     "country": "Tanzania",
+     "latest_year": 2024,
+     "without_electricity": 32.0,
+     "without_internet": null,
+     "without_drinking_water": null
+    },
+    {
+     "country_id": "KEN",
+     "country": "Kenya",
+     "latest_year": 2023,
+     "without_electricity": 30.0,
+     "without_internet": 68.0,
+     "without_drinking_water": 25.0
+    },
+    {
+     "country_id": "UGA",
+     "country": "Uganda",
+     "latest_year": 2025,
+     "without_electricity": 28.0,
+     "without_internet": null,
+     "without_drinking_water": null
+    },
+    {
+     "country_id": "GAB",
+     "country": "Gabon",
+     "latest_year": 2021,
+     "without_electricity": 27.0,
+     "without_internet": null,
+     "without_drinking_water": 3.0
+    },
+    {
+     "country_id": "DJI",
+     "country": "Djibouti",
+     "latest_year": 2023,
+     "without_electricity": 19.0,
+     "without_internet": 57.0,
+     "without_drinking_water": 12.0
+    },
+    {
+     "country_id": "RWA",
+     "country": "Rwanda",
+     "latest_year": 2025,
+     "without_electricity": 14.0,
+     "without_internet": 18.0,
+     "without_drinking_water": 40.0
+    },
+    {
+     "country_id": "STP",
+     "country": "Sao Tome and Principe",
+     "latest_year": 2025,
+     "without_electricity": 12.0,
+     "without_internet": null,
+     "without_drinking_water": null
+    },
+    {
+     "country_id": "CPV",
+     "country": "Cabo Verde",
+     "latest_year": 2023,
+     "without_electricity": 7.0,
+     "without_internet": 62.0,
+     "without_drinking_water": 4.0
+    },
+    {
+     "country_id": "NAM",
+     "country": "Namibia",
+     "latest_year": 2025,
+     "without_electricity": 3.0,
+     "without_internet": 37.0,
+     "without_drinking_water": 10.0
+    },
+    {
+     "country_id": "BWA",
+     "country": "Botswana",
+     "latest_year": 2022,
+     "without_electricity": 2.0,
+     "without_internet": 38.0,
+     "without_drinking_water": 0.0
+    },
+    {
+     "country_id": "SWZ",
+     "country": "Eswatini",
+     "latest_year": 2025,
+     "without_electricity": 0.0,
+     "without_internet": 77.0,
+     "without_drinking_water": 14.0
+    },
+    {
+     "country_id": "MUS",
+     "country": "Mauritius",
+     "latest_year": 2025,
+     "without_electricity": 0.0,
+     "without_internet": 13.0,
+     "without_drinking_water": 0.0
+    },
+    {
+     "country_id": "SYC",
+     "country": "Seychelles",
+     "latest_year": 2025,
+     "without_electricity": 0.0,
+     "without_internet": 0.0,
+     "without_drinking_water": 0.0
+    }
+   ],
+   "metadata": {
+    "country_id": {
+     "type": "string",
+     "levels": []
+    },
+    "country": {
+     "type": "string",
+     "levels": []
+    },
+    "latest_year": {
+     "type": "integer",
+     "levels": []
+    },
+    "without_electricity": {
+     "type": "number",
+     "levels": []
+    },
+    "without_internet": {
+     "type": "number",
+     "levels": []
+    },
+    "without_drinking_water": {
+     "type": "number",
+     "levels": []
+    }
+   },
+   "derive": {
+    "code": "import duckdb\n\nout = duckdb.sql(\"\"\"\n    with without_electricity as (\n        select COUNTRY_ID as country_id, country, year, value\n        from read_parquet('data/sdg4_national.parquet')\n        where indicator_id = 'SCHBSP.1.WELEC' and year between 2020 and 2026\n          and value is not null and coalesce(magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    ),\n    without_internet as (\n        select COUNTRY_ID as country_id, country, year, value\n        from read_parquet('data/sdg4_national.parquet')\n        where indicator_id = 'SCHBSP.1.WINTERN' and year between 2020 and 2026\n          and value is not null and coalesce(magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    ),\n    without_drinking_water as (\n        select COUNTRY_ID as country_id, country, year, value\n        from read_parquet('data/sdg4_national.parquet')\n        where indicator_id = 'SCHBSP.1.WWATA' and year between 2020 and 2026\n          and value is not null and coalesce(magnitude, '') not in ('NA', 'SUPP', 'INCLUDED')\n        qualify row_number() over (partition by COUNTRY_ID order by year desc) = 1\n    ),\n    africa as (\n        select COUNTRY_ID as country_id from read_parquet('data/region_members.parquet')\n        where region = 'SDG: Sub-Saharan Africa'\n    )\n    select e.country_id, e.country, e.year as latest_year, round(100 - e.value) as without_electricity,\n           round(100 - i.value) as without_internet, round(100 - w.value) as without_drinking_water\n    from without_electricity e join africa using (country_id)\n    left join without_internet i using (country_id) left join without_drinking_water w using (country_id)\n    order by without_electricity desc, e.country\n\"\"\").df()\nout['country'] = out.country.replace({'Bolivia (Plurinational State of)': 'Bolivia', 'China, Hong Kong Special Administrative Region': 'Hong Kong', 'China, Macao Special Administrative Region': 'Macao', \"Democratic People's Republic of Korea\": 'North Korea', 'Democratic Republic of the Congo': 'DR Congo', 'Iran (Islamic Republic of)': 'Iran', \"Lao People's Democratic Republic\": 'Laos', 'Micronesia (Federated States of)': 'Micronesia', 'Republic of Korea': 'South Korea', 'Republic of Moldova': 'Moldova', 'Russian Federation': 'Russia', 'Syrian Arab Republic': 'Syria', 'United Kingdom of Great Britain and Northern Ireland': 'UK', 'United Republic of Tanzania': 'Tanzania', 'United States of America': 'US', 'Venezuela (Bolivarian Republic of)': 'Venezuela', 'Viet Nam': 'Vietnam'})\n",
+    "outputVariable": "out",
+    "source": [
+     "region_members",
+     "sdg4_national"
+    ],
+    "trigger": {
+     "tableId": "region_members",
+     "resultTableId": "african_schools_without_basic_services",
+     "chart": {
+      "id": "chart-trigger-african_schools_without_basic_services",
+      "chartType": "Auto",
+      "encodingMap": {},
+      "tableRef": "region_members",
+      "source": "trigger"
+     }
+    }
+   },
+   "virtual": {
+    "tableId": "african_schools_without_basic_services",
+    "rowCount": 37
+   },
+   "description": "Share of primary schools (%) without electricity, internet for teaching or basic drinking water, in sub-Saharan Africa: each figure is the country's latest in 2020–2026 (latest_year is the electricity figure's). Source: UIS, November 2026 release; indicators SCHBSP.1.WELEC, SCHBSP.1.WINTERN, SCHBSP.1.WWATA.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794701800000_step_2",
+   "createdAt": 1794701804000
+  }
+ ],
+ "charts": [
+  {
+   "id": "chart-041cfe66604f",
+   "chartType": "Bar Chart",
+   "encodingMap": {
+    "x": {
+     "fieldID": "concept-without_electricity-353225223820-0.13885284223374535837",
+     "dtype": "quantitative"
+    },
+    "y": {
+     "fieldID": "concept-country-164573389797-0.9051548130480885917",
+     "dtype": "nominal",
+     "sortBy": "x",
+     "sortOrder": "descending"
+    },
+    "color": {
+     "channel": "color",
+     "bin": false
+    },
+    "opacity": {
+     "channel": "opacity",
+     "bin": false
+    },
+    "column": {
+     "channel": "column",
+     "bin": false
+    },
+    "row": {
+     "channel": "row",
+     "bin": false
+    }
+   },
+   "tableRef": "most_primary_schools_without_electricity",
+   "source": "user",
+   "title": "Where most primary schools have no power",
+   "subtitle": "Share of primary schools without electricity; latest figure, 2020–2026; UIS, November 2026 release; indicator SCHBSP.1.WELEC",
+   "unread": false,
+   "themeId": "datawrapper",
+   "titleKey": "Bar Chart|color::|column::|opacity::|row::|x:concept-without_electricity-353225223820-0.13885284223374535837:|y:concept-country-164573389797-0.9051548130480885917:"
+  }
+ ],
+ "conceptShelfItems": [
+  {
+   "id": "concept-without_electricity-353225223820-0.13885284223374535837",
+   "name": "without_electricity",
+   "source": "custom",
+   "tableRef": "custom"
+  },
+  {
+   "id": "concept-country-164573389797-0.9051548130480885917",
+   "name": "country",
+   "source": "custom",
+   "tableRef": "custom"
+  }
+ ],
+ "textTurns": [
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794701800000_prompt",
+   "displayId": "textTurn_exploreDataFromNL_1794701800000_prompt",
+   "textKind": "explain",
+   "content": "",
+   "prompt": "Where are schools still without power?",
+   "parentNodeId": "conversation-root:d4e84f86-e209-505d-935e-187f1bc53037",
+   "actionId": "exploreDataFromNL_1794701800000",
+   "createdAt": 1794701800000
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794701800000_step_1",
+   "displayId": "textTurn_exploreDataFromNL_1794701800000_step_1",
+   "textKind": "explain",
+   "content": "Checking which countries' primary schools most often go without power.",
+   "parentNodeId": "textTurn_exploreDataFromNL_1794701800000_prompt",
+   "actionId": "exploreDataFromNL_1794701800000",
+   "createdAt": 1794701801000,
+   "startedAt": 1794701800000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794701800000-1-1",
+     "kind": "tool",
+     "label": "Querying: dem_national, sdg4_national",
+     "status": "completed",
+     "tool": "create_data"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794701800000_step_2",
+   "displayId": "textTurn_exploreDataFromNL_1794701800000_step_2",
+   "textKind": "explain",
+   "content": "Zooming in on sub-Saharan Africa, where water, toilets and power are scarcest.",
+   "parentNodeId": "most_primary_schools_without_electricity",
+   "actionId": "exploreDataFromNL_1794701800000",
+   "createdAt": 1794701803000,
+   "startedAt": 1794701800000,
+   "progressSteps": [
+    {
+     "id": "progress-exploreDataFromNL_1794701800000-2-1",
+     "kind": "tool",
+     "label": "Querying: region_members, sdg4_national",
+     "status": "completed",
+     "tool": "create_data"
+    },
+    {
+     "id": "progress-exploreDataFromNL_1794701800000-2-2",
+     "kind": "info",
+     "status": "completed",
+     "label": "Map created: Primary schools without basic services in sub-Saharan Africa"
+    }
+   ]
+  },
+  {
+   "kind": "text",
+   "id": "textTurn_exploreDataFromNL_1794701800000_closing_turn",
+   "displayId": "textTurn_exploreDataFromNL_1794701800000_closing",
+   "textKind": "explain",
+   "content": "**Schools without power are concentrated in sub-Saharan Africa:** 12 of the 15 countries where the most primary schools lack electricity are there. Share of primary schools without electricity:\n\n- **Chad:** 97% (2025)\n- **Niger:** 92% (2025)\n- **DR Congo:** 90% (2023)\n- **Madagascar:** 88% (2024)\n- **Mali:** 82% (2023)\n\nInternet is rarer still: in the typical country of the region, 77% of primary schools have none for teaching. The map of sub-Saharan Africa switches between electricity, internet and drinking water. Latest figures from 2020–2026. Source: UIS, November 2026 release; indicators SCHBSP.1.WELEC, SCHBSP.1.WINTERN, SCHBSP.1.WWATA.",
+   "parentNodeId": "file-african_schools_without_basic_services.map.json",
+   "actionId": "exploreDataFromNL_1794701800000",
+   "createdAt": 1794701806000,
+   "startedAt": 1794701800000,
+   "answered": true
+  }
+ ],
+ "tableSemantics": [
+  {
+   "tableId": "most_primary_schools_without_electricity",
+   "fields": {
+    "country_id": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "latest_year": {
+     "semanticType": "Year",
+     "displayName": "Latest year with data",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+     }
+    },
+    "without_electricity": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Primary schools without electricity",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Primary schools without electricity"
+     }
+    },
+    "without_internet": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Primary schools without internet for teaching",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Primary schools without internet for teaching"
+     }
+    },
+    "without_drinking_water": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Primary schools without basic drinking water",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Primary schools without basic drinking water"
+     }
+    }
+   }
+  },
+  {
+   "tableId": "african_schools_without_basic_services",
+   "fields": {
+    "country_id": {
+     "semanticType": "ID",
+     "displayName": "Country code",
+     "authored": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+     }
+    },
+    "country": {
+     "semanticType": "Country",
+     "displayName": "Country",
+     "authored": {
+      "semanticType": "Country",
+      "displayName": "Country"
+     }
+    },
+    "latest_year": {
+     "semanticType": "Year",
+     "displayName": "Latest year with data",
+     "authored": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+     }
+    },
+    "without_electricity": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Primary schools without electricity",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Primary schools without electricity"
+     }
+    },
+    "without_internet": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Primary schools without internet for teaching",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Primary schools without internet for teaching"
+     }
+    },
+    "without_drinking_water": {
+     "semanticType": "Percentage",
+     "unit": "%",
+     "displayName": "Primary schools without basic drinking water",
+     "authored": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Primary schools without basic drinking water"
+     }
+    }
+   }
+  }
+ ],
+ "fileNodes": [
+  {
+   "kind": "file",
+   "id": "file-african_schools_without_basic_services.map.json",
+   "path": "african_schools_without_basic_services.map.json",
+   "displayName": "Primary schools without basic services in sub-Saharan Africa",
+   "contentHash": "e38ccea163b96e67ecf88cd23378616b2a05d78ea742ad3084bb5ad42d16b01d",
+   "parentNodeId": "african_schools_without_basic_services",
+   "createdAt": 1794701805000
+  }
+ ],
+ "focusedId": {
+  "type": "file",
+  "fileName": "african_schools_without_basic_services.map.json"
+ },
+ "canvasTabs": [
+  {
+   "key": "file:african_schools_without_basic_services.map.json",
+   "target": {
+    "type": "file",
+    "fileName": "african_schools_without_basic_services.map.json"
+   },
+   "addedAt": 1794700000000,
+   "viewedAt": 1794700000000
+  }
+ ],
+ "canvasTabActive": "file:african_schools_without_basic_services.map.json"
+}

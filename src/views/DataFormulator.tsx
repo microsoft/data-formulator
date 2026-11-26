@@ -29,20 +29,22 @@ import {
     Link,
     Select,
     MenuItem,
-    TextField,
     Alert,
     Tabs,
     Tab,
 } from '@mui/material';
-import { borderColor, radius, transition } from '../app/tokens';
+import { borderColor, canvasPattern, cardRadius, ink, metaText, radius, transition, paper, weight } from '../app/tokens';
+import { inkColor } from '../app/look';
+
 
 
 import { VisualizationViewFC } from './VisualizationView';
 import { AnvilLoader } from '../components/AnvilLoader';
+import { VersionTag } from '../components/VersionTag';
 
 import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
-import { toolName } from '../app/App';
+import { getToolName } from '../app/App';
 import { DataThread } from './DataThread';
 import { MAX_THREAD_COLUMNS } from './threadLayout';
 import {
@@ -57,28 +59,44 @@ import { useContainerSize, useLayout } from '../app/LayoutProvider';
 import dfLogo from '../assets/df-logo.svg';
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
-import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu, ConnectorInstance } from './UnifiedDataUploadDialog';
+import { UnifiedDataUploadDialog, UploadTabType, ConnectorInstance } from './UnifiedDataUploadDialog';
+import { LandingDataEntry, LandingSources, LiveQuestionCarousel, QuickChatOptions } from './LandingDataEntry';
+import { availableLiveQuestions, fetchLiveData, livePickCopy, type LiveQuestion } from '../app/liveDataPick';
+import { loadTable } from '../app/tableThunks';
+import { buildSessionStartPrompts } from './dataLoadingSuggestions';
 import { ReportView } from './ReportView';
+import { CanvasChromeContext } from './CanvasHeader';
+import { CanvasTabs } from './CanvasTabs';
 import { DataSourceSidebar } from './DataSourceSidebar';
+import { SessionsDialog } from './AllSessions';
 import GitHubIcon from '@mui/icons-material/GitHub';
-import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions } from './ExampleSessions';
+import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions, usePublishedExamples } from './ExampleSessions';
+import { WorkflowPanel, WorkflowRunObserver } from './WorkflowPanel';
+import { SpaceLanding } from '../spaces/SpaceLanding';
+import { SpaceDatasetTabs, inSentence } from '../spaces/SpaceDatasetTabs';
+import { SPACE_COLUMN, SPACE_PAGE, SPACE_CHAT_CENTRE } from '../spaces/layout';
+import { SPACE_ID } from '../app/space';
+import type { SpaceStarter, SpaceStory } from '../spaces/types';
+import { listWorkflowLibrary } from './WorkflowSchedules';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
-import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, updateWorkspaceMeta, WorkspaceLoadSupersededError } from '../app/workspaceService';
+import { handleApiError } from '../app/errorHandler';
+import { listedAsSession, listWorkspaceFiles, listWorkspaces, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, setWorkspaceStarred, updateWorkspaceMeta } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
+import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import { AppDispatch, store } from '../app/store';
-import { generateUUID } from '../app/identity';
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
+import { generateWorkspaceId, ensureActiveWorkspace, openSession } from '../app/sessionThunks';
+import { ItemCard, ItemCardAction, itemCardGridSx, StarAction, useItemCardGridColumns } from '../components/ItemCard';
 import IconButton from '@mui/material/IconButton';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import { WormholeReceiveIcon, WormholeSendIcon } from '../icons';
+import { requestWormholeDialog } from '../app/wormholeService';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import CloseIcon from '@mui/icons-material/Close';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -86,34 +104,87 @@ import DialogActions from '@mui/material/DialogActions';
 
 /** Quick enough not to feel like waiting, slow enough to read as a movement. */
 const CANVAS_TRANSITION_MS = 140;
+/** A thread-pane drag at least this far moves a whole column in its direction. */
+const DRAG_INTENT_PX = 24;
+const INITIAL_SESSION_COUNT = 12;
+const homeSessionGroupHeaderSx = { m: 0, mb: 1, textAlign: 'left', fontWeight: weight(600), color: 'text.secondary',
+    ...metaText({ fontSize: textVar.xs, textTransform: 'uppercase', letterSpacing: '0.04em' }) } as const;
 
-/** Generate a session ID like session_20260408_193052_a1b2 */
-function generateSessionId(): string {
-    const now = new Date();
-    const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-    const short = generateUUID().slice(0, 4);
-    return `session_${date}_${time}_${short}`;
-}
+const homeSectionTitleSx = { fontSize: textVar.md, fontWeight: weight(500), color: 'text.primary', textAlign: 'left', mb: 1 } as const;
+
+type LibraryTab = 'sessions' | 'workflows';
+
+/** A heart in a space's title ("Lattice ❤ Data Formulator"): a small, muted pixel heart, not a full-size emoji. */
+const TITLE_HEART = /(❤️|❤|♥)/u;
+const PIXEL_HEART = ['..XX...XX..', '.XXXX.XXXX.', 'XXXXXXXXXXX', 'XXXXXXXXXXX', 'XXXXXXXXXXX',
+    '.XXXXXXXXX.', '..XXXXXXX..', '...XXXXX...', '....XXX....', '.....X.....'];
+const TitleHeart: React.FC = () => (
+    <Box component="svg" viewBox="0 0 11 10" role="img" aria-label="❤"
+        sx={{ width: '0.42em', height: '0.38em', mx: '0.18em', verticalAlign: '0.12em', shapeRendering: 'crispEdges',
+              fill: theme => alpha(theme.palette.error.main, 0.55) }}>
+        {PIXEL_HEART.flatMap((row, y) => [...row].map((cell, x) => cell === 'X'
+            ? <rect key={`${x}-${y}`} x={x} y={y} width={1} height={1} /> : null))}
+    </Box>
+);
+const withTitleHearts = (line: string) => line.split(TITLE_HEART).map((part, index) =>
+    TITLE_HEART.test(part) ? <TitleHeart key={index} /> : part);
+
+/** The landing page's saved-item tabs. Tab state lives here so switching re-renders only this section. */
+const LandingLibrary: React.FC<{ sessionsToolbar: React.ReactNode; sessions: React.ReactNode;
+    workflowsToolbar: React.ReactNode; workflows: React.ReactNode; showWorkflows?: boolean }>
+    = ({ sessionsToolbar, sessions, workflowsToolbar, workflows, showWorkflows = true }) => {
+    const { t } = useTranslation();
+    const [tab, setTab] = useState<LibraryTab>('sessions');
+    return <>
+        {/* Neutral tabs and buttons, in the app bar's greys rather than the accent colour. */}
+        <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 2, rowGap: 1, mt: 4, mb: 1.5, borderBottom: 1, borderColor: 'divider',
+            '& .MuiButton-outlined': { color: 'text.secondary', borderColor: borderColor.view, '&:hover': { color: 'text.primary', borderColor: borderColor.view, bgcolor: ink(0.04) } } }}>
+            <Tabs value={tab} onChange={(_, value) => setTab(value)} aria-label="Saved items"
+                slotProps={{ indicator: { sx: { bgcolor: 'text.primary', transition: 'left 120ms ease, width 120ms ease' } } }}
+                sx={{ minHeight: 40, '& .MuiTab-root': { minHeight: 40, minWidth: 0, px: 1, fontSize: textVar.md, fontWeight: weight(400),
+                    textTransform: 'none', color: 'text.secondary', '&:hover': { color: 'text.primary' },
+                    '&.Mui-selected': { color: 'text.primary' } },
+                    '& .MuiTouchRipple-root': { display: 'none' } }}>
+                <Tab id="home-sessions-tab" value="sessions" label={t('workspace.yourSessions')} aria-controls="home-sessions-panel" />
+                {showWorkflows && <Tab id="home-workflows-tab" value="workflows" label={t('workspace.yourWorkflows', { defaultValue: 'Your workflows' })} aria-controls="home-workflows-panel" />}
+            </Tabs>
+            <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1, py: 0.5 }}>
+                {tab === 'workflows' ? workflowsToolbar : sessionsToolbar}
+            </Box>
+        </Box>
+        <Box role="tabpanel" id="home-sessions-panel" aria-labelledby="home-sessions-tab" hidden={tab !== 'sessions'}>{sessions}</Box>
+        {showWorkflows && <Box role="tabpanel" id="home-workflows-panel" aria-labelledby="home-workflows-tab" hidden={tab !== 'workflows'}>{workflows}</Box>}
+    </>;
+};
 
 export const DataFormulatorFC = ({ }) => {
 
     const derivedTables = useSelector(dfSelectors.getDerivedTables);
     const hasInputTables = useSelector((state: DataFormulatorState) => state.inputTables.length > 0);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    const inSession = useSelector(dfSelectors.selectInSession);
     const canvasTarget = useSelector(dfSelectors.selectCanvasTarget);
     const [canvasClosing, setCanvasClosing] = useState(false);
     const models = useSelector(dfSelectors.getAllModels);
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+    const workflowsAvailable = serverConfig?.WORKFLOWS_AVAILABLE === true;
+    const canSchedule = !!serverConfig?.IS_LOCAL_MODE && workflowsAvailable;
+    const appName = getToolName(serverConfig.APP_NAME);
+    // In a space (/space/<id>), the landing page is the standard one filled in from its profile (design-docs/69).
+    const space = serverConfig.SPACE;
+    // The dataset shown in a space's tabs, which its "Show me your analysis of …" chip names.
+    const [spaceDataset, setSpaceDataset] = useState<SpaceStarter>();
+    // A space's headline may break into lines ("\n" in its profile); the longest line sets the size.
+    const headingLines = (space ? space.headline || space.name : appName).split('\n').map(line => line.trim()).filter(Boolean);
+    // A space's title stays a little narrower than its chat box.
+    const headingSize = Math.max(32, Math.min(space ? 52 : 76, (space ? 70 : 76) * Math.sqrt(15 / Math.max(1, ...headingLines.map(line => line.length)))));
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
-    const dataLoadingChatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
-    const sessionEmpty = useSelector(dfSelectors.selectSessionEmpty);
     const theme = useTheme();
 
     const dispatch = useDispatch<AppDispatch>();
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
 
     // Auto-focus removed: focus is the only thing that opens the canvas, so
     // re-focusing whenever it clears would make closing impossible. Table
@@ -145,6 +216,16 @@ export const DataFormulatorFC = ({ }) => {
         refreshPageConnectors();
     }, [refreshPageConnectors, identityKey]);
 
+    // What the user already has, so landing quick actions can suggest the next step.
+    const [userWorkflows, setUserWorkflows] = useState({ any: false, scheduled: false });
+    useEffect(() => {
+        if (inSession || !workflowsAvailable) return;
+        listWorkflowLibrary().then(items => {
+            const own = items.filter(item => (item.origin || 'user') === 'user');
+            setUserWorkflows({ any: own.length > 0, scheduled: own.some(item => item.schedule) });
+        }).catch(() => setUserWorkflows({ any: false, scheduled: false }));
+    }, [inSession, identityKey, workflowsAvailable]);
+
     // ── Demo sessions (loaded from manifest, fallback to hardcoded) ─────
     const [demoSessions, setDemoSessions] = useState<ExampleSession[]>(exampleSessions);
     useEffect(() => {
@@ -155,6 +236,9 @@ export const DataFormulatorFC = ({ }) => {
 
     // ── Workspace list (shown on landing page) ────────────────────
     const [savedWorkspaces, setSavedWorkspaces] = useState<WorkspaceSummary[]>([]);
+    const [allSessionsOpen, setAllSessionsOpen] = useState(false);
+    const [allSessionsStarredOnly, setAllSessionsStarredOnly] = useState(false);
+    const [starredGridRef, starredGridColumns] = useItemCardGridColumns();
     const [confirmDeleteWs, setConfirmDeleteWs] = useState<string | null>(null);
 
     // Inline rename: which card's title is currently being edited, and
@@ -177,36 +261,20 @@ export const DataFormulatorFC = ({ }) => {
     }, []);
 
     useEffect(() => {
-        if (!activeWorkspace) {
+        if (!inSession) {
             fetchWorkspaces();
+            const refresh = () => { if (document.visibilityState === 'visible') void fetchWorkspaces(); };
+            document.addEventListener('visibilitychange', refresh);
+            return () => document.removeEventListener('visibilitychange', refresh);
         }
-    }, [activeWorkspace, fetchWorkspaces]);
+    }, [inSession, fetchWorkspaces]);
 
     useEffect(() => {
         return onWorkspaceListChanged(fetchWorkspaces);
     }, [fetchWorkspaces]);
 
     const handleOpenWorkspace = useCallback(async (name: string, metaDisplayName?: string) => {
-        dispatch(dfActions.setSessionLoading({ loading: true, label: t('workspace.openingWorkspace') }));
-        try {
-            const result = await loadWorkspace(name);
-            if (result) {
-                const displayName = metaDisplayName || result.displayName;
-                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: name, displayName, readOnly: result.readOnly } }));
-            } else {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(), type: 'error', component: 'workspace',
-                    value: t('workspace.failedToOpenWorkspace'),
-                }));
-            }
-        } catch (error) {
-            if (error instanceof WorkspaceLoadSupersededError) return;
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(), type: 'error', component: 'workspace',
-                value: t('workspace.failedToOpenWorkspace'),
-            }));
-        }
-        dispatch(dfActions.setSessionLoading({ loading: false }));
+        await dispatch(openSession(name, metaDisplayName));
     }, [dispatch]);
 
     const handleDeleteWorkspace = useCallback(async (name: string) => {
@@ -260,6 +328,20 @@ export const DataFormulatorFC = ({ }) => {
         }
     }, [renamingWs, renameDraft, savedWorkspaces, cancelRenameWorkspace, dispatch, fetchWorkspaces]);
 
+    const toggleStarWorkspace = useCallback(async (workspace: WorkspaceSummary) => {
+        const starred = !workspace.starred;
+        setSavedWorkspaces(prev => prev.map(w => (w.id === workspace.id ? { ...w, starred } : w)));
+        try {
+            await setWorkspaceStarred(workspace.id, starred);
+        } catch {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'error',
+                component: 'workspace', value: t('workspace.starFailed'),
+            }));
+            fetchWorkspaces();
+        }
+    }, [dispatch, fetchWorkspaces, t]);
+
     const handleExportWorkspace = useCallback(async (id: string) => {
         try {
             const blob = await exportWorkspace(id);
@@ -282,7 +364,7 @@ export const DataFormulatorFC = ({ }) => {
         dispatch(dfActions.setSessionLoading({ loading: true, label: t('workspace.importingFile', { name: file.name }) }));
         try {
             const wsName = file.name.replace(/\.zip$/, '') || 'imported';
-            const wsId = generateSessionId();
+            const wsId = generateWorkspaceId();
             const state = await importWorkspace(file, wsId, wsName);
             const restoredName = (state as any).activeWorkspace?.displayName || wsName;
             dispatch(dfActions.loadState({ ...state, activeWorkspace: { id: wsId, displayName: restoredName } }));
@@ -326,6 +408,29 @@ export const DataFormulatorFC = ({ }) => {
                 return copy;
         }
     }, [savedWorkspaces, wsSort]);
+    const starredSavedWorkspaces = useMemo(() => sortedSavedWorkspaces.filter(w => w.starred), [sortedSavedWorkspaces]);
+    const publishedExamples = usePublishedExamples(!inSession);
+
+    const workspaceCard = (w: WorkspaceSummary, onOpened?: () => void) =>
+        <ItemCard key={w.id} title={w.display_name} starred={w.starred} onOpen={() => { onOpened?.(); void handleOpenWorkspace(w.id, w.display_name); }}
+            rename={renamingWs === w.id ? { value: renameDraft, label: t('workspace.rename'), onChange: setRenameDraft,
+                onCommit: commitRenameWorkspace, onCancel: cancelRenameWorkspace } : undefined}
+            captions={[
+                w.scheduled_run && !w.scheduled_run.forked && <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'text.secondary', mt: 0.5 }}
+                    title={`${w.scheduled_run.scheduleName}: ${new Date(w.scheduled_run.scheduledFor).toLocaleString()}`}>
+                    <ScheduleOutlinedIcon sx={{ fontSize: iconVar.sm }} />Scheduled run
+                </Box>,
+                w.saved_at && new Date(w.saved_at).toLocaleString(),
+            ]}
+            actions={w.read_only ? undefined : <>
+                <StarAction starred={!!w.starred} onToggle={() => void toggleStarWorkspace(w)} />
+                <ItemCardAction label={t('workspace.rename')} icon={<EditOutlinedIcon />}
+                    onClick={() => startRenameWorkspace(w.id, w.display_name)} />
+                <ItemCardAction label={t('workspace.export')} icon={<DownloadIcon />} onClick={() => handleExportWorkspace(w.id)} />
+                {serverConfig?.SESSION_WORMHOLE_AVAILABLE && <ItemCardAction label={t('wormhole.send')} icon={<WormholeSendIcon />}
+                    onClick={() => requestWormholeDialog({ kind: 'send', workspaceId: w.id, displayName: w.display_name })} />}
+                <ItemCardAction danger label={t('workspace.delete')} icon={<DeleteIcon />} onClick={() => setConfirmDeleteWs(w.id)} />
+            </>} />;
     
     // Set up automatic refresh of derived tables when source data changes
     useDerivedTableRefresh();
@@ -333,49 +438,40 @@ export const DataFormulatorFC = ({ }) => {
     // State for unified data upload dialog
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
     const [uploadDialogInitialTab, setUploadDialogInitialTab] = useState<UploadTabType>('menu');
+    const [uploadDialogTablePath, setUploadDialogTablePath] = useState<string[] | undefined>();
 
     // Loading state for sessions (from Redux, shared with App.tsx)
     const sessionLoading = useSelector((state: DataFormulatorState) => state.sessionLoading);
     const sessionLoadingLabel = useSelector((state: DataFormulatorState) => state.sessionLoadingLabel);
 
-    const openUploadDialog = (tab: UploadTabType) => {
+    const openUploadDialog = (tab: UploadTabType, tablePath?: string[]) => {
         if (activeWorkspace?.readOnly) return;
-        // If no workspace is active, generate an ID (backend creates folder lazily on first data op)
-        if (!activeWorkspace) {
-            dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'Untitled Session' }));
-        }
-        // Compact mode: when opening the generic menu but a data-loading
-        // conversation is already in progress, land directly on the chat so
-        // the prior history (and any in-progress extractions / load plan) is
-        // visible instead of the empty menu hero. Explicit tab requests
-        // (connector, upload, paste, …) are respected as-is; the menu's
-        // connectors / direct-load options stay one back-arrow click away.
-        const resolvedTab = (tab === 'menu' && dataLoadingChatMessages.length > 0)
-            ? 'extract'
-            : tab;
-        setUploadDialogInitialTab(resolvedTab);
+        // The dialog talks to the backend, so it needs a workspace ID — but
+        // opening it is not entering a session. It stays provisional (landing
+        // page) until data lands.
+        dispatch(ensureActiveWorkspace());
+        setUploadDialogInitialTab(tab);
+        setUploadDialogTablePath(tablePath);
         setUploadDialogOpen(true);
     };
 
-    // The dialog needs a workspace id to talk to the backend, but opening it is
-    // not entering a session: stay on the landing page until data lands.
-    const provisionalSession = uploadDialogOpen && sessionEmpty;
-
-    // Seed the Data Loading chat through the single redux `pending` slot,
-    // then navigate to the extract tab. This is the one channel that
-    // carries text, images, AND file attachments as first-class fields —
-    // replacing the older `initialChatPrompt/Images` props that silently
-    // dropped file attachments (they had no dedicated field and only
-    // survived if their name was baked into the prompt text).
-    const startDataLoadingChat = (text: string, images: string[] = [], attachments: string[] = []) => {
-        if (text.trim().length > 0 || images.length > 0 || attachments.length > 0) {
-            // Preserve any prior conversation (Option A). `queueDataLoadingTask`
-            // drops a "new request" divider when a thread already exists, then
-            // enqueues the submission; the user resets explicitly via the
-            // header reset button when they want a blank slate.
-            dispatch(dfActions.queueDataLoadingTask({ text, images, attachments }));
+    const closeUploadDialog = async () => {
+        setUploadDialogOpen(false);
+        const state = store.getState();
+        const workspaceId = state.activeWorkspace?.id;
+        // Non-table files saved from the dialog only show up in the file
+        // count; refresh it so a file-only upload still enters the session.
+        if (workspaceId && dfSelectors.selectSessionEmpty(state)) {
+            try {
+                const files = await listWorkspaceFiles();
+                if (store.getState().activeWorkspace?.id === workspaceId) {
+                    dispatch(dfActions.setWorkspaceFileCount(files.length));
+                }
+            } catch {
+                // The count is refreshed again when the thread mounts.
+            }
         }
-        openUploadDialog('extract');
+        refreshPageConnectors();
     };
 
     // The landing box starts the unified analyst conversation — loading data is
@@ -383,15 +479,13 @@ export const DataFormulatorFC = ({ }) => {
     const startAnalystChat = (text: string, images: string[] = [], attachments: string[] = []) => {
         if (activeWorkspace?.readOnly) return;
         if (text.trim().length === 0 && images.length === 0 && attachments.length === 0) return;
-        // Every agent call carries X-Workspace-Id; the landing page can be used
-        // before a workspace exists, so mint one the way openUploadDialog does.
-        if (!activeWorkspace) {
-            dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'Untitled Session' }));
-        }
+        // Every agent call carries X-Workspace-Id; queuing the task below is
+        // what turns the provisional workspace into a session.
+        dispatch(ensureActiveWorkspace());
         dispatch(dfActions.queueAnalystTask({ text, images, attachments }));
     };
 
-    const handleLoadExampleSession = async (session: ExampleSession) => {
+    const handleLoadExampleSession = async (session: ExampleSession, workspaceTitle?: string, exampleId?: string): Promise<boolean> => {
         dispatch(dfActions.setSessionLoading({ loading: true, label: t('messages.loadingExample', { title: session.title }) }));
 
         dispatch(dfActions.addMessages({
@@ -403,17 +497,20 @@ export const DataFormulatorFC = ({ }) => {
 
         try {
             // Fetch the workspace zip
-            const res = await fetch(session.workspace);
+            const res = await fetchWithIdentity(session.workspace);
             if (!res.ok) throw new Error(`Failed to fetch ${session.workspace}`);
             const blob = await res.blob();
             const file = new File([blob], `${session.id}.zip`, { type: 'application/zip' });
 
             // Import via the standard workspace import flow (parquet + state)
-            const wsId = generateSessionId();
-            // Set workspace ID first so fetchWithIdentity sends X-Workspace-Id header
-            dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: session.title }));
+            const wsId = generateWorkspaceId();
+            // Set workspace ID first so fetchWithIdentity sends X-Workspace-Id
+            // header; provisional so a failed import stays on the landing page.
+            dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: session.title, provisional: true }));
             const state = await importWorkspace(file, wsId, session.title);
-            dispatch(dfActions.loadState({ ...state, activeWorkspace: { id: wsId, displayName: session.title } }));
+            dispatch(dfActions.loadState({ ...state, activeWorkspace: { id: wsId, displayName: session.title, ...(exampleId && { exampleId }) } }));
+            if (workspaceTitle) dispatch(dfActions.setWorkspaceTitle(workspaceTitle));
+            dispatch(dfActions.setExampleFollowUps({ title: session.title, questions: session.followUps || [] }));
 
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
@@ -421,6 +518,7 @@ export const DataFormulatorFC = ({ }) => {
                 component: 'data formulator',
                 value: t('messages.loadSuccess', { title: session.title }),
             }));
+            return true;
         } catch (error: any) {
             console.error('Error loading session:', error);
             dispatch(dfActions.addMessages({
@@ -429,14 +527,48 @@ export const DataFormulatorFC = ({ }) => {
                 component: 'data formulator',
                 value: t('messages.loadFailed', { title: session.title, error: error.message }),
             }));
+            return false;
         } finally {
             dispatch(dfActions.setSessionLoading({ loading: false }));
         }
     };
 
+    /** A space's starter session; with a question, the analyst starts on it once the session is open. */
+    const handleOpenStarter = async (starter: SpaceStarter, question?: string, followUps?: string[]) => {
+        const opened = await handleLoadExampleSession({ id: starter.id, title: starter.title,
+            description: starter.description || '', previewImage: '', workspace: starter.workspace, live: false, followUps }, starter.title);
+        if (opened && question) {
+            dispatch(ensureActiveWorkspace());
+            dispatch(dfActions.queueAnalystTask({ text: question, images: [], attachments: [] }));
+        } else if (opened && !followUps?.length) {
+            // A dataset on its own: say it is ready and offer questions to start from (design-docs/69).
+            const prompts = (starter.stories || []).map(story => story.prompt).filter(Boolean);
+            dispatch(dfActions.setExampleFollowUps({ title: starter.title,
+                questions: (prompts.length ? prompts : starter.questions).slice(0, 3),
+                intro: t('chartRec.datasetLoadedIntro', { name: starter.title, defaultValue:
+                    '{{name}} is loaded. Ask the analyst anything about it in the chat, or start with one of these:' }) }));
+        }
+    };
+    /** A copy of a story's saved session, its question already answered, remembered as opened from the story. */
+    const openStoryCopy = async (starter: SpaceStarter, story: SpaceStory) => {
+        await handleLoadExampleSession({ id: story.id, title: story.headline, description: story.dek || '',
+            previewImage: story.image || '', workspace: story.session, live: false, followUps: story.follow_ups },
+            starter.title, `${starter.id}/${story.id}`);
+    };
+    // A story opened before: whether to continue that session or start a new copy.
+    const [storyReopen, setStoryReopen] = useState<{ starter: SpaceStarter; story: SpaceStory; previous: WorkspaceSummary }>();
+    /** A story opens on its saved session (the visitor's earlier copy, if they choose it); without one the analyst runs it live. */
+    const handleOpenStory = async (starter: SpaceStarter, story: SpaceStory) => {
+        if (!story.available) return handleOpenStarter(starter, story.prompt, story.follow_ups);
+        const exampleId = `${starter.id}/${story.id}`;
+        const previous = savedWorkspaces
+            .filter(w => w.example_id === exampleId && !w.read_only)
+            .sort((a, b) => (b.saved_at || '').localeCompare(a.saved_at || ''))[0];
+        if (previous) setStoryReopen({ starter, story, previous });
+        else await openStoryCopy(starter, story);
+    };
+
     useEffect(() => {
-        document.title = toolName;
-        
         // Preload imported images (public images are preloaded in index.html)
         const imagesToPreload = [
             { src: dfLogo, type: 'image/svg+xml' },
@@ -483,7 +615,7 @@ export const DataFormulatorFC = ({ }) => {
 
     let borderBoxStyle = {
         border: `1px solid ${borderColor.view}`, 
-        borderRadius: radius.pill, 
+        borderRadius: cardRadius(radius.pill), 
         //boxShadow: '0 0 5px rgba(0,0,0,0.1)',
     }
 
@@ -493,6 +625,7 @@ export const DataFormulatorFC = ({ }) => {
     const allotmentRef = useRef<AllotmentHandle>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const paneSizesRef = useRef<number[]>([]);
+    const dragStartWidthRef = useRef(0);
 
     const { widthClass, tokens } = useLayout();
     const isPhone = useMediaQuery('(max-width:699px)');
@@ -527,7 +660,13 @@ export const DataFormulatorFC = ({ }) => {
 
     const snapToColumns = useCallback((sizes: number[]) => {
         if (sizes.length < 2) return;
-        const columns = nearestColumnCount(sizes[0]);
+        // A deliberate drag moves at least one column its way; only a small nudge springs back.
+        const startColumns = nearestColumnCount(dragStartWidthRef.current);
+        const delta = sizes[0] - dragStartWidthRef.current;
+        let columns = nearestColumnCount(sizes[0]);
+        if (columns === startColumns && Math.abs(delta) >= DRAG_INTENT_PX) {
+            columns = Math.min(columnCapRef.current, Math.max(1, startColumns + Math.sign(delta)));
+        }
         const target = paneWidth(columns);
         setUserColumns(columns);
 
@@ -645,8 +784,61 @@ export const DataFormulatorFC = ({ }) => {
         return () => cancelAnimationFrame(rafId);
     }, [canvasOpen, preferredColumns, splitWidth, tokens.canvas.min]);
 
+    // The landing's sources and ways to add data: under the chat, or after a space's centred chat.
+    const landingSources = {
+        onUpload: () => openUploadDialog('upload'),
+        onConnect: serverConfig.DISABLE_DATA_CONNECTORS ? undefined : () => openUploadDialog('add-connection'),
+        onLinkFolder: serverConfig?.IS_LOCAL_MODE && !serverConfig.DISABLE_DATA_CONNECTORS ? () => openUploadDialog('local-folder') : undefined,
+        onSelectConnector: (conn: ConnectorInstance) => {
+            // Already-authed connector → open the data-source
+            // sidebar focused on it. Otherwise open the upload
+            // dialog at the connector's auth/connect tab.
+            if (conn.connected || conn.sso_auto_connect) {
+                dispatch(dfActions.focusConnector(conn.id));
+            } else {
+                openUploadDialog(`connector:${conn.id}` as UploadTabType);
+            }
+        },
+        connectors: pageConnectors,
+    };
+    const askDatasets = t('landing.demoAskDatasets', { defaultValue: 'What datasets do we have here?' });
+    const quickActionContext = {
+        hasUserSources: pageConnectors.some(conn => (conn.connected || conn.sso_auto_connect) && conn.id !== 'sample_datasets'),
+        hasSessions: savedWorkspaces.some(listedAsSession),
+        hasWorkflows: userWorkflows.any,
+        canWorkflow: workflowsAvailable,
+        canSchedule,
+        hasSchedules: userWorkflows.scheduled,
+    };
+    // Under a blank session's note: a few things to ask the agent for (in a space, its own questions).
+    // The live-data pick (not in a space, which shows only its own data): one everyday question, picked at random,
+    // whose live data the app loads for the agent to chart.
+    // The live-data questions this deployment offers, one at a time in a carousel.
+    const liveQuestions = availableLiveQuestions(!!serverConfig.IS_LOCAL_MODE);
+    const runLivePick = async (liveQuestion: LiveQuestion) => {
+        try {
+            const live = await fetchLiveData(t, liveQuestion, { language: i18n.language });
+            const names: string[] = [];
+            for (const table of live.tables) names.push((await dispatch(loadTable({ table })).unwrap()).table.id);
+            dispatch(dfActions.queueAnalystTask({ text: live.request(names), displayText: live.label, images: [], attachments: [] }));
+        } catch (error) {
+            // The link says only that it did not come through; the reason (say, a rate limit) goes to the system messages.
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), type: 'warning', component: 'live data',
+                value: t('upload.livePick.failedDetail', { defaultValue: 'Could not load live data for "{{question}}": {{reason}}',
+                    question: livePickCopy(t, liveQuestion).ask, reason: error instanceof Error ? error.message : String(error) }) }));
+            throw error;
+        }
+    };
+    const sessionStarter = activeWorkspace?.readOnly ? undefined : <>
+        <QuickChatOptions onPick={text => startAnalystChat(text)}
+            suggestions={space ? [askDatasets, ...(space.suggestions || [])] : buildSessionStartPrompts(t, {
+                workflows: workflowsAvailable, schedules: canSchedule, connectors: !serverConfig.DISABLE_DATA_CONNECTORS, local: !!serverConfig.IS_LOCAL_MODE,
+            })} />
+        {!space && <LiveQuestionCarousel questions={liveQuestions} copyFor={question => livePickCopy(t, question)} onRun={runLivePick} />}
+    </>;
+
     const threadPanel = (
-        <DataThread centered={!canvasOpen} denseColumns={isPhone} sx={{
+        <DataThread centered={!canvasOpen} denseColumns={isPhone} emptyStarter={sessionStarter} sx={{
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
@@ -655,36 +847,37 @@ export const DataFormulatorFC = ({ }) => {
         }}/>
     );
 
+    // Under the tab strip, view headers carry neither the title (the tab has it) nor close.
+    const canvasChrome = useMemo(() => ({ tabbed: true }), []);
+
+    // Browser-style: the tabs sit above the canvas box and the active tab opens into it. Under an active
+    // tab at either end, the box's corner squares off so the tab's edge runs straight down.
     const canvasPanel = (
         <Box sx={{
-            ...(isPhone ? {} : borderBoxStyle),
-            height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column',
-            boxSizing: 'border-box', position: 'relative',
+            height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0,
+            '&:has([data-canvas-tabs] [role="tab"]:first-of-type[aria-selected="true"]) > [data-canvas-pane]': { borderTopLeftRadius: 0 },
+            '&:has([data-canvas-tabs][data-flush-end] [role="tab"]:last-of-type[aria-selected="true"]) > [data-canvas-pane]': { borderTopRightRadius: 0 },
         }}>
-            <Tooltip title={t('canvas.close', { defaultValue: 'Close canvas' })}>
-                <IconButton
-                    size="small"
-                    onClick={closeCanvas}
-                    sx={{
-                        position: 'absolute', top: 8, right: 8, zIndex: 20,
-                        color: 'text.secondary',
-                        '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' },
-                    }}
-                >
-                    <CloseIcon sx={{ fontSize: iconVar.md }} />
-                </IconButton>
-            </Tooltip>
-            {viewMode === 'editor' ? visPane : <ReportView />}
+            <CanvasTabs target={canvasTarget} viewMode={viewMode} onCloseCanvas={closeCanvas} />
+            <Box data-canvas-pane sx={{
+                ...(isPhone ? {} : borderBoxStyle),
+                flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column',
+                boxSizing: 'border-box', position: 'relative', bgcolor: 'background.paper',
+            }}>
+                <CanvasChromeContext.Provider value={canvasChrome}>
+                    {viewMode === 'report' || canvasTarget?.type === 'report' ? <ReportView /> : visPane}
+                </CanvasChromeContext.Provider>
+            </Box>
         </Box>
     );
 
     const phoneWorkspace = (
         <Box sx={{ display: 'flex', height: '100%', minWidth: 0 }}>
             <DataSourceSidebar
-                onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
+                onOpenUploadDialog={(tab, tablePath) => openUploadDialog((tab ?? 'menu') as UploadTabType, tablePath)}
                 connectorRefreshKey={connectorRefreshKey}
                 onConnectorsChanged={handleConnectorsChanged}
-                onStartDataLoadingChat={(text) => startDataLoadingChat(text)}
+                onAskAgent={(text) => startAnalystChat(text)}
             />
             <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden' }}>
                 <Tabs
@@ -715,13 +908,13 @@ export const DataFormulatorFC = ({ }) => {
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
             <DataSourceSidebar
-                onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
+                onOpenUploadDialog={(tab, tablePath) => openUploadDialog((tab ?? 'menu') as UploadTabType, tablePath)}
                 connectorRefreshKey={connectorRefreshKey}
                 onConnectorsChanged={handleConnectorsChanged}
-                onStartDataLoadingChat={(text) => startDataLoadingChat(text)}
+                onAskAgent={(text) => startAnalystChat(text)}
             />
             <Box ref={containerRef} className="outer-allotment" sx={{
-                    margin: '4px 8px 8px 8px', backgroundColor: 'white',
+                    margin: '4px 8px 8px 8px', backgroundColor: paper(),
                     display: 'flex', height: 'calc(100% - 12px)', flex: 1, minWidth: 0, flexDirection: 'column',
                     overflow: 'hidden',
                     position: 'relative',
@@ -745,11 +938,11 @@ export const DataFormulatorFC = ({ }) => {
                 <Allotment
                     ref={allotmentRef}
                     onChange={(sizes) => { paneSizesRef.current = sizes; }}
-                    onDragStart={() => setSashDragging(true)}
+                    onDragStart={() => { dragStartWidthRef.current = paneSizesRef.current[0] ?? 0; setSashDragging(true); }}
                     onDragEnd={(sizes) => { setSashDragging(false); snapToColumns(sizes); }}
                     proportionalLayout={false}
                 >
-                    <Allotment.Pane minSize={paneWidth(1)} 
+                    <Allotment.Pane key="thread" minSize={paneWidth(1)} 
                             preferredSize={paneWidth(preferredColumns)} 
                             // Uncapped with the canvas away, so the thread can take
                             // the whole surface. Must be an explicit Infinity:
@@ -757,16 +950,18 @@ export const DataFormulatorFC = ({ }) => {
                             maxSize={canvasOpen ? paneWidth(columnCap) : Number.POSITIVE_INFINITY} snap={false}>
                         {threadPanel}
                     </Allotment.Pane>
-                    <Allotment.Pane minSize={tokens.canvas.min} visible={canvasOpen}>
-                        {canvasPanel}
-                    </Allotment.Pane>
+                    {canvasTarget && (
+                        <Allotment.Pane key="canvas" minSize={tokens.canvas.min} visible={canvasOpen}>
+                            {canvasPanel}
+                        </Allotment.Pane>
+                    )}
                 </Allotment>
             </Box>
         </Box>
     );
 
     let footer = <Box sx={{ color: 'text.secondary', display: 'flex', 
-            backgroundColor: 'rgba(255, 255, 255, 0.89)',
+            backgroundColor: paper(0.89),
             alignItems: 'center', justifyContent: 'center' }}>
         <Button size="small" color="inherit" 
             sx={{ textTransform: 'none'}} 
@@ -785,45 +980,215 @@ export const DataFormulatorFC = ({ }) => {
         <Typography sx={{ display: 'inline', fontSize: textVar.sm, ml: 1 }}> @ {new Date().getFullYear()}</Typography>
     </Box>
 
+    const spaceSessions = sortedSavedWorkspaces.filter(listedAsSession);
+    const spaceLibrary = space && <SpaceLanding space={space}
+        sessions={spaceSessions.length > 0 && <Box sx={itemCardGridSx}>
+            {spaceSessions.slice(0, INITIAL_SESSION_COUNT).map(w => workspaceCard(w))}
+        </Box>} />;
+
+    // The landing page's examples and saved items; workflow parts only where the deployment offers workflows.
+    const homeLibrary = ({ examples, saved, toolbar }: { examples?: React.ReactNode; saved?: React.ReactNode; toolbar?: React.ReactNode }) => <Box data-home-library sx={{ mt: 3 }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: examples !== undefined ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)' }, gap: 4, alignItems: 'start' }}>
+            <Box component="section" aria-label={t('landing.exampleSessions', { defaultValue: 'Example sessions' })} sx={{ minWidth: 0 }}>
+                <Typography component="h2" sx={homeSectionTitleSx}>
+                    {t('landing.exampleSessions', { defaultValue: 'Example sessions' })}
+                </Typography>
+                <Box sx={itemCardGridSx}>
+                    {publishedExamples.map(session => <ExampleSessionCard key={session.id} session={session}
+                        onClick={() => void handleLoadExampleSession(session)} />)}
+                    {demoSessions.map((session) => (
+                        <ExampleSessionCard
+                            key={session.id}
+                            session={session}
+                            onClick={() => handleLoadExampleSession(session)}
+                        />
+                    ))}
+                </Box>
+            </Box>
+            {examples !== undefined && <Box sx={{ minWidth: 0 }}>
+                <Typography component="h2" sx={homeSectionTitleSx}>
+                    {t('landing.exampleWorkflows', { defaultValue: 'Example workflows' })}
+                </Typography>
+                {examples}
+            </Box>}
+            </Box>
+
+            {/* ── Saved workspaces section ──────────────────────────── */}
+            <LandingLibrary workflowsToolbar={toolbar} workflows={saved} showWorkflows={saved !== undefined}
+                sessionsToolbar={<>
+                    <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
+                    <Select
+                        size="small"
+                        variant="standard"
+                        value={wsSort}
+                        onChange={(e) => setWsSort(e.target.value as typeof wsSort)}
+                        disableUnderline
+                        inputProps={{ 'aria-label': t('workspace.sortSessions') }}
+                        IconComponent={(props) => (
+                            <ExpandMoreIcon {...props} sx={{ fontSize: iconVar.md, color: 'text.disabled', right: 0 }} />
+                        )}
+                        sx={{
+                            fontSize: textVar.sm,
+                            color: 'text.disabled',
+                            cursor: 'pointer',
+                            '& .MuiSelect-select': { py: 0.25, pl: 0, pr: '16px !important', minHeight: 0 },
+                            '&:hover': { color: 'text.secondary' },
+                            '&:hover .MuiSelect-icon': { color: 'text.secondary' },
+                        }}
+                        renderValue={(v) => {
+                            const labels: Record<typeof wsSort, string> = {
+                                created_desc: t('workspace.sortNewest'),
+                                created_asc: t('workspace.sortOldest'),
+                                updated_desc: t('workspace.sortRecentlyModified'),
+                                name_asc: t('workspace.sortName'),
+                            };
+                            return labels[v as typeof wsSort];
+                        }}
+                    >
+                        <MenuItem value="created_desc" sx={{ fontSize: textVar.sm }}>{t('workspace.sortNewestFirst')}</MenuItem>
+                        <MenuItem value="created_asc" sx={{ fontSize: textVar.sm }}>{t('workspace.sortOldestFirst')}</MenuItem>
+                        <MenuItem value="updated_desc" sx={{ fontSize: textVar.sm }}>{t('workspace.sortRecentlyModifiedFirst')}</MenuItem>
+                        <MenuItem value="name_asc" sx={{ fontSize: textVar.sm }}>{t('workspace.sortNameAsc')}</MenuItem>
+                    </Select>
+                    <Button variant="outlined" size="small" startIcon={<UploadFileIcon sx={{ fontSize: iconVar.md }} />}
+                        onClick={() => importRef.current?.click()}
+                        sx={{ fontSize: textVar.xs, textTransform: 'none', whiteSpace: 'nowrap' }}>
+                        {t('workspace.importSession', { defaultValue: 'Import session' })}
+                    </Button>
+                    {serverConfig?.SESSION_WORMHOLE_AVAILABLE && (
+                        <Button variant="outlined" size="small" startIcon={<WormholeReceiveIcon sx={{ fontSize: iconVar.md }} />}
+                            onClick={() => requestWormholeDialog({ kind: 'receive' })}
+                            sx={{ fontSize: textVar.xs, textTransform: 'none', whiteSpace: 'nowrap' }}>
+                            {t('wormhole.receiveSession')}
+                        </Button>
+                    )}
+                </>}
+                sessions={<>
+                {starredSavedWorkspaces.length > 0 && <Box component="section" aria-labelledby="home-starred-sessions" sx={{ mb: 3.5 }}>
+                    <Typography id="home-starred-sessions" component="h3" sx={homeSessionGroupHeaderSx}>{t('workspace.starred')}</Typography>
+                    <Box ref={starredGridRef} sx={itemCardGridSx}>
+                        {starredSavedWorkspaces.slice(0, starredGridColumns * 2).map(w => workspaceCard(w))}
+                    </Box>
+                    {starredSavedWorkspaces.length > starredGridColumns * 2 && (
+                        <Button size="small" aria-haspopup="dialog" onClick={() => { setAllSessionsStarredOnly(true); setAllSessionsOpen(true); }}
+                            sx={{ mt: 1, textTransform: 'none', fontSize: textVar.sm, fontWeight: weight(400) }}>
+                            {t('workspace.showAllStarred', { count: starredSavedWorkspaces.length })}
+                        </Button>
+                    )}
+                </Box>}
+                {starredSavedWorkspaces.length > 0
+                    && <Typography component="h3" sx={homeSessionGroupHeaderSx}>{t('workspace.sessions')}</Typography>}
+                <Box id="saved-session-grid" sx={itemCardGridSx}>
+                    {sortedSavedWorkspaces.slice(0, INITIAL_SESSION_COUNT).map(w => workspaceCard(w))}
+                </Box>
+                {sortedSavedWorkspaces.length > INITIAL_SESSION_COUNT && (
+                    <Button size="small" aria-haspopup="dialog" onClick={() => { setAllSessionsStarredOnly(false); setAllSessionsOpen(true); }}
+                        sx={{ mt: 1, textTransform: 'none', fontSize: textVar.sm, fontWeight: weight(400) }}>
+                        {t('workspace.showAllSessions', { defaultValue: 'Show all ({{count}})', count: sortedSavedWorkspaces.length })}
+                    </Button>
+                )}
+                </>} />
+            </Box>;
+
+    const tagline = space?.tagline || serverConfig.APP_TAGLINE || t('landing.tagline');
+    const taglineSx = {
+        fontSize: { xs: space ? 15 : 16, sm: space ? 16 : 21 },
+        // A space's tagline reads as its subtitle, so it is darker than the app's.
+        color: inkColor(theme, space ? 0.82 : 0.7),
+        lineHeight: 1.4,
+        minWidth: 0,
+        overflowWrap: 'anywhere',
+        whiteSpace: 'pre-line',
+        textWrap: 'balance',
+    } as const;
+    const lockup = !!space?.logo;
+    // The version, small and muted, at the end of the tagline; an update button when a newer release is out.
+    const versionTag = <VersionTag version={serverConfig.VERSION} />;
+    const heading = (size: number) => <Typography component="h1" sx={{
+        fontSize: { xs: 28, sm: size },
+        lineHeight: 1.05,
+        letterSpacing: 0,
+        overflowWrap: 'anywhere',
+        textWrap: 'balance',
+    }}>
+        {space ? headingLines.map((line, index) => <Box component="span" key={index} sx={{ display: 'block' }}>
+            {/* The badge hangs off the last line's end, so the title stays centred on its words. */}
+            <Box component="span" sx={{ position: 'relative' }}>
+                {withTitleHearts(line)}
+                {space.badge && index === headingLines.length - 1 && <Box component="span" sx={{ position: 'absolute', left: '100%', top: '50%',
+                    transform: 'translateY(-50%)', ml: 1.5, px: 1, py: '2px', whiteSpace: 'nowrap',
+                    fontSize: { xs: 12, sm: 14 }, fontWeight: weight(600), lineHeight: 1.3, letterSpacing: 0,
+                    color: 'primary.main', borderRadius: 1, bgcolor: alpha(theme.palette.primary.main, 0.1) }}>
+                    {space.badge}
+                </Box>}
+            </Box>
+        </Box>) : appName}
+    </Typography>;
+
+
     let dataUploadRequestBox = <Box sx={{
             margin: '4px 4px 4px 8px', 
-            background: `
-                linear-gradient(90deg, ${alpha(theme.palette.text.primary, 0.025)} 1px, transparent 1px),
-                linear-gradient(0deg, ${alpha(theme.palette.text.primary, 0.025)} 1px, transparent 1px)
-            `,
-            backgroundSize: '16px 16px',
+            ...canvasPattern(`
+                linear-gradient(90deg, ${alpha(theme.palette.text.primary, 0.02)} 1px, transparent 1px),
+                linear-gradient(0deg, ${alpha(theme.palette.text.primary, 0.02)} 1px, transparent 1px)
+            `, '24px 24px'),
             flex: 1, minWidth: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%',
         }}>
-        <Box sx={{mx:'auto', pb: 8, display: "flex", flexDirection: "column", textAlign: "center", maxWidth: 1024, width: '100%', px: 2, boxSizing: 'border-box' }}>
+        <Box sx={{mx:'auto', pb: 8, display: "flex", flexDirection: "column", textAlign: "center", maxWidth: space ? SPACE_PAGE : 1024, width: '100%', px: 2, boxSizing: 'border-box' }}>
             {/* Hero — fills the viewport so title + input own the first screen;
                 Demos/Sessions live below the fold and just peek up. */}
-            <Box sx={{ minHeight: 'calc(100vh - 150px)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 1.25 }, mx: 'auto' }}>
+            <Box sx={space
+                // A space's chat is at the middle of the screen whatever follows it: this block (title to chat) ends
+                // half a chat below the middle, and the dataset tabs follow it (design-docs/69).
+                ? { minHeight: SPACE_CHAT_CENTRE, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', boxSizing: 'border-box', pt: 3 }
+                : { minHeight: 'calc(100vh - 140px)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <Box sx={{ mx: 'auto', width: '100%', minWidth: 0 }}>
+                {lockup ? (
+                    // A space with its own logo: its logo and Data Formulator's, a rule, then the title and tagline
+                    // read from the left, as a co-branded lockup centred on the page (stacked on a narrow screen).
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: { xs: 'column', sm: 'row' },
+                        gap: { xs: 2, sm: 3.5 }, textAlign: { xs: 'center', sm: 'left' } }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+                            <Box component="img" src={space?.logo ?? undefined} alt="" sx={{ display: 'block', height: { xs: 40, sm: 64 }, width: 'auto' }} />
+                            <Box component="img" src={dfLogo} alt="Data Formulator" sx={{ display: 'block', height: { xs: 36, sm: 56 }, width: 'auto' }} />
+                        </Box>
+                        <Box aria-hidden sx={{ display: { xs: 'none', sm: 'block' }, width: '1px', alignSelf: 'stretch', bgcolor: 'divider' }} />
+                        {/* As wide as its text: the title, or a tagline of up to 30em on one line, so the column never
+                            takes all the room it has and pushes the lockup off centre. The hidden copy sizes the column;
+                            the tagline itself fills it, so under a wider title it wraps at the title's width, not at 30em. */}
+                        <Box sx={{ minWidth: 0, maxWidth: '100%', width: { sm: 'max-content' } }}>
+                            {heading(Math.min(headingSize, 40))}
+                            <Typography aria-hidden sx={{ ...taglineSx, display: { xs: 'none', sm: 'block' }, height: 0,
+                                overflow: 'hidden', visibility: 'hidden', maxWidth: '30em' }}>
+                                {tagline}{versionTag}
+                            </Typography>
+                            <Typography sx={{ ...taglineSx, mt: 1, textAlign: 'inherit', width: { sm: 0 }, minWidth: { sm: '100%' } }}>
+                                {tagline}{versionTag}
+                            </Typography>
+                        </Box>
+                    </Box>
+                ) : heading(headingSize)}
+            </Box>
+            {!lockup && <Box sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 1,
+                mt: 1.25,
+            }}>
                 <Box
                     component="img"
                     src={dfLogo}
                     alt=""
-                    sx={{ width: { xs: 28, sm: 60 }, height: { xs: 26, sm: 55 }, flexShrink: 0 }}
+                    sx={{ width: 25, height: 23, flexShrink: 0, display: 'block', transform: 'translateY(-2px)' }}
                 />
-                <Typography sx={{
-                    fontSize: { xs: 28, sm: 60 },
-                    lineHeight: 1.05,
-                    letterSpacing: '0.03em',
-                }}>
-                    {toolName}
-                </Typography>
-            </Box>
-            <Typography sx={{ 
-                fontSize: { xs: 18, sm: 21 }, color: alpha(theme.palette.text.primary, 0.7),
-                display: { xs: 'none', sm: 'block' },
-                lineHeight: 1.4, textAlign: 'center', mt: 1.25, mb: 0}}>
-                {t('landing.tagline')}
-            </Typography>
+                <Typography sx={{ ...taglineSx, textAlign: 'center' }}>{tagline}{versionTag}</Typography>
+            </Box>}
 
             {/* Hosted-demo notice — borderless strip (it's prose, not a
                 button) placed before the Import Data section. The rocket
-                gets a quiet lift to add a touch of life. */}
-            {serverConfig.DISABLE_DATA_CONNECTORS && (
+                gets a quiet lift to add a touch of life. A space space has its own note at the foot. */}
+            {serverConfig.WORKSPACE_BACKEND === 'ephemeral' && !space && (
                 <Box
                     sx={{
                         mt: 2,
@@ -906,192 +1271,62 @@ export const DataFormulatorFC = ({ }) => {
                 </Box>
             )}
 
-            <Box sx={{ mt: 3.5 }}>
-                <DataLoadMenu 
-                    onSelectTab={(tab) => openUploadDialog(tab)}
-                    onSelectConnector={(conn) => {
-                        // Already-authed connector → open the data-source
-                        // sidebar focused on it. Otherwise open the upload
-                        // dialog at the connector's auth/connect tab.
-                        if (conn.connected || conn.sso_auto_connect) {
-                            dispatch(dfActions.focusConnector(conn.id));
-                        } else {
-                            openUploadDialog(`connector:${conn.id}` as UploadTabType);
-                        }
-                    }}
-                    onStartChat={(prompt, images, attachments) => startAnalystChat(prompt, images, attachments)}
-                    hasPriorConversation={dataLoadingChatMessages.length > 0}
-                    onResumeChat={() => openUploadDialog('extract')}
-                    serverConfig={serverConfig}
-                    connectors={pageConnectors}
+            <Box sx={{ mt: 5 }}>
+                <LandingDataEntry
+                    onStartChat={startAnalystChat}
+                    ensureActiveWorkspace={() => dispatch(ensureActiveWorkspace())}
+                    {...landingSources}
+                    readOnly={activeWorkspace?.readOnly || space?.status === 'not_installed'}
+                    space={space ? {
+                        // What the space has, and its analyses of the dataset in the tab below (design-docs/69).
+                        suggestions: [
+                            askDatasets,
+                            ...(spaceDataset ? [t('landing.demoAskAnalysis', { defaultValue: 'Show me your analysis of {{name}}',
+                                name: inSentence(spaceDataset.kicker || spaceDataset.title) })] : []),
+                            ...(space.suggestions || []),
+                        ],
+                        placeholder: space.chat_placeholder,
+                    } : undefined}
+                    quickActionContext={quickActionContext}
                 />
             </Box>
             </Box>
 
-            {/* Demos — promoted ahead of "Your Sessions" on the hosted
-                demo, since first-time visitors won't have any sessions
-                yet and demos are the most engaging entry point. */}
-            <Box sx={{mt: 3}}>
-                <Typography sx={{ color: alpha(theme.palette.text.primary, 0.76), fontSize: textVar.md, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'left', mb: 2 }}>
-                    {t('landing.demos')}
-                </Typography>
-                <Box sx={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-                    gap: 1.5,
-                }}>
-                    {demoSessions.map((session) => (
-                        <ExampleSessionCard
-                            key={session.id}
-                            session={session}
-                            onClick={() => handleLoadExampleSession(session)}
-                        />
-                    ))}
-                </Box>
-            </Box>
+            {space ? <>
+                {space.status !== 'not_installed' && <Box sx={{ mx: 'auto', width: '100%', maxWidth: SPACE_COLUMN, textAlign: 'left' }}>
+                    {/* After the centred block, so the chat stays at the screen's middle. A space lists its sources only,
+                        without the "Add data:" row. */}
+                    <LandingSources connectors={landingSources.connectors} onSelectConnector={landingSources.onSelectConnector} />
+                    <SpaceDatasetTabs starters={space.starters} disabled={sessionLoading || activeWorkspace?.readOnly}
+                        onLoad={(starter, question) => void handleOpenStarter(starter, question)}
+                        onOpenStory={(starter, story) => void handleOpenStory(starter, story)} onSelect={setSpaceDataset} />
+                </Box>}
+                {spaceLibrary}
+            </> : workflowsAvailable ? <WorkflowPanel presentation="landing" onCreateSession={displayName => {
+                dispatch(dfActions.resetForNewWorkspace({ id: generateWorkspaceId(), displayName }));
+            }} renderLanding={homeLibrary} /> : homeLibrary({})}
+            {/* ── All sessions ────────────────────── */}
+            <SessionsDialog open={allSessionsOpen} onClose={() => { cancelRenameWorkspace(); setAllSessionsOpen(false); }}
+                title={t('workspace.yourSessions')} sessions={sortedSavedWorkspaces} starredOnly={allSessionsStarredOnly}
+                groupTime={wsSort === 'name_asc' ? undefined
+                    : wsSort === 'updated_desc' ? (w => w.saved_at || w.created_at) : (w => w.created_at)}
+                renderCard={w => workspaceCard(w, () => setAllSessionsOpen(false))} />
+        </Box>
+        {footer}
+    </Box>;
 
-            {/* ── Saved workspaces section ──────────────────────────── */}
-            <Box sx={{mt: 8}}>
-                {/* Section header — left-aligned label with the sort control
-                    on the right, aligned to the card grid. */}
-                <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 2 }}>
-                    <Typography sx={{ color: 'text.secondary', fontSize: textVar.md, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                        {t('workspace.yourSessions')}
-                    </Typography>
-                    <Select
-                        size="small"
-                        variant="standard"
-                        value={wsSort}
-                        onChange={(e) => setWsSort(e.target.value as typeof wsSort)}
-                        disableUnderline
-                        inputProps={{ 'aria-label': t('workspace.sortSessions') }}
-                        IconComponent={(props) => (
-                            <ExpandMoreIcon {...props} sx={{ fontSize: iconVar.md, color: 'text.disabled', right: 0 }} />
-                        )}
-                        sx={{
-                            fontSize: textVar.sm,
-                            color: 'text.disabled',
-                            cursor: 'pointer',
-                            '& .MuiSelect-select': { py: 0.25, pl: 0, pr: '16px !important', minHeight: 0 },
-                            '&:hover': { color: 'text.secondary' },
-                            '&:hover .MuiSelect-icon': { color: 'text.secondary' },
-                        }}
-                        renderValue={(v) => {
-                            const labels: Record<typeof wsSort, string> = {
-                                created_desc: t('workspace.sortNewest'),
-                                created_asc: t('workspace.sortOldest'),
-                                updated_desc: t('workspace.sortRecentlyModified'),
-                                name_asc: t('workspace.sortName'),
-                            };
-                            return labels[v as typeof wsSort];
-                        }}
-                    >
-                        <MenuItem value="created_desc" sx={{ fontSize: textVar.sm }}>{t('workspace.sortNewestFirst')}</MenuItem>
-                        <MenuItem value="created_asc" sx={{ fontSize: textVar.sm }}>{t('workspace.sortOldestFirst')}</MenuItem>
-                        <MenuItem value="updated_desc" sx={{ fontSize: textVar.sm }}>{t('workspace.sortRecentlyModifiedFirst')}</MenuItem>
-                        <MenuItem value="name_asc" sx={{ fontSize: textVar.sm }}>{t('workspace.sortNameAsc')}</MenuItem>
-                    </Select>
-                </Box>
-                <Box sx={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-                    gap: 1.5,
-                }}>
-                    {sortedSavedWorkspaces.map(w => {
-                        const isRenaming = renamingWs === w.id;
-                        return (
-                        <Card key={w.id} variant="outlined" onClick={isRenaming ? undefined : () => handleOpenWorkspace(w.id, w.display_name)} sx={{
-                            position: 'relative', textAlign: 'left',
-                            cursor: isRenaming ? 'default' : 'pointer',
-                            '&:hover': isRenaming ? {} : { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
-                            '&:hover .ws-actions': { opacity: 1 },
-                        }}>
-                            <CardContent sx={{ py: 1.5, px: 2 }}>
-                                {isRenaming ? (
-                                    <TextField
-                                        autoFocus
-                                        fullWidth
-                                        variant="standard"
-                                        value={renameDraft}
-                                        onChange={(e) => setRenameDraft(e.target.value)}
-                                        onClick={(e) => e.stopPropagation()}
-                                        onBlur={commitRenameWorkspace}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                                e.preventDefault();
-                                                commitRenameWorkspace();
-                                            } else if (e.key === 'Escape') {
-                                                e.preventDefault();
-                                                cancelRenameWorkspace();
-                                            }
-                                        }}
-                                        slotProps={{ input: { sx: { fontSize: textVar.lg, fontWeight: 500 } } }}
-                                    />
-                                ) : (
-                                    <Typography variant="body2" fontWeight={500} noWrap sx={{ color: 'text.primary' }}>
-                                        {w.display_name}
-                                    </Typography>
-                                )}
-                                {w.saved_at && (
-                                    <Typography variant="caption" color="text.disabled" sx={{ fontSize: textVar.xs }}>
-                                        {new Date(w.saved_at).toLocaleString()}
-                                    </Typography>
-                                )}
-                            </CardContent>
-                            <Box className="ws-actions" sx={{
-                                position: 'absolute', top: 4, right: 4,
-                                display: isRenaming ? 'none' : 'flex',
-                                gap: 0.25,
-                                opacity: 0,
-                                transition: 'opacity 0.15s',
-                            }}>
-                                <Tooltip title={t('workspace.rename')}>
-                                    <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
-                                        onClick={(e) => { e.stopPropagation(); startRenameWorkspace(w.id, w.display_name); }}>
-                                        <EditOutlinedIcon fontSize="small" />
-                                    </IconButton>
-                                </Tooltip>
-                                <Tooltip title={t('workspace.export')}>
-                                    <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
-                                        onClick={(e) => { e.stopPropagation(); handleExportWorkspace(w.id); }}>
-                                        <DownloadIcon fontSize="small" />
-                                    </IconButton>
-                                </Tooltip>
-                                <Tooltip title={t('workspace.delete')}>
-                                    <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
-                                        onClick={(e) => { e.stopPropagation(); setConfirmDeleteWs(w.id); }}>
-                                        <DeleteOutlineIcon fontSize="small" />
-                                    </IconButton>
-                                </Tooltip>
-                            </Box>
-                        </Card>
-                        );
-                    })}
-                    {/* Import workspace card */}
-                    <Card variant="outlined" onClick={() => importRef.current?.click()} sx={{
-                        textAlign: 'center', borderStyle: 'dashed',
-                        cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        gap: 1, px: 2, py: 1.5,
-                        '&:hover': { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
-                    }}>
-                        <UploadFileIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
-                        <Typography variant="caption" color="text.secondary">{t('workspace.importZip')}</Typography>
-                        <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
-                    </Card>
-                </Box>
-            </Box>
-            {/* ── Delete workspace confirmation ────────────────────── */}
+    const deleteWorkspaceDialog = (
             <Dialog open={confirmDeleteWs !== null} onClose={() => setConfirmDeleteWs(null)}>
                 <DialogTitle>{t('workspace.deleteTitle')}</DialogTitle>
                 <DialogContent>
-                    <Typography dangerouslySetInnerHTML={{
-                        __html: t('workspace.deleteConfirm', {
-                            name: savedWorkspaces.find(w => w.id === confirmDeleteWs)?.display_name || confirmDeleteWs,
-                            id: confirmDeleteWs,
-                            interpolation: { escapeValue: false },
-                        }),
-                    }} />
+                    <Typography>
+                        <Trans i18nKey="workspace.deleteConfirm"
+                            values={{
+                                name: savedWorkspaces.find(w => w.id === confirmDeleteWs)?.display_name || confirmDeleteWs,
+                                id: confirmDeleteWs,
+                            }}
+                            components={{ strong: <strong /> }} />
+                    </Typography>
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setConfirmDeleteWs(null)}>{t('workspace.cancel')}</Button>
@@ -1099,45 +1334,72 @@ export const DataFormulatorFC = ({ }) => {
                         {t('workspace.delete')}
                     </Button>
                 </DialogActions>
-            </Dialog>
-        </Box>
-        {footer}
+            </Dialog>);
+
+    const storyReopenDialog = (
+            <Dialog open={!!storyReopen} onClose={() => setStoryReopen(undefined)} maxWidth="xs" fullWidth>
+                <DialogTitle>{t('space.reopenTitle', { defaultValue: 'You opened this example before' })}</DialogTitle>
+                <DialogContent>
+                    <Typography variant="body2">
+                        {t('space.reopenBody', { defaultValue: 'Continue in your session “{{name}}” (last saved {{date}}), or start a new copy of the example?',
+                            name: storyReopen?.previous.display_name,
+                            date: storyReopen?.previous.saved_at ? new Date(storyReopen.previous.saved_at).toLocaleString() : '' })}
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => {
+                        const reopen = storyReopen;
+                        setStoryReopen(undefined);
+                        if (reopen) void openStoryCopy(reopen.starter, reopen.story);
+                    }}>{t('space.reopenNewCopy', { defaultValue: 'Start a new copy' })}</Button>
+                    <Button variant="contained" disableElevation onClick={() => {
+                        const reopen = storyReopen;
+                        setStoryReopen(undefined);
+                        if (reopen) void handleOpenWorkspace(reopen.previous.id, reopen.previous.display_name);
+                    }}>{t('space.reopenContinue', { defaultValue: 'Continue my session' })}</Button>
+                </DialogActions>
+            </Dialog>);
+
+    // A /space/<id> page for a space this server does not have.
+    const missingSpace = !space && SPACE_ID && <Box sx={{ m: 'auto', p: 3, textAlign: 'center' }}>
+        <Typography variant="h6">{t('space.notFound', { defaultValue: 'There is no space called “{{id}}” here.', id: SPACE_ID })}</Typography>
+        <Link href="/" sx={{ mt: 1, display: 'inline-block' }}>{t('space.openApp', { defaultValue: 'Open Data Formulator' })}</Link>
     </Box>;
     
     return (
         <Box sx={{ display: 'block', width: "100%", height: '100%', position: 'relative' }}>
+            <WorkflowRunObserver />
             {activeWorkspace?.readOnly && (
                 <Alert severity="warning" sx={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 1200, maxWidth: 720 }}>
-                    {t('workspace.expiredReadOnly', 'This temporary session has expired on the server. You are viewing a read-only browser snapshot.')}
+                    {activeWorkspace.openElsewhere ? <>
+                        {t('workspace.openElsewhere', 'This session is being edited in another tab. Changes here are not saved.')}
+                        <Button size="small" sx={{ ml: 1 }} onClick={() => void dispatch(openSession(activeWorkspace.id, activeWorkspace.displayName, { saveCurrent: false }))}>
+                            {t('workspace.editHere', 'Edit here')}
+                        </Button></>
+                    : activeWorkspace.scheduledRun ? 'Scheduled run snapshot (read-only)'
+                        : t('workspace.expiredReadOnly', 'This temporary session has expired on the server. You are viewing a read-only browser snapshot.')}
                 </Alert>
             )}
             <DndProvider backend={HTML5Backend}>
-                {activeWorkspace && !provisionalSession ? (isPhone ? phoneWorkspace : fixedSplitPane) : (
+                {inSession ? (isPhone ? phoneWorkspace : fixedSplitPane) : missingSpace || (
                     <Box sx={{ display: 'flex', flexDirection: 'row', height: '100%' }}>
                         <DataSourceSidebar
-                            onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'menu') as UploadTabType)}
+                            onOpenUploadDialog={(tab, tablePath) => openUploadDialog((tab ?? 'menu') as UploadTabType, tablePath)}
                             connectorRefreshKey={connectorRefreshKey}
                             onConnectorsChanged={handleConnectorsChanged}
-                            onStartDataLoadingChat={(text) => startDataLoadingChat(text)}
+                            onAskAgent={(text) => startAnalystChat(text)}
                         />
                         {dataUploadRequestBox}
                     </Box>
                 )}
+                {deleteWorkspaceDialog}
+                {storyReopenDialog}
                 <UnifiedDataUploadDialog 
                     open={uploadDialogOpen}
-                    onClose={() => {
-                        setUploadDialogOpen(false);
-                        // Nothing was added, so the workspace minted to open the
-                        // dialog is discarded rather than left as a stub session.
-                        // Read live state: a table loaded immediately before close
-                        // lands in the same batch, leaving the rendered flag stale
-                        // and orphaning the data under a discarded workspace.
-                        if (dfSelectors.selectSessionEmpty(store.getState())) {
-                            dispatch(dfActions.setActiveWorkspace(null));
-                        }
-                        refreshPageConnectors();
-                    }}
+                    onClose={closeUploadDialog}
+                    onStartChat={startAnalystChat}
                     initialTab={uploadDialogInitialTab}
+                    initialTablePath={uploadDialogTablePath}
                     onConnectorsChanged={handleConnectorsChanged}
                 />
                 {/* Loading overlay for session loading */}
@@ -1182,15 +1444,15 @@ export const DataFormulatorFC = ({ }) => {
                         flexDirection: 'column',
                         zIndex: 1000,
                     }}>
-                        <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center"}}>
+                        <Box sx={{margin:'auto', pb: '5%', px: 2, maxWidth: '100%', boxSizing: 'border-box', display: "flex", flexDirection: "column", textAlign: "center"}}>
                             <Box component="img" sx={{  width: 196, margin: "auto" }} alt="Data Formulator logo" src={dfLogo} fetchPriority="high" />
-                            <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 200, letterSpacing: '0.05em'}}>
-                                {toolName}
+                            <Typography variant="h3" sx={{marginTop: "20px", fontWeight: weight(400), letterSpacing: 0, fontSize: { xs: 28, sm: Math.min(48, headingSize) }, overflowWrap: 'anywhere'}}>
+                                {appName}
                             </Typography>
                             <Typography variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em'}}>
                                 {t('landing.firstSelectModelPrefix')} <ModelSelectionButton appearance="inline" />
                             </Typography>
-                            <Typography color="text.secondary" variant="body1" sx={{mt: 2, width: 600}}>{t('landing.modelTip')}</Typography>
+                            <Typography color="text.secondary" variant="body1" sx={{mt: 2, width: 600, maxWidth: '100%'}}>{t('landing.modelTip')}</Typography>
                         </Box>
                         {footer}
                     </Box>

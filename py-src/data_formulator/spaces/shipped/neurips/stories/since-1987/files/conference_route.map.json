@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "title": "Where NeurIPS met",
+  "subtitle": "NeurIPS's main city each year it met in person, 1987–2026; lines grow with its papers",
+  "source": "NeurIPS",
+  "template": "routes",
+  "data": {
+    "table": "conference_route"
+  },
+  "encoding": {
+    "lat": "lat",
+    "lon": "lng",
+    "order": "year",
+    "label": "city",
+    "size": "papers",
+    "tooltip": [
+      "year",
+      "city",
+      "papers"
+    ]
+  },
+  "properties": {
+    "geography": "world",
+    "direction": "arrow"
+  },
+  "fields": {
+    "year": {
+      "semanticType": "Year",
+      "displayName": "Year"
+    },
+    "city": {
+      "semanticType": "City"
+    },
+    "papers": {
+      "semanticType": "Count",
+      "displayName": "Papers"
+    },
+    "lat": {
+      "semanticType": "Latitude"
+    },
+    "lng": {
+      "semanticType": "Longitude"
+    }
+  },
+  "view": {
+    "style": "light",
+    "rotate": [
+      110,
+      0
+    ]
+  }
+}

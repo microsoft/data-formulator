@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "title": "Where young people finish upper secondary school",
+  "subtitle": "Share of young people who finished upper secondary school, latest modelled estimates, 2020–2025",
+  "source": "UIS, November 2026 release; indicator CR.MOD.3",
+  "template": "choropleth",
+  "data": {
+    "table": "upper_secondary_completion"
+  },
+  "encoding": {
+    "region": "country_id",
+    "color": "completion",
+    "tooltip": [
+      "country",
+      "completion",
+      "latest_year"
+    ]
+  },
+  "properties": {
+    "geography": "world",
+    "keyType": "iso3"
+  },
+  "fields": {
+    "country_id": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+    },
+    "country": {
+      "semanticType": "Country",
+      "displayName": "Country"
+    },
+    "latest_year": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+    },
+    "completion": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Upper secondary completion"
+    }
+  },
+  "view": {
+    "style": "light"
+  }
+}

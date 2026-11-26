@@ -33,6 +33,19 @@ export const DENSE_MENU_SLOT_PROPS = {
     },
 } as const;
 
+/** Human-readable byte size for compact metadata labels. */
+export const formatBytes = (bytes: number | null | undefined): string => {
+    if (bytes == null || !Number.isFinite(bytes) || bytes <= 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+    let value = bytes;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex++;
+    }
+    return `${value >= 100 || unitIndex === 0 ? Math.round(value) : value.toFixed(1)} ${units[unitIndex]}`;
+};
+
 export const groupConceptItems = (conceptShelfItems: FieldItem[], tables: DictTable[])  => {
     // group concepts based on which source table they belongs to
     return conceptShelfItems.map(f => {
@@ -70,15 +83,13 @@ export const getIconFromType = (t: Type | undefined): JSX.Element => {
 };
 
 /**
- * Format a cell value for display in data tables.
+ * Format a cell value for display in data tables, close to its raw form so data issues stay visible.
  *
- * - Numbers get thousand separators (e.g. 1,234,567)
- * - Floats are capped at a reasonable number of decimal places
- * - Non-measure numeric semantics (e.g. Year, ID) stay ungrouped
+ * - Numbers have no thousands separators (2022, 1234567); floats are capped at 4 decimal places
  * - Date/DateTime/Time get locale-aware formatting via Intl
  * - Duration gets human-readable h/m/s format
  */
-export const formatCellValue = (value: any, dataType?: Type, semanticType?: string): string => {
+export const formatCellValue = (value: any, dataType?: Type): string => {
     if (value == null) return '';
 
     if (dataType === Type.DateTime || dataType === Type.Date || dataType === Type.Time) {
@@ -88,44 +99,21 @@ export const formatCellValue = (value: any, dataType?: Type, semanticType?: stri
         return formatDuration(value);
     }
 
-    if (typeof value === 'number') {
-        if (!Number.isFinite(value)) return String(value);
-        if (shouldDisplayNumericSemanticAsPlainText(semanticType)) return String(value);
-        if (Number.isInteger(value)) {
-            return value.toLocaleString('en-US');
-        }
-        return value.toLocaleString('en-US', {
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 4,
-        });
-    }
+    if (typeof value === 'number') return formatNumber(value);
 
     if (typeof value === 'boolean') return String(value);
     if (typeof value === 'object') return String(value);
     return String(value);
 };
 
-const PLAIN_NUMERIC_SEMANTIC_TYPES = new Set([
-    'year',
-    'month',
-    'week',
-    'day',
-    'hour',
-    'quarter',
-    'decade',
-    'yearmonth',
-    'yearquarter',
-    'yearweek',
-    'id',
-    'zipcode',
-    'rank',
-]);
-
-const normalizeSemanticType = (semanticType?: string): string =>
-    (semanticType || '').replace(/[\s_-]/g, '').toLowerCase();
-
-const shouldDisplayNumericSemanticAsPlainText = (semanticType?: string): boolean =>
-    PLAIN_NUMERIC_SEMANTIC_TYPES.has(normalizeSemanticType(semanticType));
+/** Up to 4 decimal places; a value that would round to 0 keeps 4 significant digits instead (0.00001234). */
+const formatNumber = (value: number): string => {
+    if (!Number.isFinite(value) || Number.isInteger(value)) return String(value);
+    const rounded = value.toLocaleString('en-US', { maximumFractionDigits: 4, useGrouping: false });
+    return /^-?0$/.test(rounded)
+        ? value.toLocaleString('en-US', { maximumSignificantDigits: 4, useGrouping: false })
+        : rounded;
+};
 
 const formatTemporalValue = (value: any, dataType: Type): string => {
     if (dataType === Type.Time) {
@@ -137,7 +125,9 @@ const formatTemporalValue = (value: any, dataType: Type): string => {
         if (isNaN(d.getTime())) return String(value);
         return d.toLocaleTimeString();
     }
-    const d = new Date(value);
+    // A bare date (2024-01-15) is a calendar day: read it as local, not as UTC midnight, so it shows the same day everywhere.
+    const day = typeof value === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) : null;
+    const d = day ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3])) : new Date(value);
     if (isNaN(d.getTime())) return String(value);
     if (dataType === Type.Date) return d.toLocaleDateString();
     return d.toLocaleString();
@@ -150,7 +140,7 @@ const formatDuration = (value: any): string => {
         // 0.083), flooring would collapse everything to "0s" and destroy the
         // data — so fall back to the plain number instead of over-formatting.
         if (value === 0 || !Number.isInteger(value / 1_000)) {
-            return value.toLocaleString('en-US', { maximumFractionDigits: 4 });
+            return formatNumber(value);
         }
         const h = Math.floor(value / 3_600_000);
         const m = Math.floor((value % 3_600_000) / 60_000);

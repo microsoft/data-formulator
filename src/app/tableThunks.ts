@@ -11,12 +11,12 @@
  * - Adding the table to Redux state + fetching semantic types
  */
 
-import { createAsyncThunk } from '@reduxjs/toolkit';
+import { createAsyncThunk, miniSerializeError } from '@reduxjs/toolkit';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { Type, mapApiTypeToAppType } from '../data/types';
 import { refineTemporalType } from '../data/utils';
 import { getUrls, CONNECTOR_ACTION_URLS, computeContentHash, SourceTableRef } from './utils';
-import { apiRequest } from './apiClient';
+import { apiRequest, ApiRequestError } from './apiClient';
 import { DataFormulatorState, dfActions, dfSelectors, fetchColumnStats, fetchFieldSemanticType } from './dfSlice';
 import i18n from '../i18n';
 
@@ -27,6 +27,40 @@ async function compressBlob(data: string): Promise<Blob> {
     const compressedStream = blob.stream().pipeThrough(cs);
     return new Response(compressedStream).blob();
 }
+
+export const importExternalTableReference = createAsyncThunk<
+    void, string, { state: DataFormulatorState }
+>(
+    'dataFormulator/importExternalTableReference',
+    async (referenceId, { dispatch, getState }) => {
+        const state = getState();
+        const reference = state.externalTableReferences.find(item => item.id === referenceId);
+        if (!reference || state.activeWorkspace?.readOnly) throw new Error('This source cannot be imported.');
+        const workspaceId = state.activeWorkspace?.id;
+        dispatch(dfActions.startTableLoad({ id: `import-copy:${referenceId}`, names: [reference.displayName] }));
+        try {
+            const { data } = await apiRequest(CONNECTOR_ACTION_URLS.IMPORT_DATA, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: reference.connectorId, source_table: reference.sourceTable,
+                    table_name: reference.displayName, full_copy: true }),
+            });
+            if (getState().activeWorkspace?.id !== workspaceId) return;
+            const { data: listData } = await apiRequest(getUrls().LIST_TABLES, { method: 'GET' });
+            const workspaceTable = listData.tables.find((table: any) => table.name === data.table_name);
+            if (!workspaceTable) throw new Error('The imported table is not available yet. Please refresh the workspace.');
+            if (getState().activeWorkspace?.id !== workspaceId) return;
+            const table = buildDictTableFromWorkspace(workspaceTable, undefined);
+            dispatch(dfActions.replaceExternalTableReference({ referenceId, table }));
+            dispatch(fetchFieldSemanticType(table));
+            dispatch(fetchColumnStats(table));
+        } finally {
+            if (getState().activeWorkspace?.id === workspaceId) {
+                dispatch(dfActions.finishTableLoad(`import-copy:${referenceId}`));
+            }
+        }
+    },
+    { condition: (referenceId, { getState }) => !getState().pendingTableLoads.some(item => item.id === `import-copy:${referenceId}`) },
+);
 
 export interface LoadTablePayload {
     // The table data (already parsed into rows/names/metadata on the frontend)
@@ -265,7 +299,11 @@ export const loadTable = createAsyncThunk<
         }
 
         return { table: finalTable, truncated, originalRowCount, duplicate: false };
-    }
+    },
+    // Keep the backend error code (e.g. TABLE_NOT_FOUND) through unwrap().
+    { serializeError: error => error instanceof ApiRequestError
+        ? { name: error.name, message: error.message, code: error.apiError.code }
+        : miniSerializeError(error) },
 );
 
 /**
@@ -323,6 +361,25 @@ export function buildDictTableFromWorkspace(
         };
     }
 
+    if (wsTable.origin === 'agent') delete sourceConfig.importedFrom;
+    const importOrigin = wsTable.imported_from ?? sourceMeta?.import_options?.data_operation;
+    const importOptions = sourceMeta?.import_options;
+    const sourceTable = sourceMeta?.source_table_name;
+    if (importOptions && typeof importOptions === 'object' && typeof sourceTable === 'string' && sourceTable.trim()) {
+        const query = importOptions.structured_query ?? Object.fromEntries(
+            ['source_filters', 'columns', 'sort_columns', 'sort_order', 'size']
+                .filter(key => importOptions[key] !== undefined)
+                .map(key => [key, importOptions[key]]),
+        );
+        sourceConfig.loadQuery = { sourceTable, query };
+    }
+    if (sourceMeta?.import_options?.data_operation?.lineage_verified === false) delete sourceConfig.importedFrom;
+    if (sourceMeta?.import_options?.data_operation?.lineage_verified !== false
+        && typeof importOrigin?.source_id === 'string' && importOrigin.source_id.trim()
+        && typeof importOrigin?.table_key === 'string' && importOrigin.table_key.trim()) {
+        sourceConfig.importedFrom = { connectorId: importOrigin.source_id, tableKey: importOrigin.table_key };
+    }
+
     const result: DictTable = {
         kind: 'table' as const,
         id: wsTable.name,
@@ -345,6 +402,17 @@ export function buildDictTableFromWorkspace(
             };
         }, {}),
         rows: wsTable.sample_rows,
+        ...(wsTable.content_hash ? { contentHash: wsTable.content_hash } : {}),
+        ...(wsTable.origin === 'agent' ? { dataProvenance: {
+            origin: wsTable.origin,
+            role: wsTable.role || 'source',
+            editPolicy: wsTable.edit_policy || 'protected',
+            inputSources: (wsTable.input_sources || []).map((source: any) => ({
+                id: source.id, kind: source.kind, displayName: source.display_name || source.id,
+                contentHash: source.content_hash,
+            })),
+            stale: !!wsTable.stale,
+        } } : {}),
         virtual: {
             tableId: wsTable.name,
             rowCount: wsTable.row_count,

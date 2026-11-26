@@ -11,8 +11,8 @@ architecture.md`` for the full design.
 Core ideas:
   - **Inspection tools** gather information and are parallel-safe; their results
     come back to the agent and are never shown to the user. The shell ships a
-    small core set (``inspect_source_data``, ``execute_python_script``, ``load_skill``); a
-    loaded skill may contribute additional tools (e.g. ``inspect_chart``).
+    small core set (``execute_python_script``, ``load_skill``, the workspace file tools); a
+    loaded skill may contribute additional tools (e.g. ``list_connectors``).
   - **Actions** are committing surfaces — at most one per turn. Each returns an
     observation the shell feeds back as the action's tool-call result, so the
     agent reads it and decides its own next move. ``visualize`` / ``delegate``

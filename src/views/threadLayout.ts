@@ -53,3 +53,90 @@ export const threadPaneWidth = (n: number): number => threadPaneWidthFor(n);
  */
 export const fittableThreadColumns = (containerWidth: number): number =>
     fittableThreadColumnsFor(containerWidth);
+
+/** About how many artifacts a sub-thread holds before the next block starts a new one. */
+export const THREAD_SEGMENT_BUDGET = 5;
+
+/** About how tall one artifact runs in a thread (its card, chart and the chat around them), in px. */
+export const ARTIFACT_LAYOUT_HEIGHT = 300;
+
+/** The share of the column that must be left under the shelf to start the first thread there. */
+export const MIN_LEAD_ROOM = 0.6;
+
+/** The fewest artifacts worth starting the first thread under the shelf (on short panels 60% may hold one). */
+export const MIN_LEAD_BUDGET = 2;
+
+/**
+ * How many artifacts the first thread's first part holds beside the shelf, so the thread starts under the
+ * shelf and continues in the next column instead of moving there whole: as many as fit in `room` (the column
+ * height left under the shelf), never more than `budget`. 0 when the room is under MIN_LEAD_ROOM of
+ * `columnHeight` or holds fewer than MIN_LEAD_BUDGET: then the shelf keeps the first column to itself and
+ * threads start in the next one, side by side. It depends on the shelf alone, not the thread, so a growing
+ * thread never switches between the two.
+ */
+export const leadPartBudget = (room: number, columnHeight: number, budget = THREAD_SEGMENT_BUDGET): number => {
+    if (room < MIN_LEAD_ROOM * columnHeight) return 0;
+    const fits = Math.floor(room / ARTIFACT_LAYOUT_HEIGHT);
+    return fits < MIN_LEAD_BUDGET ? 0 : Math.min(budget, fits);
+};
+
+/** How many chat entries in a row (between results) make a stretch long: as many as fold into a stack. */
+export const CHAT_RUN_MIN_ENTRIES = 6;
+
+/** One node of a block, for weighing: how many artifacts it made, a chat entry, or neither. */
+export type BlockItem = number | 'chat' | 'skip';
+
+/**
+ * Block weights for wrapping: each block's artifacts, plus one for every long stretch of conversation
+ * (at least `minEntries` chat entries between results, the stretches the thread folds into stacks). The
+ * stretch's unit sits on the first block that starts inside it (a user message), else on the block it is
+ * in, so a long chat takes room in a part like a result does and a break before it starts at a request.
+ */
+export const weighThreadBlocks = (blocks: BlockItem[][], minEntries = CHAT_RUN_MIN_ENTRIES): number[] => {
+    const weights = blocks.map(items => items.reduce<number>((sum, item) => sum + (typeof item === 'number' ? item : 0), 0));
+    let entries = 0;
+    let firstBlock = -1;
+    let startedBlock = -1;
+    const close = () => {
+        if (entries >= minEntries) weights[startedBlock >= 0 ? startedBlock : firstBlock] += 1;
+        entries = 0;
+        firstBlock = -1;
+        startedBlock = -1;
+    };
+    blocks.forEach((items, block) => items.forEach((item, position) => {
+        if (typeof item === 'number' && item > 0) { close(); return; }
+        if (item !== 'chat') return;
+        if (firstBlock < 0) firstBlock = block;
+        if (position === 0 && startedBlock < 0) startedBlock = block;
+        entries += 1;
+    }));
+    close();
+    return weights;
+};
+
+/**
+ * Where a long thread breaks into sub-threads: the block indices each part starts at.
+ *
+ * A block is one request and everything it produced (answers, plan, workflow output); its weight is
+ * how many artifacts it made (an exchange that made none weighs nothing and joins the part it falls in;
+ * a long stretch of conversation weighs one, see `weighThreadBlocks`). Blocks wrap like words on a line: a part takes blocks until
+ * the next would pass `budget`, a block over the budget gets a part to itself, and none is ever cut.
+ * A thread up to a quarter over the budget stays whole. `sealed` are breaks already made: they stay
+ * where they are, and only the blocks after the last of them wrap, so new turns move nothing above.
+ * `firstBudget` (at most `budget`) holds the first part to less, as when it sits under the shelf.
+ */
+export const wrapThreadBlocks = (weights: number[], budget: number, sealed: number[] = [], firstBudget = budget): number[] => {
+    const kept = [...new Set(sealed)].filter(index => index > 0 && index < weights.length).sort((a, b) => a - b);
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    if (!kept.length && total <= firstBudget * 1.25) return [0];
+    const starts = [0, ...kept];
+    let current = 0;
+    for (let index = starts[starts.length - 1]; index < weights.length; index++) {
+        if (current > 0 && current + weights[index] > (starts.length === 1 ? firstBudget : budget)) {
+            starts.push(index);
+            current = 0;
+        }
+        current += weights[index];
+    }
+    return starts;
+};

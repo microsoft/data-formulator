@@ -18,10 +18,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 import pyarrow as pa
+import requests
 
 from data_formulator.data_loader.external_data_loader import (
     CatalogNode,
     ExternalDataLoader,
+    SourceTableMissing,
 )
 from data_formulator.data_loader.superset_client import SupersetClient
 from data_formulator.data_loader.superset_auth_bridge import SupersetAuthBridge
@@ -181,8 +183,8 @@ class SupersetLoader(ExternalDataLoader):
             self._refresh_token = result.get("refresh_token")
             if self._access_token:
                 logger.info("SSO token exchange succeeded for Superset")
-        except Exception:
-            logger.debug("SSO token exchange not available", exc_info=True)
+        except Exception as exc:
+            logger.warning("SSO token exchange failed for Superset: %s", exc)
 
     @staticmethod
     def _is_token_expired(token: str, buffer_seconds: int = 60) -> bool:
@@ -379,12 +381,15 @@ class SupersetLoader(ExternalDataLoader):
             return ds.get("table_name") or ds.get("name") or f"dataset_{ds.get('id', '?')}"
 
         def _dataset_meta(ds: dict) -> dict:
-            return {
+            meta = {
                 "dataset_id": ds["id"],
                 "row_count": ds.get("row_count"),
                 "schema": ds.get("schema", ""),
                 "database": (ds.get("database") or {}).get("database_name", ""),
             }
+            if ds.get("uuid"):
+                meta["uuid"] = ds["uuid"]
+            return meta
 
         all_datasets = self._fetch_all_datasets(token)
         dataset_children: list[dict] = []
@@ -436,6 +441,7 @@ class SupersetLoader(ExternalDataLoader):
                         "node_type": "table",
                         "path": [str(dash_id), str(tbl["dataset_id"])],
                         "metadata": {
+                            **({"uuid": tbl["uuid"]} if tbl.get("uuid") else {}),
                             "dataset_id": tbl["dataset_id"],
                             "row_count": tbl.get("row_count"),
                             "parent_group": str(dash_id),
@@ -445,6 +451,8 @@ class SupersetLoader(ExternalDataLoader):
                 ],
             })
             result_count += 1
+
+        self._apply_tree_table_keys(tree)
 
         return {"tree": tree, "truncated": truncated}
 
@@ -507,6 +515,7 @@ class SupersetLoader(ExternalDataLoader):
                     node_type="table",
                     path=[parent_id, str(ds["id"])],
                     metadata={
+                        **({"uuid": ds["uuid"]} if ds.get("uuid") else {}),
                         "dataset_id": ds["id"],
                         "row_count": ds.get("row_count"),
                         "schema": ds.get("schema", ""),
@@ -539,14 +548,37 @@ class SupersetLoader(ExternalDataLoader):
         for ds in datasets:
             ds_id = ds["id"]
             name = ds.get("table_name") or ds.get("name") or f"dataset_{ds_id}"
-            tables.append({
+            entry = {
                 "name": name,
                 "dataset_id": ds_id,
                 "row_count": ds.get("row_count"),
-            })
+            }
+            if ds.get("uuid"):
+                entry["uuid"] = ds["uuid"]
+            tables.append(entry)
 
         return tables
 
+    @staticmethod
+    def _apply_tree_table_keys(tree: list[dict]) -> None:
+        """Stamp ``metadata.table_key`` on every table node in a tree.
+
+        ``list_tables_tree`` and ``search_catalog`` build their trees by hand
+        instead of going through ``_tables_to_catalog_tree``, so neither picks
+        up the base-class backfill.  The key mirrors the ``list_tables`` path,
+        which prefers the dataset uuid.
+        """
+        for node in tree:
+            for child in node.get("children") or []:
+                if child.get("node_type") != "table":
+                    continue
+                meta = child.get("metadata") or {}
+                child["metadata"] = {
+                    **meta,
+                    "table_key": (
+                        meta.get("uuid") or meta.get("_source_name") or child["name"]
+                    ),
+                }
 
     # -- Chart Data API query builders ------------------------------------
 
@@ -918,7 +950,12 @@ class SupersetLoader(ExternalDataLoader):
             "Superset Chart Data API: dataset_id=%s query=%s",
             dataset_id, query,
         )
-        result = self._client.post_chart_data(token, dataset_id, [query])
+        try:
+            result = self._client.post_chart_data(token, dataset_id, [query])
+        except requests.HTTPError as exc:
+            if self._dataset_is_gone(exc, token, dataset_id):
+                raise SourceTableMissing(f"Superset dataset {dataset_id} no longer exists.") from exc
+            raise
 
         queries_result = result.get("result", [])
         if not queries_result:
@@ -958,6 +995,18 @@ class SupersetLoader(ExternalDataLoader):
             )
 
         return pa.table(col_data)
+
+    def _dataset_is_gone(self, error: requests.HTTPError, token: str, dataset_id: int) -> bool:
+        """A chart-data 404 means a missing datasource; confirm on the dataset itself before saying so."""
+        if getattr(error.response, "status_code", None) != 404:
+            return False
+        try:
+            self._client.get_dataset_detail(token, dataset_id)
+        except requests.HTTPError as detail_error:
+            return getattr(detail_error.response, "status_code", None) == 404
+        except Exception:
+            return False
+        return False
 
     def _convert_temporal_columns(
         self,
@@ -1076,6 +1125,7 @@ class SupersetLoader(ExternalDataLoader):
                         "node_type": "table",
                         "path": node.path + [str(tbl["dataset_id"])],
                         "metadata": {
+                            **({"uuid": tbl["uuid"]} if tbl.get("uuid") else {}),
                             "dataset_id": tbl["dataset_id"],
                             "row_count": tbl.get("row_count"),
                             "parent_group": node.path[0] if node.path else None,
@@ -1086,6 +1136,8 @@ class SupersetLoader(ExternalDataLoader):
             else:
                 d["children"] = []
             tree.append(d)
+
+        self._apply_tree_table_keys(tree)
 
         return {
             "hierarchy": self.catalog_hierarchy(),

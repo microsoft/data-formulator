@@ -7,10 +7,6 @@ export const stripConnectorPrefillFromEntries = (entries: unknown) => {
             const { prefilled, ...connector } = entry.form.connector;
             return { ...entry, form: { ...entry.form, connector } };
         }
-        if (entry?.connectorForm?.prefilled) {
-            const { prefilled, ...connectorForm } = entry.connectorForm;
-            return { ...entry, connectorForm };
-        }
         return entry;
     });
 };

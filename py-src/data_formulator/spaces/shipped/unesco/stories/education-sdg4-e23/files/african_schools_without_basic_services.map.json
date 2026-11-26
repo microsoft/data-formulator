@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "title": "Primary schools without basic services in sub-Saharan Africa",
+  "subtitle": "Share of primary schools without electricity, internet or drinking water; latest figures, 2020–2026",
+  "source": "UIS, November 2026 release; indicators SCHBSP.1.WELEC, SCHBSP.1.WINTERN, SCHBSP.1.WWATA",
+  "template": "choropleth",
+  "data": {
+    "table": "african_schools_without_basic_services"
+  },
+  "encoding": {
+    "region": "country_id",
+    "color": [
+      "without_electricity",
+      "without_internet",
+      "without_drinking_water"
+    ],
+    "tooltip": [
+      "country",
+      "without_electricity",
+      "without_internet",
+      "without_drinking_water",
+      "latest_year"
+    ]
+  },
+  "properties": {
+    "geography": "world",
+    "keyType": "iso3",
+    "scheme": "reds"
+  },
+  "fields": {
+    "country_id": {
+      "semanticType": "ID",
+      "displayName": "Country code"
+    },
+    "country": {
+      "semanticType": "Country",
+      "displayName": "Country"
+    },
+    "latest_year": {
+      "semanticType": "Year",
+      "displayName": "Latest year with data"
+    },
+    "without_electricity": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Primary schools without electricity",
+      "thresholds": [
+        20,
+        40,
+        60,
+        80
+      ]
+    },
+    "without_internet": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Primary schools without internet for teaching",
+      "thresholds": [
+        20,
+        40,
+        60,
+        80
+      ]
+    },
+    "without_drinking_water": {
+      "semanticType": "Percentage",
+      "unit": "%",
+      "displayName": "Primary schools without basic drinking water",
+      "thresholds": [
+        20,
+        40,
+        60,
+        80
+      ]
+    }
+  },
+  "view": {
+    "style": "light"
+  }
+}

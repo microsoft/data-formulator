@@ -5,100 +5,326 @@ import React from 'react';
 
 import { SvgIcon, SvgIconProps } from '@mui/material';
 import { Box, SxProps } from '@mui/material';
+import BarChartIcon from '@mui/icons-material/BarChart';
+import ShowChartIcon from '@mui/icons-material/ShowChart';
+import ScatterPlotIcon from '@mui/icons-material/ScatterPlot';
+import PieChartOutlineIcon from '@mui/icons-material/PieChartOutline';
+import AlignHorizontalLeftIcon from '@mui/icons-material/AlignHorizontalLeft';
+import AreaChartIcon from '@mui/icons-material/AreaChart';
+import CandlestickChartIcon from '@mui/icons-material/CandlestickChart';
+import InsightsIcon from '@mui/icons-material/Insights';
+import MultilineChartIcon from '@mui/icons-material/MultilineChart';
+import PublicIcon from '@mui/icons-material/Public';
+import RadarIcon from '@mui/icons-material/Radar';
+import SpeedIcon from '@mui/icons-material/Speed';
+import StackedBarChartIcon from '@mui/icons-material/StackedBarChart';
+import StackedLineChartIcon from '@mui/icons-material/StackedLineChart';
+import TimelineIcon from '@mui/icons-material/Timeline';
+import ViewTimelineOutlinedIcon from '@mui/icons-material/ViewTimelineOutlined';
+import WaterfallChartIcon from '@mui/icons-material/WaterfallChart';
+import type { Theme } from '@mui/material';
+import { SETI_COLORS, SETI_GLYPHS, SetiGlyph, SetiGlyphName } from './setiIcons';
+import { BrandIcon, CONNECTOR_BRANDS } from './connectorBrands';
 
 // ── MUI domain icon re-exports ──────────────────────────────────────────
 // Centralized so every file imports domain icons from one place.
 // Chart-template icons (managed in ChartTemplates.tsx) are NOT included.
-export { default as TableIcon } from '@mui/icons-material/TableRowsOutlined';
+/** A table: an outlined grid with a header row, drawn in strokes to sit with the outlined icons around it. */
+export const TableIcon: React.FC<SvgIconProps> = props => (
+    <SvgIcon data-testid="TableIcon" {...props} viewBox="0 0 24 24">
+        <g fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            {/* One path, so the lines don't darken where they cross under semi-transparent colours. */}
+            <path d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM3 10h18M3 15h18M9 10v10M15 10v10" />
+        </g>
+    </SvgIcon>
+);
 export { default as StreamIcon } from '@mui/icons-material/Stream';
 export { default as AgentIcon } from '@mui/icons-material/PrecisionManufacturing';
 export { default as InsightIcon } from '@mui/icons-material/Insights';
-export { default as AnchorIcon } from '@mui/icons-material/Anchor';
 export { default as FolderOpenIcon } from '@mui/icons-material/FolderOpen';
 
-// ── Data-loader / connector category icons ──────────────────────────────
-// Generic icons representing data source *categories*, not brand logos.
-// Used in the data source card grid and Add Connection sidebar.
+/** A form the agent asks the user to fill (connect a source, answer setup questions): a clipboard with lines. */
+export { default as FormIcon } from '@mui/icons-material/AssignmentOutlined';
 
-/** Relational Database — classic cylinder icon (MySQL, PostgreSQL, MSSQL) */
-const RelationalDBIcon: React.FC<SvgIconProps> = (props) => (
-    <SvgIcon {...props} viewBox="0 0 24 24">
-        <ellipse cx="12" cy="5.5" rx="8" ry="3" fill="none" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M4 5.5v13c0 1.66 3.58 3 8 3s8-1.34 8-3v-13" fill="none" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M4 11.5c0 1.66 3.58 3 8 3s8-1.34 8-3" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.4"/>
+// A chunky, square-ish solid arrow pointing right and an upright wormhole portal (an ellipse seen
+// edge-on): the arrow goes into a portal on the right (send) or comes out of one on the left
+// (receive). The arrow overlaps the portal; a halo (a mask around the arrow) cuts the portal's line
+// where it passes behind, so semi-transparent colours never darken where they cross. Both shapes are
+// symmetric about the middle, so the cuts sit flush on both sides of the arrow (design-docs/71).
+const WormholeGlyph: React.FC<{ arrow: string; portalX: number }> = ({ arrow, portalX }) => {
+    const mask = `wormhole-halo-${React.useId().replace(/:/g, '')}`;
+    return <>
+        <mask id={mask} maskUnits="userSpaceOnUse" x={0} y={0} width={24} height={24}>
+            <rect width={24} height={24} fill="white" />
+            <path d={arrow} fill="black" stroke="black" strokeWidth={2.6} strokeLinejoin="round" />
+        </mask>
+        <ellipse mask={`url(#${mask})`} cx={portalX} cy={12} rx={3.4} ry={8.5} fill="none" stroke="currentColor" strokeWidth={1.6} />
+        <path d={arrow} fill="currentColor" />
+    </>;
+};
+
+/** Portal's two colours: blue goes in (send), orange comes out (receive). A wormhole icon takes its colour when the
+ *  button or menu item around it is hovered. */
+export const WORMHOLE_SEND_COLOR = '#2b8fef';
+export const WORMHOLE_RECEIVE_COLOR = '#f5871f';
+const onButtonHover = (style: Record<string, string>, sx: SvgIconProps['sx']): SvgIconProps['sx'] =>
+    [{ '.MuiButtonBase-root:hover &': style }, ...(Array.isArray(sx) ? sx : [sx])];
+
+/** Send through a wormhole: a solid arrow going into a portal. */
+export const WormholeSendIcon: React.FC<SvgIconProps> = props => (
+    <SvgIcon data-testid="WormholeSendIcon" {...props} sx={onButtonHover({ color: WORMHOLE_SEND_COLOR }, props.sx)} viewBox="0 0 24 24">
+        <WormholeGlyph arrow="M3 8.5h7.5v-4L18 12l-7.5 7.5v-4H3z" portalX={17.5} />
     </SvgIcon>
 );
 
-/** Document Store — stacked documents icon (MongoDB, CosmosDB) */
-const DocumentStoreIcon: React.FC<SvgIconProps> = (props) => (
-    <SvgIcon {...props} viewBox="0 0 24 24">
-        <path d="M6 2h9l5 5v13a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-        <path d="M15 2v5h5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-        <line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" strokeWidth="1.2" opacity="0.4"/>
-        <line x1="8" y1="15.5" x2="14" y2="15.5" stroke="currentColor" strokeWidth="1.2" opacity="0.4"/>
+/** Receive through a wormhole: a solid arrow coming out of a portal. */
+export const WormholeReceiveIcon: React.FC<SvgIconProps> = props => (
+    <SvgIcon data-testid="WormholeReceiveIcon" {...props} sx={onButtonHover({ color: WORMHOLE_RECEIVE_COLOR }, props.sx)} viewBox="0 0 24 24">
+        <WormholeGlyph arrow="M6.5 8.5h7v-4L21 12l-7.5 7.5v-4h-7z" portalX={6.5} />
     </SvgIcon>
 );
 
-/** Cloud Storage — cloud with arrow icon (S3, Azure Blob) */
-const CloudStorageIcon: React.FC<SvgIconProps> = (props) => (
-    <SvgIcon {...props} viewBox="0 0 24 24">
-        <path d="M6.5 18.5h11a4.5 4.5 0 00.5-8.97A7 7 0 004.05 12 3.5 3.5 0 006.5 18.5z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-        <path d="M12 13v5M9.5 15.5L12 13l2.5 2.5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" opacity="0.5"/>
+/** Wormhole (share and receive): the share and receive icons' arrow and portal, in their proportions, with the arrow
+ *  through two portals, one behind the other. It goes in solid over the first portal's near arc, crosses between the
+ *  portals as fainter stripes (the far arcs pass over them), and comes out solid. The first portal hides the part of
+ *  the second inside it; a small halo parts the tail from the arcs it covers.
+ *
+ *  One colour; while the button around it is hovered, the way in (the first portal, the tail and its stripes) turns
+ *  the send colour and the way out (the second portal, its stripes and the head) the receive colour. */
+export const WormholeIcon: React.FC<SvgIconProps> = props => {
+    const id = React.useId().replace(/:/g, '');
+    const tail = 'M0.6 8.5h6v7h-6z';
+    const portal = { cy: 12, rx: 3.4, ry: 8.5 };
+    const front = { ...portal, cx: 7 };
+    const paint = { in: 'var(--wormhole-in, currentColor)', out: 'var(--wormhole-out, currentColor)' };
+    const mask = (name: string, children: React.ReactNode) =>
+        <mask id={`${id}-${name}`} maskUnits="userSpaceOnUse" x={-2} y={-2} width={28} height={28}>
+            <rect x={-2} y={-2} width={28} height={28} fill="white" />
+            {children}
+        </mask>;
+    const stripes = (side: keyof typeof paint, xs: number[]) => <g style={{ fill: paint[side] }} opacity={0.45}>
+        {xs.map(x => <rect key={x} x={x} y={8.5} width={0.7} height={7} />)}
+    </g>;
+    // The drawing is a little wider than the others (x 0.6 to 24): the view starts a bit right instead of shrinking it.
+    return <SvgIcon data-testid="WormholeIcon" {...props} viewBox="0.3 0 24 24"
+        sx={onButtonHover({ '--wormhole-in': WORMHOLE_SEND_COLOR, '--wormhole-out': WORMHOLE_RECEIVE_COLOR }, props.sx)}>
+        {mask('tail', <path d={tail} fill="black" stroke="black" strokeWidth={2.6} />)}
+        {mask('inside', <ellipse {...front} fill="black" stroke="black" strokeWidth={3.4} />)}
+        <g fill="none" strokeWidth={1.6} mask={`url(#${id}-tail)`}>
+            <ellipse {...front} style={{ stroke: paint.in }} />
+            <ellipse {...portal} cx={11.6} mask={`url(#${id}-inside)`} style={{ stroke: paint.out }} />
+        </g>
+        <path d={tail} style={{ fill: paint.in }} />
+        {stripes('in', [7.2, 8.4])}
+        {stripes('out', [11.6, 12.8])}
+        <path d="M16 8.5h0.5v-4L24 12l-7.5 7.5v-4H16z" style={{ fill: paint.out }} />
+    </SvgIcon>;
+};
+
+// Cell shades for the heatmap glyph: values cooling away from one corner, so it reads as data, not a table.
+const HEATMAP_SHADES = [[1, 0.7, 0.35], [0.7, 0.45, 0.25], [0.35, 0.25, 0.15]];
+
+/** A heatmap: a 3×3 grid of cells in varying shades of the current colour. */
+export const HeatmapIcon: React.FC<SvgIconProps> = props => (
+    <SvgIcon data-testid="HeatmapIcon" {...props} viewBox="0 0 24 24">
+        {HEATMAP_SHADES.flatMap((row, r) => row.map((opacity, c) =>
+            <rect key={`${r}-${c}`} x={3 + c * 6.5} y={3 + r * 6.5} width={5.5} height={5.5} rx={1.25} opacity={opacity} />))}
     </SvgIcon>
 );
 
-/** Query Engine — magnifying glass with data (BigQuery, Kusto, Athena) */
-const QueryEngineIcon: React.FC<SvgIconProps> = (props) => (
-    <SvgIcon {...props} viewBox="0 0 24 24">
-        <circle cx="10.5" cy="10.5" r="7" fill="none" stroke="currentColor" strokeWidth="1.5"/>
-        <line x1="15.5" y1="15.5" x2="21" y2="21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-        <line x1="7.5" y1="9" x2="7.5" y2="14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" opacity="0.5"/>
-        <line x1="10.5" y1="7" x2="10.5" y2="14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" opacity="0.5"/>
-        <line x1="13.5" y1="10" x2="13.5" y2="14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" opacity="0.5"/>
-    </SvgIcon>
-);
+// ── Chart family icons ──────────────────────────────────────────────────
 
-/** Dashboard / BI — grid with mini chart (Superset) */
-const DashboardIcon: React.FC<SvgIconProps> = (props) => (
-    <SvgIcon {...props} viewBox="0 0 24 24">
-        <rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5"/>
-        <line x1="3" y1="9" x2="21" y2="9" stroke="currentColor" strokeWidth="1.2" opacity="0.4"/>
-        <line x1="9" y1="9" x2="9" y2="21" stroke="currentColor" strokeWidth="1.2" opacity="0.4"/>
-        <polyline points="12,17 14.5,13 17,15.5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" opacity="0.6"/>
-    </SvgIcon>
-);
+export interface ChartFamily {
+    Icon: React.ElementType;
+    /** The family's colour. Not used yet: chart glyphs take the standard state colours (see `iconTone`). */
+    color: string;
+}
 
-/** Generic fallback — simple database cylinder */
-const GenericDBIcon: React.FC<SvgIconProps> = (props) => (
-    <SvgIcon {...props} viewBox="0 0 24 24">
-        <ellipse cx="12" cy="6" rx="8" ry="3" fill="none" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M4 6v12c0 1.66 3.58 3 8 3s8-1.34 8-3V6" fill="none" stroke="currentColor" strokeWidth="1.5"/>
-    </SvgIcon>
-);
+// First match wins, so specific names come before the words they contain ("heatmap" before "map").
+const CHART_FAMILIES: [RegExp, ChartFamily][] = [
+    [/^auto$/, { Icon: InsightsIcon, color: SETI_COLORS.blue }],
+    [/kpi/, { Icon: SpeedIcon, color: SETI_COLORS.yellow }],
+    [/heatmap|custom rect/, { Icon: HeatmapIcon, color: SETI_COLORS.orange }],
+    [/map|choropleth/, { Icon: PublicIcon, color: SETI_COLORS.green }],
+    [/candlestick|box ?plot|violin/, { Icon: CandlestickChartIcon, color: SETI_COLORS.red }],
+    [/waterfall/, { Icon: WaterfallChartIcon, color: SETI_COLORS.blue }],
+    [/gantt/, { Icon: ViewTimelineOutlinedIcon, color: SETI_COLORS.purple }],
+    [/radar/, { Icon: RadarIcon, color: SETI_COLORS.purple }],
+    [/pie|rose|donut/, { Icon: PieChartOutlineIcon, color: SETI_COLORS.pink }],
+    [/bar table/, { Icon: BarChartIcon, color: SETI_COLORS.blue }],
+    [/pyramid|bullet/, { Icon: AlignHorizontalLeftIcon, color: SETI_COLORS.blue }],
+    [/stacked bar/, { Icon: StackedBarChartIcon, color: SETI_COLORS.blue }],
+    [/streamgraph/, { Icon: StackedLineChartIcon, color: SETI_COLORS.purple }],
+    [/area|density/, { Icon: AreaChartIcon, color: SETI_COLORS.purple }],
+    [/bump/, { Icon: MultilineChartIcon, color: SETI_COLORS.green }],
+    [/connected scatter/, { Icon: TimelineIcon, color: SETI_COLORS.orange }],
+    [/scatter|regression|point|dot|strip/, { Icon: ScatterPlotIcon, color: SETI_COLORS.orange }],
+    [/line|slope|sparkline|ecdf/, { Icon: ShowChartIcon, color: SETI_COLORS.green }],
+    [/table/, { Icon: TableIcon, color: SETI_COLORS.greyLight }],
+];
+// Bar, grouped bar, histogram, lollipop, and anything unrecognised.
+const DEFAULT_CHART_FAMILY: ChartFamily = { Icon: BarChartIcon, color: SETI_COLORS.blue };
 
-import FolderOpenIconMui from '@mui/icons-material/FolderOpen';
+/** A chart type's family: its glyph and (reserved) colour. */
+export const chartFamily = (chartType: string): ChartFamily =>
+    CHART_FAMILIES.find(([pattern]) => pattern.test(chartType.toLowerCase()))?.[1] ?? DEFAULT_CHART_FAMILY;
 
-/** Map source_type string to a category icon. */
-const CONNECTOR_ICON_MAP: Record<string, React.FC<SvgIconProps>> = {
-    // Relational databases
-    mysql: RelationalDBIcon,
-    postgresql: RelationalDBIcon,
-    mssql: RelationalDBIcon,
-    // Document stores
-    mongodb: DocumentStoreIcon,
-    cosmosdb: DocumentStoreIcon,
-    // Cloud storage
-    s3: CloudStorageIcon,
-    azure_blob: CloudStorageIcon,
-    // Query engines
-    bigquery: QueryEngineIcon,
-    kusto: QueryEngineIcon,
-    athena: QueryEngineIcon,
-    databricks: QueryEngineIcon,
-    // BI / dashboards
-    superset: DashboardIcon,
+/** The chart family glyph for a chart type (thread rail, canvas tabs). */
+export const chartFamilyIcon = (chartType: string): React.ElementType => chartFamily(chartType).Icon;
+
+// ── Workspace file-type icons ───────────────────────────────────────────
+// VS Code's default (Seti) file icons. They are grey like the rest of the UI and take their
+// language colour when the file is selected.
+
+interface FileType {
+    glyph: SetiGlyphName;
+    color?: string;
+    /** An app the workspace runs (HTML or React). */
+    app?: boolean;
+}
+
+const { blue, green, orange, pink, purple, red, yellow, greyLight } = SETI_COLORS;
+const FILE_TYPES: [RegExp, FileType][] = [
+    [/\.app\.jsx$/i, { glyph: 'react', color: blue, app: true }],
+    [/\.html?$/i, { glyph: 'html', color: orange, app: true }],
+    [/\.map\.json$/i, { glyph: 'map', color: green, app: true }],
+    [/\.(py|pyw|pyi)$/i, { glyph: 'python', color: blue }],
+    [/\.ipynb$/i, { glyph: 'notebook', color: blue }],
+    [/\.sql$/i, { glyph: 'db', color: pink }],
+    [/\.(md|markdown|mdx)$/i, { glyph: 'markdown', color: blue }],
+    [/\.(r|rmd)$/i, { glyph: 'R', color: blue }],
+    [/\.(ts|mts|cts)$/i, { glyph: 'typescript', color: blue }],
+    [/\.(jsx|tsx)$/i, { glyph: 'react', color: blue }],
+    [/\.(js|mjs|cjs)$/i, { glyph: 'javascript', color: yellow }],
+    [/\.(css|scss|sass|less)$/i, { glyph: 'css', color: blue }],
+    [/\.php$/i, { glyph: 'php', color: purple }],
+    [/\.(json|jsonl|ndjson|geojson|topojson)$/i, { glyph: 'json', color: yellow }],
+    [/\.(csv|tsv|parquet|arrow|feather)$/i, { glyph: 'csv', color: green }],
+    [/\.(xlsx?|xlsm)$/i, { glyph: 'xls', color: green }],
+    [/\.ya?ml$/i, { glyph: 'yml', color: purple }],
+    [/\.(toml|ini|cfg|conf|env)$/i, { glyph: 'config', color: greyLight }],
+    [/\.(sh|bash|zsh|ps1|bat|cmd)$/i, { glyph: 'shell', color: green }],
+    [/\.svg$/i, { glyph: 'svg', color: purple }],
+    [/\.(png|jpe?g|gif|webp|bmp|ico|tiff?|avif)$/i, { glyph: 'image', color: purple }],
+    [/\.pdf$/i, { glyph: 'pdf', color: red }],
+    [/\.(docx?|rtf|odt)$/i, { glyph: 'word', color: blue }],
+    [/\.(zip|gz|tgz|tar|7z|rar|bz2|xz)$/i, { glyph: 'zip', color: greyLight }],
+    [/\.(mp3|wav|ogg|flac|m4a)$/i, { glyph: 'audio', color: purple }],
+    [/\.(mp4|mov|webm|avi|mkv)$/i, { glyph: 'video', color: pink }],
+    [/\.xml$/i, { glyph: 'xml', color: orange }],
+    [/\.java$/i, { glyph: 'java', color: red }],
+    [/\.(c|h)$/i, { glyph: 'c', color: blue }],
+    [/\.(cc|cpp|cxx|hpp)$/i, { glyph: 'cpp', color: blue }],
+    [/\.rb$/i, { glyph: 'ruby', color: red }],
+];
+
+const fileType = (path: string): FileType =>
+    FILE_TYPES.find(([pattern]) => pattern.test(path))?.[1] ?? { glyph: 'default' };
+
+/** Whether a workspace file is an app the workspace runs (an HTML page, a `.app.jsx`, or a `.map.json` map). */
+export const isAppFile = (path: string): boolean => !!fileType(path).app;
+
+/** Whether a workspace file is a map artifact (`.map.json`, drawn by the built-in map renderer). */
+export const isMapFile = (path: string): boolean => /\.map\.json$/i.test(path);
+
+/**
+ * A workspace file's type glyph (thread, tabs, workspace, file header, workflows). At rest it takes
+ * the colour the caller gives (`sx` or the parent's); `active` (the file is selected or open) gives it
+ * its language colour, or `activeColor` for types without one.
+ */
+export const FileTypeIcon: React.FC<{
+    path: string;
+    size: number | string;
+    active?: boolean;
+    activeColor?: string;
+    sx?: SxProps<Theme>;
+}> = ({ path, size, active, activeColor = 'primary.main', sx }) => {
+    const maskId = `seti-${React.useId().replace(/[^\w-]/g, '')}`;
+    const { glyph, color } = fileType(path);
+    const { viewBox, paths, knockout }: SetiGlyph = SETI_GLYPHS[glyph];
+    const shapes = paths.map((shape, index) => <path key={index} d={shape.d} opacity={shape.opacity} transform={shape.transform}
+        fillRule={shape.evenodd ? 'evenodd' : undefined} />);
+    return <SvgIcon data-testid="FileTypeIcon" data-file-glyph={glyph} viewBox={viewBox} sx={[{ width: size, height: size, fontSize: size, flexShrink: 0 },
+        ...(Array.isArray(sx) ? sx : [sx]), active ? { color: color ?? activeColor } : {}]}>
+        {knockout ? <>
+            <mask id={maskId}>
+                <rect x="-100000" y="-100000" width="200000" height="200000" fill="#fff" />
+                {knockout.map((d, index) => <path key={index} d={d} fill="#000" />)}
+            </mask>
+            <g mask={`url(#${maskId})`}>{shapes}</g>
+        </> : shapes}
+    </SvgIcon>;
+};
+
+// ── Data-loader / connector icons ───────────────────────────────────────
+// One family: named products show their own logo (Simple Icons, single colour); everything else shows an
+// outline glyph drawn to one rule: 24px grid, 1.5 stroke, round caps and joins, no fills. Solid logos are
+// drawn a little smaller so they weigh the same as the outlines. Logos are used as they are, never redrawn.
+
+/** An outline glyph's shapes, from path data. */
+const glyph = (...paths: string[]) => paths.map((d, index) => <path key={index} d={d} fill="none" stroke="currentColor"
+    strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />);
+
+const GLYPHS = {
+    folder: glyph('M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2h7.4a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z'),
+    cloud: glyph('M7 18.5h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.1 11.6 3.5 3.5 0 0 0 7 18.5z', 'M12 15.5v-4M10 13l2-2 2 2'),
+    cylinder: glyph('M5 6c0-1.45 3.13-2.6 7-2.6s7 1.15 7 2.6-3.13 2.6-7 2.6S5 7.45 5 6z',
+        'M5 6v12c0 1.45 3.13 2.6 7 2.6s7-1.15 7-2.6V6', 'M5 12c0 1.45 3.13 2.6 7 2.6s7-1.15 7-2.6'),
+    table: glyph('M5.5 5h13A1.5 1.5 0 0 1 20 6.5v11a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5v-11A1.5 1.5 0 0 1 5.5 5z',
+        'M4 10h16M4 14.5h16M10 10v9'),
+    document: glyph('M7 3.5h7l4.5 4.5v11a1.5 1.5 0 0 1-1.5 1.5H7a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 7 3.5z',
+        'M14 3.5V8h4.5M8.5 12.5h7M8.5 16h5'),
+    query: glyph('M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z', 'M15.5 15.5 20 20M8 12.5v-2M10.5 12.5V8M13 12.5v-3'),
+    model: glyph('M12 3.5 19.5 7.75v8.5L12 20.5l-7.5-4.25v-8.5z', 'M4.5 7.75 12 12l7.5-4.25M12 12v8.5'),
+    report: glyph('M6 11h3v8.5H6zM10.5 7h3v12.5h-3zM15 4.5h3v15h-3z'),
+} as const;
+
+/** A connector icon: a logo or a glyph, scaled so both kinds share one optical size. */
+const connectorIcon = (title: string, content: React.ReactNode, logo = false): React.FC<SvgIconProps> => {
+    const scale = logo ? 0.8 : 1;
+    const offset = 12 * (1 - scale);
+    const Icon: React.FC<SvgIconProps> = props => <SvgIcon {...props} viewBox="0 0 24 24">
+        <title>{title}</title>
+        <g transform={`translate(${offset} ${offset}) scale(${scale})`}>{content}</g>
+    </SvgIcon>;
+    Icon.displayName = `${title.replace(/\W/g, '')}ConnectorIcon`;
+    return Icon;
+};
+
+const glyphIcon = (title: string, name: keyof typeof GLYPHS) => connectorIcon(title, GLYPHS[name]);
+const logoIcon = ({ title, path }: BrandIcon) => connectorIcon(title, <path d={path} fill="currentColor" />, true);
+
+/** A plain outline glyph without a title, for places that are not a list of connectors (e.g. the rail). */
+const plainGlyph = (name: keyof typeof GLYPHS): React.FC<SvgIconProps> => props =>
+    <SvgIcon {...props} viewBox="0 0 24 24">{GLYPHS[name]}</SvgIcon>;
+
+/** Relational database, plain (the rail's Data connectors button). */
+const RelationalDBIcon = plainGlyph('cylinder');
+/** Generic database, plain. */
+const GenericDBIcon = plainGlyph('cylinder');
+
+const FallbackConnectorIcon = glyphIcon('Data source', 'cylinder');
+
+/** Map source_type string to its icon: its own logo where Simple Icons has a legible one, otherwise a glyph. */
+export const CONNECTOR_ICON_MAP: Record<string, React.FC<SvgIconProps>> = {
+    // Brands: clickhouse, sqlite, mongodb, databricks, bigquery, search_console, snowflake, superset
+    ...Object.fromEntries(Object.entries(CONNECTOR_BRANDS).map(([type, brand]) => [type, logoIcon(brand)])),
+    // Their logos are unreadable at icon size (a wordmark, a detailed elephant).
+    mysql: glyphIcon('MySQL', 'cylinder'),
+    postgresql: glyphIcon('PostgreSQL', 'cylinder'),
+    // No logo available (Microsoft and AWS brands are not in Simple Icons).
+    mssql: glyphIcon('SQL Server', 'cylinder'),
+    dataverse: glyphIcon('Dataverse', 'table'),
+    cosmosdb: glyphIcon('Cosmos DB', 'document'),
+    s3: glyphIcon('Amazon S3', 'cloud'),
+    azure_blob: glyphIcon('Azure Blob', 'cloud'),
+    kusto: glyphIcon('Kusto', 'query'),
+    athena: glyphIcon('Athena', 'query'),
+    // BI and semantic models
+    cube: glyphIcon('Cube', 'model'),
+    powerbi: glyphIcon('Power BI', 'report'),
     // Local
-    local_folder: FolderOpenIconMui,
+    local_folder: glyphIcon('Local folder', 'folder'),
 };
 
 /** Category sort order for data source sidebar. Lower = higher in the list.
@@ -112,25 +338,31 @@ const CONNECTOR_ICON_MAP: Record<string, React.FC<SvgIconProps>> = {
 const CONNECTOR_CATEGORY_ORDER: Record<string, number> = {
     // Example Datasets (always top)
     sample_datasets: -100, SampleDatasetsLoader: -100,
-    // Local
+    // Files: local folder, then cloud storage
     local_folder: -1, LocalFolderDataLoader: -1,
+    s3: -0.5, S3DataLoader: -0.5,
+    azure_blob: -0.5, AzureBlobDataLoader: -0.5,
     // Relational DB
     mysql: 0, MySQLDataLoader: 0,
     mssql: 0, MSSQLDataLoader: 0,
     postgresql: 0, PostgreSQLDataLoader: 0,
+    clickhouse: 0, ClickHouseDataLoader: 0,
+    sqlite: 0, SQLiteDataLoader: 0,
+    dataverse: 0, DataverseDataLoader: 0,
     // Document Store
     mongodb: 1, MongoDBDataLoader: 1,
     cosmosdb: 1, CosmosDBDataLoader: 1,
-    // Cloud Storage
-    s3: 2, S3DataLoader: 2,
-    azure_blob: 2, AzureBlobDataLoader: 2,
     // Query Engine
     bigquery: 3, BigQueryDataLoader: 3,
     kusto: 3, KustoDataLoader: 3,
     athena: 3, AthenaDataLoader: 3,
     databricks: 3, DatabricksDataLoader: 3,
-    // Dashboard
+    snowflake: 3, SnowflakeDataLoader: 3,
+    // Dashboard / semantic layer
     superset: 4, SupersetLoader: 4,
+    cube: 4, CubeDataLoader: 4,
+    powerbi: 4, PowerBIDataLoader: 4,
+    search_console: 4, SearchConsoleDataLoader: 4,
 };
 
 /** Sort comparator: group by category, then alphabetical within each group. */
@@ -141,12 +373,20 @@ export const connectorSortOrder = (a: string, b: string): number => {
     return a.localeCompare(b);
 };
 
+const CONNECTOR_CATEGORY_KEYS: Record<number, string> = {
+    [-100]: 'samples', [-1]: 'files', [-0.5]: 'files', 0: 'databases', 1: 'databases', 3: 'warehouses', 4: 'semantic',
+};
+
+/** Group key for a connector type, matching the order used by `connectorSortOrder`. */
+export const connectorCategory = (type: string): string =>
+    CONNECTOR_CATEGORY_KEYS[CONNECTOR_CATEGORY_ORDER[type]] ?? 'other';
+
 /**
  * Return a React element for the given data-loader source type.
  * Falls back to a generic database icon for unknown types.
  */
 export const getConnectorIcon = (sourceType: string, props?: SvgIconProps): React.ReactElement => {
-    const Icon = CONNECTOR_ICON_MAP[sourceType] || GenericDBIcon;
+    const Icon = CONNECTOR_ICON_MAP[sourceType] || FallbackConnectorIcon;
     return <Icon {...(props || {})} />;
 };
 

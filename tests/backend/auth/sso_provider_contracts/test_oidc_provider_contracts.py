@@ -184,6 +184,80 @@ class TestMainstreamOIDCProviderContracts:
         assert result.email == contract["claims"]["email"]
         assert result.raw_token == token
 
+    def test_backend_gateway_exchanges_code_and_stores_userinfo(
+        self,
+        gateway_app,
+        contract,
+    ):
+        client = gateway_app.test_client()
+        with client.session_transaction() as sess:
+            sess["_oauth_state"] = "contract-state"
+
+        token_resp = MagicMock()
+        token_resp.ok = True
+        token_resp.json.return_value = {
+            "access_token": f"{contract['id']}-access-token",
+            "refresh_token": f"{contract['id']}-refresh-token",
+            "expires_in": 3600,
+            "id_token": pyjwt.encode({"sub": contract["subject"], **contract["claims"]}, "contract-key",
+                                     algorithm="HS256"),
+        }
+        userinfo_resp = MagicMock()
+        userinfo_resp.ok = True
+        userinfo_resp.json.return_value = (
+            {
+                "sub": contract["subject"],
+                "name": contract["claims"]["name"],
+                "email": contract["claims"]["email"],
+            }
+            if contract["userinfo_url"]
+            else None
+        )
+
+        with patch(
+            "data_formulator.auth.gateways.oidc_gateway._get_oidc_config",
+            return_value=_gateway_config(contract),
+        ), patch(
+            "data_formulator.auth.gateways.oidc_gateway.http.post",
+            return_value=token_resp,
+        ) as post, patch(
+            "data_formulator.auth.gateways.oidc_gateway.http.get",
+            return_value=userinfo_resp,
+        ) as get, patch(
+            "data_formulator.auth.token_store.TokenStore._all_auth_configs",
+            return_value={},
+        ):
+            resp = client.get(
+                "/auth/callback?code=contract-code&state=contract-state",
+            )
+
+        assert resp.status_code == 302
+        assert resp.headers["Location"].endswith("/")
+        assert post.call_args[0][0] == contract["token_url"]
+        if contract["userinfo_url"]:
+            assert get.call_args[0][0] == contract["userinfo_url"]
+        else:
+            get.assert_not_called()
+
+        with client.session_transaction() as sess:
+            sso = sess["sso"]
+            assert sso["access_token"] == f"{contract['id']}-access-token"
+            # Without UserInfo the subject comes from the ID token.
+            assert sso["user"]["sub"] == contract["subject"]
+
+
+# Provider-independent code paths: one representative contract is enough.
+_REPRESENTATIVE_CONTRACT = next(
+    contract for contract in OIDC_PROVIDER_CONTRACTS if contract["userinfo_url"]
+)
+
+
+@pytest.mark.parametrize(
+    "contract",
+    [_REPRESENTATIVE_CONTRACT],
+    ids=_contract_ids([_REPRESENTATIVE_CONTRACT]),
+)
+class TestRepresentativeOIDCProviderContract:
     def test_jwks_jwt_validation_accepts_missing_optional_email_claim(
         self,
         app,
@@ -224,9 +298,6 @@ class TestMainstreamOIDCProviderContracts:
         monkeypatch,
         contract,
     ):
-        if not contract["userinfo_url"]:
-            pytest.skip(f"{contract['id']} does not expose a UserInfo endpoint")
-
         monkeypatch.setenv("OIDC_ISSUER_URL", contract["issuer"])
         monkeypatch.setenv("OIDC_CLIENT_ID", CLIENT_ID)
         monkeypatch.setenv("OIDC_USERINFO_URL", contract["userinfo_url"])
@@ -278,64 +349,3 @@ class TestMainstreamOIDCProviderContracts:
         assert query["scope"] == ["openid profile email offline_access"]
         assert query["redirect_uri"][0].endswith("/auth/callback")
         assert query["state"][0]
-
-    def test_backend_gateway_exchanges_code_and_stores_userinfo(
-        self,
-        gateway_app,
-        contract,
-    ):
-        client = gateway_app.test_client()
-        with client.session_transaction() as sess:
-            sess["_oauth_state"] = "contract-state"
-
-        token_resp = MagicMock()
-        token_resp.ok = True
-        token_resp.json.return_value = {
-            "access_token": f"{contract['id']}-access-token",
-            "refresh_token": f"{contract['id']}-refresh-token",
-            "expires_in": 3600,
-        }
-        userinfo_resp = MagicMock()
-        userinfo_resp.ok = True
-        userinfo_resp.json.return_value = (
-            {
-                "sub": contract["subject"],
-                "name": contract["claims"]["name"],
-                "email": contract["claims"]["email"],
-            }
-            if contract["userinfo_url"]
-            else None
-        )
-
-        with patch(
-            "data_formulator.auth.gateways.oidc_gateway._get_oidc_config",
-            return_value=_gateway_config(contract),
-        ), patch(
-            "data_formulator.auth.gateways.oidc_gateway.http.post",
-            return_value=token_resp,
-        ) as post, patch(
-            "data_formulator.auth.gateways.oidc_gateway.http.get",
-            return_value=userinfo_resp,
-        ) as get, patch(
-            "data_formulator.auth.token_store.TokenStore._all_auth_configs",
-            return_value={},
-        ):
-            resp = client.get(
-                "/auth/callback?code=contract-code&state=contract-state",
-            )
-
-        assert resp.status_code == 302
-        assert resp.headers["Location"].endswith("/")
-        assert post.call_args[0][0] == contract["token_url"]
-        if contract["userinfo_url"]:
-            assert get.call_args[0][0] == contract["userinfo_url"]
-        else:
-            get.assert_not_called()
-
-        with client.session_transaction() as sess:
-            sso = sess["sso"]
-            assert sso["access_token"] == f"{contract['id']}-access-token"
-            if contract["userinfo_url"]:
-                assert sso["user"]["sub"] == contract["subject"]
-            else:
-                assert sso["user"] is None

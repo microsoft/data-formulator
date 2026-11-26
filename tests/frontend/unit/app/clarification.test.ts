@@ -14,6 +14,12 @@ import {
 } from '../../../../src/app/clarification';
 
 describe('clarification helpers', () => {
+  it('normalizes legacy multiple-choice questions to single choice without truncating options', () => {
+    const options = ['North', 'South', 'East', 'West', 'Central'];
+    const normalized = normalizeClarifyEvent({ questions: [{ text: 'Choose regions', responseType: 'multiple_choice', options }] });
+    expect(normalized.questions[0].responseType).toBe('single_choice');
+    expect(normalized.questions[0].options?.map(option => option.label)).toEqual(options);
+  });
   it('normalizes structured clarify events and translates backend codes', () => {
     const normalized = normalizeClarifyEvent({
       type: 'clarify',
@@ -37,6 +43,24 @@ describe('clarification helpers', () => {
     expect((normalized.questions[0] as any).required).toBeUndefined();
     expect((normalized.questions[0].options?.[0] as any).label_code).toBeUndefined();
     expect(normalized.summary).toBe('Translated exhausted prompt');
+  });
+
+  it('keeps known option icons and drops unknown ones', () => {
+    const normalized = normalizeClarifyEvent({
+      questions: [{
+        text: 'Where should the data come from?',
+        options: [
+          { label: 'Find CPI data online', icon: 'search_web' },
+          { label: 'Upload a file', icon: 'upload' },
+          { label: 'Connect', icon: 'rocket' },
+        ],
+      }],
+    });
+    expect(normalized.questions[0].options).toEqual([
+      { label: 'Find CPI data online', icon: 'search_web' },
+      { label: 'Upload a file', icon: 'upload' },
+      { label: 'Connect' },
+    ]);
   });
 
   it('defaults responseType to free_text when no options are provided', () => {

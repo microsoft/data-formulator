@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { assembleVegaChart } from "../../../../src/app/utils";
-import { Chart, computeInsightKey } from "../../../../src/components/ComponentType";
+import { FLINT_INPUT, assembleVegaChart, extractFieldsFromEncodingMap } from "../../../../src/app/utils";
+import { Chart, chartTitleFits, computeInsightKey } from "../../../../src/components/ComponentType";
 
 
 const chart = {
@@ -17,6 +17,32 @@ const chart = {
 
 
 describe("chart insight contract", () => {
+  const sortFields = [
+    { id: "category", name: "category", source: "original", tableRef: "table-1" },
+    { id: "value", name: "value", source: "original", tableRef: "table-1" },
+    { id: "tokens", name: "total_tokens", source: "original", tableRef: "table-1" },
+  ] as any;
+  const sortMetadata = {
+    category: { type: "string", levels: [] },
+    value: { type: "number", levels: [] },
+    total_tokens: { type: "number", levels: [] },
+  } as any;
+  const sortedBy = (sortBy: string, aggregate?: string) => ({
+    x: { fieldID: "category", dtype: "nominal", sortBy, sortOrder: "descending" },
+    y: { fieldID: "value", dtype: "quantitative", ...(aggregate ? { aggregate } : {}) },
+  }) as any;
+
+  it("carries an unmapped sortBy column only into unaggregated chart data", () => {
+    expect(extractFieldsFromEncodingMap(sortedBy("total_tokens"), sortFields).groupByFields).toEqual(["category", "value", "total_tokens"]);
+    expect(extractFieldsFromEncodingMap(sortedBy("total_tokens", "sum"), sortFields).groupByFields).toEqual(["category"]);
+    expect(extractFieldsFromEncodingMap(sortedBy("y"), sortFields).groupByFields).toEqual(["category", "value"]);
+  });
+
+  it.each(["total_tokens", "[null]", "[invalid", "color"])("renders when sortBy %s cannot be resolved", sortBy => {
+    expect(() => assembleVegaChart("Bar Chart", sortedBy(sortBy), sortFields,
+      [{ category: "A", value: 1 }, { category: "B", value: 2 }], sortMetadata, 400, 300)).not.toThrow();
+  });
+
   it("invalidates insight text when channel or aggregation changes", () => {
     const original = computeInsightKey(chart);
     const swapped = {
@@ -36,6 +62,18 @@ describe("chart insight contract", () => {
 
     expect(computeInsightKey(swapped)).not.toBe(original);
     expect(computeInsightKey(averaged)).not.toBe(original);
+  });
+
+  it("keeps the title when x and y are swapped, but not when what the chart shows changes", () => {
+    const titled = { ...chart, title: "Sales by category", titleKey: computeInsightKey(chart) } as Chart;
+    const turned = { ...titled, encodingMap: { x: chart.encodingMap.y, y: chart.encodingMap.x } } as Chart;
+    const averaged = { ...titled, encodingMap: { ...chart.encodingMap, y: { ...chart.encodingMap.y, aggregate: "average" } } } as Chart;
+    const otherType = { ...turned, chartType: "Line Chart" } as Chart;
+    expect(chartTitleFits(titled)).toBe(true);
+    expect(chartTitleFits(turned)).toBe(true);
+    expect(chartTitleFits(averaged)).toBe(false);
+    expect(chartTitleFits(otherType)).toBe(false);
+    expect(chartTitleFits({ ...turned, title: undefined } as Chart)).toBe(false);
   });
 
   it("passes title and subtitle through Flint assembly", () => {
@@ -70,6 +108,20 @@ describe("chart insight contract", () => {
     expect([spec.title?.subtitle].flat().join(" ")).toBe("US revenue by product, USD");
   });
 
+  it("keeps the complete Flint input behind the chart for copying, off the Vega-Lite spec", () => {
+    const spec = assembleVegaChart("Bar Chart", chart.encodingMap,
+      [{ id: "category", name: "category", source: "original", tableRef: "table-1" },
+        { id: "value", name: "value", source: "original", tableRef: "table-1" }] as any,
+      [{ category: "A", value: 10 }],
+      { category: { type: "string", levels: [] }, value: { type: "number", levels: [] } } as any,
+      400, 300) as any;
+    const input = spec[FLINT_INPUT];
+    expect(input.data.values).toEqual([{ category: "A", value: 10 }]);
+    expect(input.chart_spec.chartType).toBe("Bar Chart");
+    expect(Object.keys(spec)).not.toContain(FLINT_INPUT);
+    expect(JSON.parse(JSON.stringify(input))).toEqual(input);
+  });
+
   it("applies a Flint theme preset to the assembled base chart", () => {
     const args = [
       "Bar Chart",
@@ -95,8 +147,8 @@ describe("chart insight contract", () => {
       undefined,
     ] as const;
 
-    const defaultSpec = assembleVegaChart(...args as any) as any;
-    const nytSpec = assembleVegaChart(...args as any, "nyt") as any;
+    const defaultSpec = (assembleVegaChart as any)(...args);
+    const nytSpec = (assembleVegaChart as any)(...args, "nyt");
 
     expect(nytSpec).not.toEqual(defaultSpec);
     expect(JSON.stringify(nytSpec)).toContain("#2f6b9a");

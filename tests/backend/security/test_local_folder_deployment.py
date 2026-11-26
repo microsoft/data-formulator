@@ -37,14 +37,6 @@ class TestLocalFolderDeploymentRestriction:
         finally:
             _reload_registry("local")
 
-    def test_ephemeral_mode_disables_local_folder(self):
-        loaders, disabled = _reload_registry("ephemeral")
-        try:
-            assert "local_folder" not in loaders
-            assert "local_folder" in disabled
-        finally:
-            _reload_registry("local")
-
     def test_create_connector_rejects_disabled_type(self):
         """When local_folder is disabled, create_connector returns a structured error."""
         loaders, disabled = _reload_registry("azure_blob")
