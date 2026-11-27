@@ -23,6 +23,7 @@ import requests
 from data_formulator.data_loader.external_data_loader import (
     CatalogNode,
     ExternalDataLoader,
+    MAX_IMPORT_ROWS,
     SourceTableMissing,
 )
 from data_formulator.data_loader.superset_client import SupersetClient
@@ -920,7 +921,7 @@ class SupersetLoader(ExternalDataLoader):
         ``source_table`` must be a numeric dataset ID as a string, e.g. ``"42"``.
         """
         opts = import_options or {}
-        size = opts.get("size", 100_000)
+        size = min(opts.get("size", MAX_IMPORT_ROWS), MAX_IMPORT_ROWS)
 
         try:
             dataset_id = int(source_table)
